@@ -12,11 +12,13 @@ fn main() {
 
 fn handle_connection(mut stream: &TcpStream) {
     let buf_reader = BufReader::new(&mut stream);
+    // @TODO Use Content-Length to read post body.
     let http_request: Vec<_> = buf_reader
         .lines()
         .map(|result| result.unwrap())
         .take_while(|line| !line.is_empty())
         .collect();
+    let first_line = &http_request[0];
 
     dbg!(&http_request);
 
