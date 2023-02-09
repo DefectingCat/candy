@@ -1,9 +1,7 @@
 extern crate core;
 
-use crate::args::Args;
 use crate::handles::handle_connection;
 use crate::thread_pool::ThreadPool;
-use clap::Parser;
 use config::Config;
 use env_logger::Env;
 use log::info;
