@@ -1,5 +1,6 @@
 use crate::args::Args;
 use clap::Parser;
+use log::debug;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -27,7 +28,7 @@ impl Config {
         };
         let config = fs::read_to_string(config_path).expect("failed to read config file.");
         let config: Config = serde_json::from_str(&config).expect("failed to parse config file.");
-        dbg!(&config);
+        debug!("{config:?}");
         config
     }
 }

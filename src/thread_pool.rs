@@ -32,7 +32,7 @@ impl ThreadPool {
 
         let mut works = Vec::with_capacity(thread_num);
         for id in 0..thread_num {
-            works.push(Worker::new(id, receiver.clone()))
+            works.push(Worker::new(id, Arc::clone(&receiver)))
         }
         Self {
             thread_num,

@@ -1,9 +1,11 @@
+use crate::config::Config;
 use anyhow::Result;
 use log::{error, info};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
+use std::sync::{Arc, Mutex};
 
 // type Reader<'a> = &'a mut BufReader<&'a TcpStream>;
 
@@ -66,16 +68,20 @@ pub fn handle_post(
     Ok(response)
 }
 
-pub fn handle_error() {}
+pub fn handle_error(mut stream: &TcpStream) {
+    let status_line = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
+    let response = status_line.to_string();
+    stream.write_all(response.as_bytes()).unwrap();
+}
 
-pub fn handle_connection(mut stream: &TcpStream) {
+pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
     let mut buf_reader = BufReader::new(&mut stream);
     // Read http request bytes to string.
     let request_string = match read_request(&mut buf_reader) {
         Ok(res) => res,
         Err(err) => {
             error!("failed to parse request {}", err.to_string());
-            return handle_error();
+            return handle_error(stream);
         }
     };
     // Read string to lines.
@@ -85,7 +91,7 @@ pub fn handle_connection(mut stream: &TcpStream) {
         Some(res) => *res,
         None => {
             error!("failed to parse request method");
-            return handle_error();
+            return handle_error(stream);
         }
     };
     let headers = collect_headers(&request);
@@ -107,24 +113,24 @@ pub fn handle_connection(mut stream: &TcpStream) {
     let method = if let Some(Some(m)) = router.get("method") {
         **m
     } else {
-        return handle_error();
+        return handle_error(stream);
     };
     let response = match method {
         "GET" => {
             if let Ok(res) = handle_get() {
                 res
             } else {
-                return handle_error();
+                return handle_error(stream);
             }
         }
         "POST" => {
             if let Ok(res) = handle_post(&mut buf_reader, &headers) {
                 res
             } else {
-                return handle_error();
+                return handle_error(stream);
             }
         }
-        _ => return handle_error(),
+        _ => return handle_error(stream),
     };
 
     stream.write_all(response.as_bytes()).unwrap();
