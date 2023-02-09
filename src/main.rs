@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
-use std::fs::read;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::ptr::hash;
 
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:4000").expect("cannon listen on port 4000");
