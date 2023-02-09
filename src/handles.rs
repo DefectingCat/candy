@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::error;
+use log::{error, info};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -88,13 +88,21 @@ pub fn handle_connection(mut stream: &TcpStream) {
             return handle_error();
         }
     };
+    let headers = collect_headers(&request);
+
+    let mut log_info = format!("\"{first_line}\"");
+    ["Host", "User-Agent"].iter().for_each(|name| {
+        if let Some(info) = headers.get(*name) {
+            log_info.push_str(&format!(" - \"{info}\""))
+        }
+    });
+    info!("{log_info}");
 
     let mut router = HashMap::new();
     let first_line: Vec<_> = first_line.split(' ').collect();
     router.insert("method", first_line.first());
     router.insert("route", first_line.get(1));
     // Parse request headers.
-    let headers = collect_headers(&request);
 
     let method = if let Some(Some(m)) = router.get("method") {
         **m
