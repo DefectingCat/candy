@@ -1,17 +1,23 @@
 extern crate core;
 
+use crate::args::Args;
 use crate::handles::handle_connection;
 use crate::thread_pool::ThreadPool;
+use clap::Parser;
 use config::Config;
 use env_logger::Env;
 use log::info;
 use std::net::TcpListener;
 
+mod args;
 mod config;
 mod handles;
 mod thread_pool;
 
 fn main() {
+    let args = Args::parse();
+    dbg!(&args);
+
     let config = Config::new();
 
     let env = Env::default().filter_or("RUA_LOG_LEVEL", &config.log_level);
