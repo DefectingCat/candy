@@ -1,3 +1,5 @@
+use config::Config;
+use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -5,6 +7,10 @@ use std::net::{TcpListener, TcpStream};
 
 mod config;
 mod thread_pool;
+
+lazy_static! {
+    static ref CONFIG: Config = Config::new();
+}
 
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:4000").expect("cannon listen on port 4000");
