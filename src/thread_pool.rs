@@ -18,7 +18,7 @@ impl ThreadPool {
 
         let mut works = Vec::with_capacity(thread_num);
         for id in 0..thread_num {
-            works.push(Worker::new(id))
+            works.push(Worker::new(id, receiver.clone()))
         }
         Self {
             thread_num,
@@ -35,7 +35,7 @@ pub struct Worker {
 impl Worker {
     pub fn new(id: usize, receiver: Arc<Mutex<Receiver<Job>>>) -> Result<Self> {
         let builder = thread::Builder::new();
-        let thread = builder.spawn(move || loop {
+        let worker_job = move || loop {
             let job = match receiver.lock() {
                 Ok(lock) => match lock.recv() {
                     Ok(job) => job,
@@ -51,7 +51,8 @@ impl Worker {
             };
             info!("worker {id} received job");
             job();
-        })?;
+        };
+        let thread = builder.spawn(worker_job)?;
         info!("create worker with id {id}");
         Ok(Self { id, thread })
     }
