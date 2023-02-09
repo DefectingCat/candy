@@ -12,22 +12,48 @@ fn main() {
     }
 }
 
-fn handle_connection(mut stream: &TcpStream) {
-    let buf_reader = BufReader::new(&mut stream);
-    let msg: Vec<_> = buf_reader.bytes().map(|byte| byte.unwrap()).collect();
-    let request: Vec<_> = msg
-        .lines()
-        .map(|line| line.unwrap())
-        .take_while(|line| !line.is_empty())
-        .collect();
+/// Collect request string with Hashmap to headers.
+fn collect_headers(request: &[&str]) -> HashMap<String, String> {
     let mut headers = HashMap::new();
     request.iter().for_each(|header| {
         if let Some(head) = header.split_once(": ") {
-            headers.entry(head.0).or_insert(head.1);
+            headers
+                .entry(head.0.to_string())
+                .or_insert(head.1.to_string());
         }
     });
+    headers
+}
+
+/// Read http request to string.
+fn read_request(reader: &mut BufReader<&mut &TcpStream>) -> String {
+    let mut request_string = String::new();
+    loop {
+        let byte = reader.read_line(&mut request_string).unwrap();
+        if byte < 3 {
+            break;
+        }
+    }
+    request_string
+}
+
+fn handle_connection(mut stream: &TcpStream) {
+    let mut buf_reader = BufReader::new(&mut stream);
+    let mut request_string = String::new();
+    loop {
+        let byte = buf_reader.read_line(&mut request_string).unwrap();
+        if byte < 3 {
+            break;
+        }
+    }
+    let request: Vec<_> = request_string.lines().collect();
+    let request_method = request.first().unwrap();
+    dbg!(&request_method);
+    let headers = collect_headers(&request);
     dbg!(&headers);
-    let str = String::from_utf8_lossy(&msg);
+    // let bytes: Vec<_> = buf_reader.bytes().map(|byte| byte.unwrap()).collect();
+    // let headers = collect_headers(&bytes);
+    // let str = String::from_utf8_lossy(&bytes);
     // buf_reader.lines().for_each(|result| {
     //     let result = result.unwrap();
     //     dbg!(&result);
