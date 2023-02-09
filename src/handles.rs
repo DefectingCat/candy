@@ -39,17 +39,23 @@ pub fn read_body(reader: &mut BufReader<&mut &TcpStream>, size: usize) -> Result
     Ok(String::from_utf8_lossy(&buffer).to_string())
 }
 
-pub fn handle_get() {}
+pub fn handle_get() -> Result<String> {
+    let status_line = "HTTP/1.1 200 OK";
+    let contents = fs::read_to_string("./static/index.html").unwrap();
+    let length = contents.len();
+
+    let response = format!("{status_line}\r\nContent-length: {length}\r\n\r\n{contents}");
+    Ok(response)
+}
 
 pub fn handle_post(
     reader: &mut BufReader<&mut &TcpStream>,
     headers: &HashMap<String, String>,
-) -> String {
+) -> Result<String> {
     let size = headers
         .get("Content-Length")
-        .unwrap()
-        .parse::<usize>()
-        .unwrap();
+        .expect("cannot read Content-Length")
+        .parse::<usize>()?;
     let body = read_body(reader, size);
 
     let status_line = "HTTP/1.1 200 OK";
@@ -57,7 +63,7 @@ pub fn handle_post(
     let length = contents.len();
 
     let response = format!("{status_line}\r\nContent-length: {length}\r\n\r\n{contents}");
-    response
+    Ok(response)
 }
 
 pub fn handle_error() {}
@@ -96,8 +102,20 @@ pub fn handle_connection(mut stream: &TcpStream) {
         return handle_error();
     };
     let response = match method {
-        "GET" => "".to_string(),
-        "POST" => handle_post(&mut buf_reader, &headers),
+        "GET" => {
+            if let Ok(res) = handle_get() {
+                res
+            } else {
+                return handle_error();
+            }
+        }
+        "POST" => {
+            if let Ok(res) = handle_post(&mut buf_reader, &headers) {
+                res
+            } else {
+                return handle_error();
+            }
+        }
         _ => return handle_error(),
     };
 
