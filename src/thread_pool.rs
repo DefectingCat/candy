@@ -40,6 +40,13 @@ impl ThreadPool {
             sender,
         }
     }
+
+    pub fn exeute(&self, job: Job) {
+        match self.sender.send(job) {
+            Ok(()) => info!("string send job to worker"),
+            Err(err) => error!("failed to send job to worker {}", err.to_string()),
+        }
+    }
 }
 
 pub struct Worker {
@@ -64,7 +71,7 @@ impl Worker {
                     Box::new(|| {})
                 }
             };
-            info!("worker {id} received job");
+            info!("worker {id} received job; executing");
             job();
         };
         let thread = builder.spawn(worker_job)?;
