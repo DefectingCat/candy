@@ -26,6 +26,6 @@ fn main() {
         let job = Box::new(move || {
             handle_connection(&stream);
         });
-        thread_pool.exeute(job);
+        thread_pool.execute(job);
     }
 }

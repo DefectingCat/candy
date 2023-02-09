@@ -41,7 +41,7 @@ impl ThreadPool {
         }
     }
 
-    pub fn exeute(&self, job: Job) {
+    pub fn execute(&self, job: Job) {
         match self.sender.send(job) {
             Ok(()) => info!("string send job to worker"),
             Err(err) => error!("failed to send job to worker {}", err.to_string()),
