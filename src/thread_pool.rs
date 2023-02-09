@@ -1,12 +1,13 @@
 use anyhow::Result;
 use log::{error, info};
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
 pub struct ThreadPool {
     pub thread_num: usize,
     pub works: Vec<Worker>,
+    sender: Sender<Job>,
 }
 
 type Job = Box<dyn Send + FnOnce() + 'static>;
@@ -23,6 +24,7 @@ impl ThreadPool {
         Self {
             thread_num,
             works: vec![],
+            sender,
         }
     }
 }
@@ -40,12 +42,12 @@ impl Worker {
                 Ok(lock) => match lock.recv() {
                     Ok(job) => job,
                     Err(err) => {
-                        error!("failed to get thread job {}", err.to_string());
+                        error!("worker {id} failed to get thread job {}", err.to_string());
                         Box::new(|| {})
                     }
                 },
                 Err(err) => {
-                    error!("failed to get thread job {}", err.to_string());
+                    error!("worker {id} failed to get thread job {}", err.to_string());
                     Box::new(|| {})
                 }
             };
