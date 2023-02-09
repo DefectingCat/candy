@@ -5,7 +5,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 
-type Reader<'a> = &'a mut BufReader<&'a mut &'a TcpStream>;
+// type Reader<'a> = &'a mut BufReader<&'a TcpStream>;
 
 /// Collect request string with Hashmap to headers.
 pub fn collect_headers(request: &[&str]) -> HashMap<String, String> {
@@ -21,7 +21,7 @@ pub fn collect_headers(request: &[&str]) -> HashMap<String, String> {
 }
 
 /// Read http request to string.
-pub fn read_request(reader: Reader) -> Result<String> {
+pub fn read_request(reader: &mut BufReader<&mut &TcpStream>) -> Result<String> {
     let mut request_string = String::new();
     loop {
         let byte = reader.read_line(&mut request_string)?;
@@ -33,7 +33,7 @@ pub fn read_request(reader: Reader) -> Result<String> {
 }
 
 /// Read request body with Content-Length.
-pub fn read_body(reader: Reader, size: usize) -> Result<String> {
+pub fn read_body(reader: &mut BufReader<&mut &TcpStream>, size: usize) -> Result<String> {
     let mut buffer = vec![0; size];
     reader.read_exact(&mut buffer)?;
     Ok(String::from_utf8_lossy(&buffer).to_string())
@@ -41,13 +41,23 @@ pub fn read_body(reader: Reader, size: usize) -> Result<String> {
 
 pub fn handle_get() {}
 
-pub fn handle_post(reader: Reader, headers: &HashMap<String, String>) {
+pub fn handle_post(
+    reader: &mut BufReader<&mut &TcpStream>,
+    headers: &HashMap<String, String>,
+) -> String {
     let size = headers
         .get("Content-Length")
         .unwrap()
         .parse::<usize>()
         .unwrap();
     let body = read_body(reader, size);
+
+    let status_line = "HTTP/1.1 200 OK";
+    let contents = fs::read_to_string("./static/index.html").unwrap();
+    let length = contents.len();
+
+    let response = format!("{status_line}\r\nContent-length: {length}\r\n\r\n{contents}");
+    response
 }
 
 pub fn handle_error() {}
@@ -85,17 +95,11 @@ pub fn handle_connection(mut stream: &TcpStream) {
     } else {
         return handle_error();
     };
-    match method {
-        "GET" => {}
+    let response = match method {
+        "GET" => "".to_string(),
         "POST" => handle_post(&mut buf_reader, &headers),
         _ => return handle_error(),
-    }
-
-    let status_line = "HTTP/1.1 200 OK";
-    let contents = fs::read_to_string("./static/index.html").unwrap();
-    let length = contents.len();
-
-    let response = format!("{status_line}\r\nContent-length: {length}\r\n\r\n{contents}");
+    };
 
     stream.write_all(response.as_bytes()).unwrap();
 }
