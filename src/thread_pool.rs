@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::thread;
 
 pub struct ThreadPool {
@@ -24,10 +25,9 @@ pub struct Worker {
 }
 
 impl Worker {
-    pub fn new(id: usize) -> Self {
-        Self {
-            id,
-            thread: thread::spawn(|| {}),
-        }
+    pub fn new(id: usize) -> Result<Self> {
+        let builder = thread::Builder::new();
+        let thread = builder.spawn(|| {})?;
+        Ok(Self { id, thread })
     }
 }
