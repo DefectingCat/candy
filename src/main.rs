@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::fs::read;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::ptr::hash;
@@ -37,36 +38,29 @@ fn read_request(reader: &mut BufReader<&mut &TcpStream>) -> String {
     request_string
 }
 
+/// Read request body with Content-Length.
+fn read_body(reader: &mut BufReader<&mut &TcpStream>, size: usize) -> String {
+    let mut buffer = vec![0; size];
+    reader.read_exact(&mut buffer).unwrap();
+    String::from_utf8_lossy(&buffer).to_string()
+}
+
 fn handle_connection(mut stream: &TcpStream) {
     let mut buf_reader = BufReader::new(&mut stream);
-    let mut request_string = String::new();
-    loop {
-        let byte = buf_reader.read_line(&mut request_string).unwrap();
-        if byte < 3 {
-            break;
-        }
-    }
+    // Read http request bytes to string.
+    let request_string = read_request(&mut buf_reader);
+    // Read string to lines.
     let request: Vec<_> = request_string.lines().collect();
+    // HTTP method in first line.
     let request_method = request.first().unwrap();
-    dbg!(&request_method);
+    // Parse request headers.
     let headers = collect_headers(&request);
-    dbg!(&headers);
-    // let bytes: Vec<_> = buf_reader.bytes().map(|byte| byte.unwrap()).collect();
-    // let headers = collect_headers(&bytes);
-    // let str = String::from_utf8_lossy(&bytes);
-    // buf_reader.lines().for_each(|result| {
-    //     let result = result.unwrap();
-    //     dbg!(&result);
-    // });
-    // @TODO Use Content-Length to read post body.
-    // let http_request: Vec<_> = buf_reader
-    //     .lines()
-    //     .map(|result| result.unwrap())
-    //     .take_while(|line| !line.is_empty())
-    //     .collect();
-    // let first_line = &http_request[0];
-    //
-    // dbg!(&http_request);
+    let size = headers
+        .get("Content-Length")
+        .unwrap()
+        .parse::<usize>()
+        .unwrap();
+    let body = read_body(&mut buf_reader, size);
 
     let status_line = "HTTP/1.1 200 OK";
     let contents = fs::read_to_string("./static/index.html").unwrap();
