@@ -7,5 +7,5 @@ use std::path::PathBuf;
 pub struct Args {
     /// Sets a custom config file
     #[arg(short, long, value_name = "FILE")]
-    config: Option<PathBuf>,
+    pub config: Option<PathBuf>,
 }

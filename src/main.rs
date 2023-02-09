@@ -15,9 +15,6 @@ mod handles;
 mod thread_pool;
 
 fn main() {
-    let args = Args::parse();
-    dbg!(&args);
-
     let config = Config::new();
 
     let env = Env::default().filter_or("RUA_LOG_LEVEL", &config.log_level);
