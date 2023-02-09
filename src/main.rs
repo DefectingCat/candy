@@ -1,3 +1,5 @@
+extern crate core;
+
 use crate::handles::handle_connection;
 use crate::thread_pool::ThreadPool;
 use config::Config;
