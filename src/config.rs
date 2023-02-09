@@ -2,10 +2,19 @@ use crate::args::Args;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::path::PathBuf;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Host {
+    listen_addr: String,
+    root_folder: PathBuf,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
     pub log_level: String,
+    // pub hosts: Vec<Host>
+    host: Host,
 }
 
 impl Config {
@@ -17,11 +26,8 @@ impl Config {
             panic!("cannot access config file!")
         };
         let config = fs::read_to_string(config_path).expect("failed to read config file.");
-        let config: Config = serde_json::from_str(&config).expect("");
+        let config: Config = serde_json::from_str(&config).expect("failed to parse config file.");
         dbg!(&config);
-
-        Self {
-            log_level: "info".to_string(),
-        }
+        config
     }
 }
