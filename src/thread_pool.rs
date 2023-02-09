@@ -13,7 +13,20 @@ pub struct ThreadPool {
 type Job = Box<dyn Send + FnOnce() + 'static>;
 
 impl ThreadPool {
+    /// Create threads.
+    /// If thread number < 1 will be create
+    /// threads with CPU thread.
     pub fn new(thread_num: usize) -> Self {
+        let thread_num = {
+            if thread_num < 1 {
+                let num = num_cpus::get();
+                info!("create {num} worker(s)");
+                num
+            } else {
+                info!("create {thread_num} worker(s)");
+                thread_num
+            }
+        };
         let (sender, receiver) = mpsc::channel::<Job>();
         let receiver = Arc::new(Mutex::new(receiver));
 
