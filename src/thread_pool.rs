@@ -9,7 +9,7 @@ impl ThreadPool {
     fn new(thread_num: u32) -> Self {
         Self {
             thread_num,
-            threads,
+            threads: vec![],
         }
     }
 }

@@ -1,5 +1,6 @@
+#[derive(Debug)]
 pub struct Config {
-    log_level: String,
+    pub log_level: String,
 }
 
 impl Config {
