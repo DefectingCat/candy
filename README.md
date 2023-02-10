@@ -17,5 +17,8 @@ A tiny web server built with Rust.
   - [x] parse json file.
   - [ ] router with config file.
 - [ ] Handle router.
+  - [ ] handle request route.
+  - [ ] handle 404 page.
 - [ ] CI build.
 - [ ] Make a new release.
+- [ ] Support virtual host.

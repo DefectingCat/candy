@@ -42,10 +42,17 @@ pub fn read_body(reader: &mut BufReader<&mut &TcpStream>, size: usize) -> Result
     Ok(String::from_utf8_lossy(&buffer).to_string())
 }
 
-pub fn handle_get(path: &PathBuf) -> Result<String> {
+/// Handle get request.
+/// @params path: static file folder path in config.
+/// @params route: request route.
+pub fn handle_get(path: &PathBuf, route: &str) -> Result<String> {
     let status_line = "HTTP/1.1 200 OK";
+    // dbg!(&path);
     let mut path = PathBuf::from(path);
+    path.push(route.replace('/', ""));
     path.push("index.html");
+    dbg!(&path);
+    debug!("{path:?}");
     let contents = fs::read_to_string(&path)?;
     let length = contents.len();
 
@@ -119,6 +126,11 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
     } else {
         return handle_error(stream);
     };
+    let route = if let Some(Some(r)) = router.get("route") {
+        **r
+    } else {
+        return handle_error(stream);
+    };
     let response = match method {
         "GET" => {
             let config = config.lock();
@@ -130,7 +142,7 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
                     return handle_error(stream);
                 }
             };
-            match handle_get(path) {
+            match handle_get(path, route) {
                 Ok(res) => res,
                 Err(err) => {
                     error!("failed to handle get {}", err.to_string());
