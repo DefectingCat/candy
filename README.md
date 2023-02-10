@@ -24,3 +24,4 @@ A tiny web server built with Rust.
 - [ ] Make a new release.
 - [ ] Support virtual host.
 - [ ] More unit test.
+- [ ] Log to file.
