@@ -25,3 +25,4 @@ A tiny web server built with Rust.
 - [ ] Support virtual host.
 - [ ] More unit test.
 - [ ] Log to file.
+- [ ] Clean up after shutdown.
