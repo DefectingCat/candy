@@ -13,14 +13,24 @@ mod thread_pool;
 
 fn main() {
     let config = Arc::new(Mutex::new(Config::new()));
-    let log_level = Arc::clone(&config).lock().unwrap().log_level.clone();
+    let log_level = config
+        .lock()
+        .expect("Can not get config file.")
+        .log_level
+        .clone();
     let env = Env::default().filter_or("RUA_LOG_LEVEL", &log_level);
     env_logger::init_from_env(env);
-    info!("server starting.");
+    info!("Server starting.");
 
     let thread_pool = ThreadPool::new(0);
 
-    let listener = TcpListener::bind("127.0.0.1:4000").expect("cannon listen on port 4000");
+    let host = &config.lock().expect("Can not get config file.").host;
+    let (addr, port) = (&host.listen_addr, &host.listen_port);
+
+    let listener = TcpListener::bind(format!("{addr}:{port}"))
+        .unwrap_or_else(|_| panic!("Can not listen on {addr}:{port}"));
+    info!("Listener on {addr}:{port}.");
+
     for stream in listener.incoming() {
         let config = Arc::clone(&config);
         let stream = stream.unwrap();

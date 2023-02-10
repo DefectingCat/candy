@@ -8,7 +8,9 @@ use std::path::PathBuf;
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Host {
     pub listen_addr: String,
+    pub listen_port: usize,
     pub root_folder: PathBuf,
+    pub not_fount_page: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

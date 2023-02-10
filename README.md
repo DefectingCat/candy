@@ -13,13 +13,13 @@ A tiny web server built with Rust.
 - [x] Threads pool.
 - [ ] CLI support.
   - [x] parse args.
-- [ ] Config file support.
+- [x] Config file support.
   - [x] parse json file.
-  - [ ] router with config file.
+  - [x] router with config file.
 - [ ] Handle router.
-  - [ ] handle request route.
-  - [ ] handle 404 page.
-  - [ ] custom 404 page.
+  - [x] handle request route.
+  - [x] handle 404 page.
+  - [x] custom 404 page.
 - [ ] CI build.
 - [ ] Make a new release.
 - [ ] Support virtual host.
