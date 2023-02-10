@@ -24,8 +24,10 @@ fn main() {
 
     let thread_pool = ThreadPool::new(0);
 
-    let host = &config.lock().expect("Can not get config file.").host;
-    let (addr, port) = (&host.listen_addr, &host.listen_port);
+    let (addr, port) = {
+        let host = &config.lock().expect("Can not get config file.").host;
+        (host.listen_addr.clone(), host.listen_port)
+    };
 
     let listener = TcpListener::bind(format!("{addr}:{port}"))
         .unwrap_or_else(|_| panic!("Can not listen on {addr}:{port}"));

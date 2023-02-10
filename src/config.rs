@@ -26,7 +26,7 @@ impl Config {
         let config_path = if let Some(path) = args.config {
             path
         } else {
-            panic!("cannot access config file!")
+            PathBuf::from("config.json")
         };
         let config = fs::read_to_string(config_path).expect("failed to read config file.");
         let config: Config = serde_json::from_str(&config).expect("failed to parse config file.");
