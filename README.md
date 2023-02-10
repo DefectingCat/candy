@@ -26,4 +26,5 @@ A tiny web server built with Rust.
 - [ ] More unit test.
 - [ ] Log to file.
 - [ ] Clean up after shutdown.
-- [ ] Dockerfile
+- [ ] Dockerfile.
+- [ ] Static file cache.
