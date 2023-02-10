@@ -1,10 +1,11 @@
 use crate::config::Config;
 use anyhow::Result;
-use log::{error, info};
+use log::{debug, error, info};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 // type Reader<'a> = &'a mut BufReader<&'a TcpStream>;
@@ -41,9 +42,11 @@ pub fn read_body(reader: &mut BufReader<&mut &TcpStream>, size: usize) -> Result
     Ok(String::from_utf8_lossy(&buffer).to_string())
 }
 
-pub fn handle_get() -> Result<String> {
+pub fn handle_get(path: &PathBuf) -> Result<String> {
     let status_line = "HTTP/1.1 200 OK";
-    let contents = fs::read_to_string("./static/index.html").unwrap();
+    let mut path = PathBuf::from(path);
+    path.push("index.html");
+    let contents = fs::read_to_string(&path)?;
     let length = contents.len();
 
     let response = format!("{status_line}\r\nContent-length: {length}\r\n\r\n{contents}");
@@ -59,6 +62,7 @@ pub fn handle_post(
         .expect("cannot read Content-Length")
         .parse::<usize>()?;
     let body = read_body(reader, size);
+    debug!("{body:?}");
 
     let status_line = "HTTP/1.1 200 OK";
     let contents = fs::read_to_string("./static/index.html").unwrap();
@@ -117,10 +121,21 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
     };
     let response = match method {
         "GET" => {
-            if let Ok(res) = handle_get() {
-                res
-            } else {
-                return handle_error(stream);
+            let config = config.lock();
+            // let path = &config.host.root_folder;
+            let path = match &config {
+                Ok(config) => &config.host.root_folder,
+                Err(err) => {
+                    error!("failed lock config {}", err.to_string());
+                    return handle_error(stream);
+                }
+            };
+            match handle_get(path) {
+                Ok(res) => res,
+                Err(err) => {
+                    error!("failed to handle get {}", err.to_string());
+                    return handle_error(stream);
+                }
             }
         }
         "POST" => {
@@ -134,4 +149,5 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
     };
 
     stream.write_all(response.as_bytes()).unwrap();
+    stream.flush().unwrap();
 }

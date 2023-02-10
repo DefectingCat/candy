@@ -7,15 +7,15 @@ use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Host {
-    listen_addr: String,
-    root_folder: PathBuf,
+    pub listen_addr: String,
+    pub root_folder: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
     pub log_level: String,
     // pub hosts: Vec<Host>
-    host: Host,
+    pub host: Host,
 }
 
 impl Config {

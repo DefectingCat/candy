@@ -15,10 +15,8 @@ mod thread_pool;
 
 fn main() {
     let config = Arc::new(Mutex::new(Config::new()));
-
-    let temp = Arc::clone(&config);
-    let log_level = &temp.lock().unwrap().log_level;
-    let env = Env::default().filter_or("RUA_LOG_LEVEL", log_level);
+    let log_level = Arc::clone(&config).lock().unwrap().log_level.clone();
+    let env = Env::default().filter_or("RUA_LOG_LEVEL", &log_level);
     env_logger::init_from_env(env);
     info!("server starting.");
 
