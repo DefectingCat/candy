@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 mod args;
 mod config;
 mod handles;
+mod logger;
 mod thread_pool;
 
 fn main() {
@@ -18,6 +19,9 @@ fn main() {
         .expect("Can not get config file.")
         .log_level
         .clone();
+
+    logger::init_logger(Arc::clone(&config)).unwrap();
+
     let env = Env::default().filter_or("RUA_LOG_LEVEL", &log_level);
     env_logger::init_from_env(env);
     info!("Server starting.");
@@ -31,7 +35,7 @@ fn main() {
 
     let listener = TcpListener::bind(format!("{addr}:{port}"))
         .unwrap_or_else(|_| panic!("Can not listen on {addr}:{port}"));
-    info!("Listener on {addr}:{port}.");
+    info!("Listen on {addr}:{port}.");
 
     for stream in listener.incoming() {
         let config = Arc::clone(&config);

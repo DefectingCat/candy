@@ -16,6 +16,7 @@ A tiny web server built with Rust.
 - [x] Config file support.
   - [x] parse json file.
   - [x] router with config file.
+  - [ ] parse thread number from config.
 - [ ] Handle router.
   - [x] handle request route.
   - [x] handle 404 page.
