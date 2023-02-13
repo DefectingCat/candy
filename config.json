@@ -4,6 +4,6 @@
     "listen_addr": "0.0.0.0",
     "listen_port": 80,
     "root_folder": "./static",
-    "not_fount_page": "404.html"
+    "not_found_page": "404.html"
   }
 }

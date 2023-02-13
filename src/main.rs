@@ -26,7 +26,8 @@ fn main() {
     env_logger::init_from_env(env);
     info!("Server starting.");
 
-    let thread_pool = ThreadPool::new(0);
+    let work_num = config.lock().expect("").works.unwrap();
+    let thread_pool = ThreadPool::new(work_num);
 
     let (addr, port) = {
         let host = &config.lock().expect("Can not get config file.").host;
