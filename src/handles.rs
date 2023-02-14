@@ -35,7 +35,7 @@ pub fn read_request(reader: &mut BufReader<&mut &TcpStream>) -> Result<String> {
     Ok(request_string)
 }
 
-/// Read request body with Content-Length.
+/// Read rest request body with Content-Length.
 pub fn read_body(reader: &mut BufReader<&mut &TcpStream>, size: usize) -> Result<String> {
     let mut buffer = vec![0; size];
     reader.read_exact(&mut buffer)?;
