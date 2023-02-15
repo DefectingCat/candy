@@ -15,7 +15,10 @@ mod thread_pool;
 fn main() {
     let config = Arc::new(Mutex::new(Config::new()));
 
-    logger::init_logger(Arc::clone(&config)).unwrap();
+    if let Err(err) = logger::init_logger(Arc::clone(&config)) {
+        error!("Failed to create logger; {}", err.to_string());
+        exit(1);
+    }
 
     info!("Server starting.");
 

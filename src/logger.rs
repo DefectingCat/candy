@@ -14,7 +14,12 @@ pub fn create_file(file_path: &PathBuf) -> Result<()> {
     if File::open(file_path).is_ok() {
         return Ok(());
     } else {
-        fs::create_dir_all(file_path.parent().expect("")).expect("");
+        fs::create_dir_all(
+            file_path
+                .parent()
+                .expect("Can not access log parent folder"),
+        )
+        .expect("Can not create log folder");
     }
     Ok(())
 }
@@ -57,7 +62,7 @@ pub fn init_logger(config: Arc<Mutex<Config>>) -> Result<()> {
                 .append(true)
                 .open(&file_path)
                 .expect("");
-            writeln!(target, "{log}").expect("TODO: panic message");
+            writeln!(target, "{log}").expect("Can not write log to file.");
             writeln!(buf, "{log}")
         })
         // .target(env_logger::Target::Pipe(target))
