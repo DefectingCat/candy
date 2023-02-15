@@ -1,7 +1,6 @@
 use crate::handles::handle_connection;
 use crate::thread_pool::ThreadPool;
 use config::Config;
-use env_logger::Env;
 use log::{error, info};
 use std::net::TcpListener;
 use std::process::exit;
