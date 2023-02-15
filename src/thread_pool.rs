@@ -6,8 +6,8 @@ use std::thread;
 
 pub struct ThreadPool {
     pub thread_num: usize,
-    pub works: Vec<Worker>,
-    sender: Sender<Job>,
+    pub workers: Vec<Worker>,
+    sender: Option<Sender<Job>>,
 }
 
 type Job = Box<dyn Send + FnOnce() + 'static>;
@@ -20,10 +20,10 @@ impl ThreadPool {
         let thread_num = {
             if thread_num < 1 {
                 let num = num_cpus::get();
-                info!("create {num} worker(s)");
+                info!("Create {num} worker(s)");
                 num
             } else {
-                info!("create {thread_num} worker(s)");
+                info!("Create {thread_num} worker(s)");
                 thread_num
             }
         };
@@ -36,22 +36,39 @@ impl ThreadPool {
         }
         Self {
             thread_num,
-            works: vec![],
-            sender,
+            workers: vec![],
+            sender: Some(sender),
         }
     }
 
     pub fn execute(&self, job: Job) {
-        match self.sender.send(job) {
-            Ok(()) => info!("string send job to worker"),
-            Err(err) => error!("failed to send job to worker {}", err.to_string()),
+        match self.sender.as_ref() {
+            Some(sender) => match sender.send(job) {
+                Ok(()) => info!("Starting send job to worker"),
+                Err(err) => error!("Failed to send job to worker {}", err.to_string()),
+            },
+            None => error!("Can not get sender"),
+        }
+    }
+}
+
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        drop(self.sender.take());
+
+        for worker in &mut self.workers {
+            info!("Shutting down worker {}", worker.id);
+
+            if let Some(worker) = worker.thread.take() {
+                worker.join().unwrap();
+            }
         }
     }
 }
 
 pub struct Worker {
     pub id: usize,
-    thread: thread::JoinHandle<()>,
+    thread: Option<thread::JoinHandle<()>>,
 }
 
 impl Worker {
@@ -62,20 +79,26 @@ impl Worker {
                 Ok(lock) => match lock.recv() {
                     Ok(job) => job,
                     Err(err) => {
-                        error!("worker {id} failed to get thread job {}", err.to_string());
-                        Box::new(|| {})
+                        error!("Worker {id} failed to get thread job {}", err.to_string());
+                        break;
                     }
                 },
                 Err(err) => {
-                    error!("worker {id} failed to get thread job {}", err.to_string());
-                    Box::new(|| {})
+                    error!(
+                        "Worker {id} failed to get thread job {}; shutting down",
+                        err.to_string()
+                    );
+                    break;
                 }
             };
-            info!("worker {id} received job; executing");
+            info!("Worker {id} received job; executing");
             job();
         };
         let thread = builder.spawn(worker_job)?;
-        info!("create worker with id {id}");
-        Ok(Self { id, thread })
+        info!("Create worker with id {id}");
+        Ok(Self {
+            id,
+            thread: Some(thread),
+        })
     }
 }

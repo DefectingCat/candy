@@ -31,9 +31,9 @@ impl Config {
         } else {
             PathBuf::from("config.json")
         };
-        let config = fs::read_to_string(config_path).expect("failed to read config file.");
+        let config = fs::read_to_string(config_path).expect("Failed to read config file.");
         let mut config: Config =
-            serde_json::from_str(&config).expect("failed to parse config file.");
+            serde_json::from_str(&config).expect("Failed to parse config file.");
 
         // Set config default value.
         if config.log_path.is_none() {
