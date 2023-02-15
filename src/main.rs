@@ -15,16 +15,9 @@ mod thread_pool;
 
 fn main() {
     let config = Arc::new(Mutex::new(Config::new()));
-    let log_level = config
-        .lock()
-        .expect("Can not get config file.")
-        .log_level
-        .clone();
 
     logger::init_logger(Arc::clone(&config)).unwrap();
 
-    let env = Env::default().filter_or("RUA_LOG_LEVEL", &log_level);
-    env_logger::init_from_env(env);
     info!("Server starting.");
 
     let work_num = config.lock().expect("").works.unwrap();

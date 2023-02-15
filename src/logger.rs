@@ -1,36 +1,20 @@
-use crate::config::Config;
-use anyhow::Result;
-use chrono::{Datelike, Local};
-use log::{error, info};
 use std::fs;
-use std::fs::File;
-use std::io::ErrorKind;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-pub fn create_file(log_path: &PathBuf) -> Result<()> {
-    let now = Local::now();
-    let filename = format!("{}-{:02}-{:02}.log", now.year(), now.month(), now.day());
-    dbg!(&now);
-    let file_path = PathBuf::from(&log_path).join(filename);
-    if File::open(&file_path).is_ok() {
+use anyhow::Result;
+use chrono::Local;
+use env_logger::{Builder, Env};
+
+use crate::config::Config;
+
+pub fn create_file(file_path: &PathBuf) -> Result<()> {
+    if File::open(file_path).is_ok() {
         return Ok(());
-    }
-    match fs::read_dir(log_path) {
-        Ok(dir) => {
-            dbg!(&dir);
-            File::create(file_path)?;
-        }
-        Err(err) => match err.kind() {
-            ErrorKind::NotFound => {
-                info!("Log folder not exist; creating");
-                fs::create_dir(log_path)?;
-                File::create(file_path)?;
-            }
-            _ => {
-                error!("{}", err.to_string());
-            }
-        },
+    } else {
+        fs::create_dir_all(file_path.parent().expect("")).expect("");
     }
     Ok(())
 }
@@ -46,7 +30,39 @@ pub fn init_logger(config: Arc<Mutex<Config>>) -> Result<()> {
     } else {
         panic!("Can not access log path")
     };
-    create_file(&log_path).unwrap();
+
+    let now = Local::now();
+    let formatted = format!("{}.log", now.format("%Y-%m-%d"));
+    let file_path = PathBuf::from(&log_path).join(formatted);
+    create_file(&file_path)?;
+
+    let log_level = config
+        .lock()
+        .expect("Can not get config file.")
+        .log_level
+        .clone();
+
+    let env = Env::default().filter_or("RUA_LOG_LEVEL", &log_level);
+    let mut builder = Builder::from_env(env);
+
+    builder
+        .format(move |buf, record| {
+            let formatted = format!("{}", now.format("%Y-%m-%d %H:%M:%S"));
+            let log = format!("{} - {} - {}", formatted, record.level(), record.args());
+
+            let mut target = OpenOptions::new()
+                .write(true)
+                .read(true)
+                .create(true)
+                .append(true)
+                .open(&file_path)
+                .expect("");
+            writeln!(target, "{log}").expect("TODO: panic message");
+            writeln!(buf, "{log}")
+        })
+        // .target(env_logger::Target::Pipe(target))
+        // .filter(None, LevelFilter::Info)
+        .init();
 
     Ok(())
 }
