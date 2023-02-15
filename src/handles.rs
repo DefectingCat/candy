@@ -170,7 +170,7 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
                             }
                         }
                         _ => {
-                            error!("failed to handle get: {}", err.to_string());
+                            error!("Failed to handle get: {}", err.to_string());
                             handle_error(stream)
                         }
                     }

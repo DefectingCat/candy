@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{error, info};
+use log::{debug, error, info};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -44,7 +44,7 @@ impl ThreadPool {
     pub fn execute(&self, job: Job) {
         match self.sender.as_ref() {
             Some(sender) => match sender.send(job) {
-                Ok(()) => info!("Starting send job to worker"),
+                Ok(()) => debug!("Starting send job to worker"),
                 Err(err) => error!("Failed to send job to worker {}", err.to_string()),
             },
             None => error!("Can not get sender"),
@@ -91,7 +91,7 @@ impl Worker {
                     break;
                 }
             };
-            info!("Worker {id} received job; executing");
+            debug!("Worker {id} received job; executing");
             job();
         };
         let thread = builder.spawn(worker_job)?;
