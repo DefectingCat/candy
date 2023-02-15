@@ -48,3 +48,26 @@ impl Config {
         config
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::config::Config;
+
+    #[test]
+    fn create_config() {
+        let config = Config::new();
+        dbg!(&config);
+    }
+
+    #[test]
+    fn default_workers() {
+        let config = Config::new();
+        assert_eq!(0, config.works.unwrap());
+    }
+
+    #[test]
+    fn default_log_path() {
+        let config = Config::new();
+        assert_eq!("./logs", config.log_path.unwrap().to_string_lossy());
+    }
+}
