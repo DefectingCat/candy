@@ -2,8 +2,9 @@ use crate::handles::handle_connection;
 use crate::thread_pool::ThreadPool;
 use config::Config;
 use env_logger::Env;
-use log::info;
+use log::{error, info};
 use std::net::TcpListener;
+use std::process::exit;
 use std::sync::{Arc, Mutex};
 
 mod args;
@@ -34,8 +35,10 @@ fn main() {
         (host.listen_addr.clone(), host.listen_port)
     };
 
-    let listener = TcpListener::bind(format!("{addr}:{port}"))
-        .unwrap_or_else(|_| panic!("Can not listen on {addr}:{port}"));
+    let listener = TcpListener::bind(format!("{addr}:{port}")).unwrap_or_else(|err| {
+        error!("Can not listen on {addr}:{port}; {}", err.to_string());
+        exit(1);
+    });
     info!("Listen on {addr}:{port}.");
 
     for stream in listener.incoming() {
