@@ -1,12 +1,14 @@
-use crate::config::Config;
-use anyhow::{Context, Result};
-use log::{debug, error, info};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Error, ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+
+use anyhow::{Context, Result};
+use log::{debug, error, info};
+
+use crate::config::Config;
 
 // type Reader<'a> = &'a mut BufReader<&'a TcpStream>;
 

@@ -1,9 +1,11 @@
-use anyhow::Result;
-use log::{debug, error, info};
+use std::sync::{Arc, mpsc, Mutex};
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
+use anyhow::Result;
+use log::{debug, error, info};
+
+#[derive(Debug)]
 pub struct ThreadPool {
     pub thread_num: usize,
     pub workers: Vec<Worker>,
@@ -30,13 +32,13 @@ impl ThreadPool {
         let (sender, receiver) = mpsc::channel::<Job>();
         let receiver = Arc::new(Mutex::new(receiver));
 
-        let mut works = Vec::with_capacity(thread_num);
+        let mut workers = Vec::with_capacity(thread_num);
         for id in 0..thread_num {
-            works.push(Worker::new(id, Arc::clone(&receiver)))
+            workers.push(Worker::new(id, Arc::clone(&receiver)).unwrap())
         }
         Self {
             thread_num,
-            workers: vec![],
+            workers,
             sender: Some(sender),
         }
     }
@@ -50,10 +52,8 @@ impl ThreadPool {
             None => error!("Can not get sender"),
         }
     }
-}
 
-impl Drop for ThreadPool {
-    fn drop(&mut self) {
+    pub fn exit(&mut self) {
         drop(self.sender.take());
 
         for worker in &mut self.workers {
@@ -66,6 +66,13 @@ impl Drop for ThreadPool {
     }
 }
 
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        self.exit();
+    }
+}
+
+#[derive(Debug)]
 pub struct Worker {
     pub id: usize,
     thread: Option<thread::JoinHandle<()>>,
@@ -78,8 +85,11 @@ impl Worker {
             let job = match receiver.lock() {
                 Ok(lock) => match lock.recv() {
                     Ok(job) => job,
-                    Err(err) => {
-                        error!("Worker {id} failed to get thread job {}", err.to_string());
+                    Err(_) => {
+                        // error!(
+                        //     "Worker {id} failed to get thread job {}; shutting down",
+                        //     err.to_string()
+                        // );
                         break;
                     }
                 },

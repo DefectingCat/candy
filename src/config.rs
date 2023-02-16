@@ -1,9 +1,11 @@
-use crate::args::Args;
+use std::fs;
+use std::path::PathBuf;
+
 use clap::Parser;
 use log::debug;
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::PathBuf;
+
+use crate::args::Args;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Host {
