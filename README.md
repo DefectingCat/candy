@@ -24,8 +24,11 @@ A tiny web server built with Rust.
 - [ ] CI build.
 - [ ] Make a new release.
 - [ ] Support virtual host.
+  - [x] support virtual host.
+  - [ ] support multiple virtual hosts.
 - [ ] More unit test.
 - [ ] Log to file.
 - [ ] Clean up after shutdown.
 - [ ] Dockerfile.
 - [ ] Static file cache.
+- [ ] Async IO.
