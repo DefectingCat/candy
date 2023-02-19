@@ -1,5 +1,5 @@
-use std::sync::{Arc, mpsc, Mutex};
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
 use anyhow::Result;
@@ -21,10 +21,11 @@ impl ThreadPool {
     pub fn new(thread_num: usize) -> Self {
         let thread_num = {
             if thread_num < 1 {
-                let num = num_cpus::get();
+                let num = num_cpus::get() - 1;
                 info!("Create {num} worker(s)");
                 num
             } else {
+                let thread_num = if thread_num > 1 { thread_num - 1 } else { 1 };
                 info!("Create {thread_num} worker(s)");
                 thread_num
             }
