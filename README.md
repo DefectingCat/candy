@@ -26,8 +26,9 @@ A tiny web server built with Rust.
 - [ ] Support virtual host.
   - [x] support virtual host.
   - [ ] support multiple virtual hosts.
+- [ ] Styled logo.
 - [ ] More unit test.
-- [ ] Log to file.
+- [x] Log to file.
 - [ ] Clean up after shutdown.
 - [ ] Dockerfile.
 - [ ] Static file cache.
