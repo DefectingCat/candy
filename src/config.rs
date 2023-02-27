@@ -1,4 +1,5 @@
 use std::fs;
+use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -39,11 +40,16 @@ impl Config {
 
         // Set config default value.
         if config.log_path.is_none() {
-            config.log_path = Some(PathBuf::from("./logs"));
+            config.log_path = Some(PathBuf::from("/tmp/candy/logs"));
         }
         // Set thread numbers to 0 to use all CPU threads.
         if config.works.is_none() {
             config.works = Some(0);
+        }
+        // Check static folder
+        let root_folder = &config.host.root_folder;
+        if fs::read_dir(root_folder).is_err() {
+            fs::create_dir_all(root_folder).expect("Can not create root folder.")
         }
 
         debug!("{config:?}");

@@ -3,7 +3,7 @@
   "host": {
     "listen_addr": "0.0.0.0",
     "listen_port": 80,
-    "root_folder": "./static",
+    "root_folder": "/tmp/candy",
     "not_found_page": "404.html"
   }
 }
