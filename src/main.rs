@@ -13,6 +13,7 @@ use crate::thread_pool::ThreadPool;
 
 mod args;
 mod config;
+mod frame;
 mod handles;
 mod logger;
 mod thread_pool;
