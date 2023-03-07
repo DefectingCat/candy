@@ -34,9 +34,8 @@ impl Error for FrameError {
 }
 
 pub struct HttpFrame {
-    request_str: String,
+    pub request_str: String,
     pub headers: HashMap<String, String>,
-    pub first_line: String,
     pub router: HashMap<&'static str, Option<String>>,
 }
 
@@ -60,25 +59,26 @@ impl HttpFrame {
                 return Err(FrameError::new("failed to parse request method"));
             }
         };
-
         let headers = collect_headers(&request);
 
         let mut router: HashMap<&'static str, Option<String>> = HashMap::new();
-        let first_line = first_line.clone();
-        let mut inline_first_line: Vec<_> =
-            first_line.split(' ').map(|txt| String::from(txt)).collect();
-
-        if let Some(method) = inline_first_line.first() {
-            router.insert("method", Some(method.clone()));
-        }
-        if let Some(path) = inline_first_line.get(1) {
-            router.insert("path", Some(path.clone()));
-        }
+        let inline_first_line: Vec<_> = first_line.split(' ').collect();
+        let method = if let Some(m) = inline_first_line.first() {
+            Some((**m).to_owned())
+        } else {
+            None
+        };
+        let path = if let Some(p) = inline_first_line.get(1) {
+            Some((**p).to_owned())
+        } else {
+            None
+        };
+        router.insert("method", method);
+        router.insert("path", path);
 
         Ok(Self {
             request_str,
             headers,
-            first_line,
             router,
         })
     }
