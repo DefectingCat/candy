@@ -51,16 +51,16 @@ impl HttpFrame {
 
         // Read string to lines.
         let request: Vec<_> = request_str.lines().collect();
+        let headers = collect_headers(&request);
+
         // HTTP method in first line.
         let first_line = match request.first() {
-            Some(res) => String::from(*res),
+            Some(res) => (*res).to_string(),
             None => {
                 error!("failed to parse request method");
                 return Err(FrameError::new("failed to parse request method"));
             }
         };
-        let headers = collect_headers(&request);
-
         let mut router: HashMap<&'static str, Option<String>> = HashMap::new();
         let inline_first_line: Vec<_> = first_line.split(' ').collect();
         let method = if let Some(m) = inline_first_line.first() {

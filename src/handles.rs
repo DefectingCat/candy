@@ -95,25 +95,16 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
         }
     };
 
-    // Read string to lines.
-    let request: Vec<_> = request_str.lines().collect();
-    // HTTP method in first line.
-    let first_line = match request.first() {
-        Some(res) => *res,
-        None => {
-            error!("failed to parse request method");
-            return handle_error(stream);
-        }
-    };
-
-    // Print request log.
-    let mut log_info = format!("\"{first_line}\"");
-    ["Host", "User-Agent"].iter().for_each(|name| {
-        if let Some(info) = headers.get(*name) {
-            log_info.push_str(&format!(" - \"{info}\""))
-        }
-    });
-    info!("{log_info}");
+    if let Some(line) = request_str.lines().next() {
+        // Print request log.
+        let mut log_info = format!("\"{line}\"");
+        ["Host", "User-Agent"].iter().for_each(|name| {
+            if let Some(info) = headers.get(*name) {
+                log_info.push_str(&format!(" - \"{info}\""))
+            }
+        });
+        info!("{log_info}");
+    }
 
     // Parse request headers.
     let method = if let Some(Some(m)) = router.get("method") {
