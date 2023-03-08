@@ -2,36 +2,11 @@ use anyhow::Result;
 use log::error;
 use std::{
     collections::HashMap,
-    error::Error,
-    fmt::Display,
     io::{BufRead, BufReader},
     net::TcpStream,
 };
 
-#[derive(Debug)]
-pub struct FrameError {
-    details: String,
-}
-
-impl FrameError {
-    fn new(msg: &str) -> Self {
-        Self {
-            details: msg.to_string(),
-        }
-    }
-}
-
-impl Display for FrameError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.details)
-    }
-}
-
-impl Error for FrameError {
-    fn description(&self) -> &str {
-        return &self.details;
-    }
-}
+use crate::error::CandyError;
 
 pub struct HttpFrame {
     pub request_str: String,
@@ -40,12 +15,12 @@ pub struct HttpFrame {
 }
 
 impl HttpFrame {
-    pub fn new(reader: &mut BufReader<&mut &TcpStream>) -> Result<Self, FrameError> {
+    pub fn new(reader: &mut BufReader<&mut &TcpStream>) -> Result<Self, CandyError> {
         let request_str = match read_request(reader) {
             Ok(str) => str,
             Err(err) => {
                 error!("{:?}", err);
-                return Err(FrameError::new(&err.to_string()));
+                return Err(CandyError::Parse(err.to_string()));
             }
         };
 
@@ -58,7 +33,9 @@ impl HttpFrame {
             Some(res) => (*res).to_string(),
             None => {
                 error!("failed to parse request method");
-                return Err(FrameError::new("failed to parse request method"));
+                return Err(CandyError::Parse(
+                    "failed to parse request method".to_string(),
+                ));
             }
         };
         let mut router: HashMap<&'static str, Option<String>> = HashMap::new();
