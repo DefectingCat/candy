@@ -112,7 +112,7 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
     } else {
         return handle_error(stream);
     };
-    let route = if let Some(Some(r)) = router.get("route") {
+    let route = if let Some(Some(r)) = router.get("path") {
         &r[..]
     } else {
         return handle_error(stream);
