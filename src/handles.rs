@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader, Error, ErrorKind, Read, Write};
+use std::io::{BufReader, Error, ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -9,33 +9,9 @@ use anyhow::{Context, Result};
 use log::{debug, error, info};
 
 use crate::config::Config;
+use crate::frame::HttpFrame;
 
 // type Reader<'a> = &'a mut BufReader<&'a TcpStream>;
-
-/// Collect request string with Hashmap to headers.
-pub fn collect_headers(request: &[&str]) -> HashMap<String, String> {
-    let mut headers = HashMap::new();
-    request.iter().for_each(|header| {
-        if let Some(head) = header.split_once(": ") {
-            headers
-                .entry(head.0.to_string())
-                .or_insert(head.1.to_string());
-        }
-    });
-    headers
-}
-
-/// Read http request to string.
-pub fn read_request(reader: &mut BufReader<&mut &TcpStream>) -> Result<String> {
-    let mut request_string = String::new();
-    loop {
-        let byte = reader.read_line(&mut request_string)?;
-        if byte < 3 {
-            break;
-        }
-    }
-    Ok(request_string)
-}
 
 /// Read rest request body with Content-Length.
 pub fn read_body(reader: &mut BufReader<&mut &TcpStream>, size: usize) -> Result<String> {
@@ -106,16 +82,21 @@ pub fn handle_not_found(path: &PathBuf, mut stream: &TcpStream) {
 
 pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
     let mut buf_reader = BufReader::new(&mut stream);
-    // Read http request bytes to string.
-    let request_string = match read_request(&mut buf_reader) {
-        Ok(res) => res,
+
+    let HttpFrame {
+        request_str,
+        headers,
+        router,
+    } = match HttpFrame::new(&mut buf_reader) {
+        Ok(frame) => frame,
         Err(err) => {
-            error!("failed to parse request {}", err.to_string());
+            error!("{:?}", err.to_string());
             return handle_error(stream);
         }
     };
+
     // Read string to lines.
-    let request: Vec<_> = request_string.lines().collect();
+    let request: Vec<_> = request_str.lines().collect();
     // HTTP method in first line.
     let first_line = match request.first() {
         Some(res) => *res,
@@ -124,7 +105,6 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
             return handle_error(stream);
         }
     };
-    let headers = collect_headers(&request);
 
     // Print request log.
     let mut log_info = format!("\"{first_line}\"");
@@ -135,19 +115,14 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
     });
     info!("{log_info}");
 
-    let mut router = HashMap::new();
-    let first_line: Vec<_> = first_line.split(' ').collect();
-    router.insert("method", first_line.first());
-    router.insert("route", first_line.get(1));
-
     // Parse request headers.
     let method = if let Some(Some(m)) = router.get("method") {
-        **m
+        &m[..]
     } else {
         return handle_error(stream);
     };
     let route = if let Some(Some(r)) = router.get("route") {
-        **r
+        &r[..]
     } else {
         return handle_error(stream);
     };

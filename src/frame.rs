@@ -40,7 +40,7 @@ pub struct HttpFrame {
 }
 
 impl HttpFrame {
-    fn new(reader: &mut BufReader<&mut &TcpStream>) -> Result<Self, FrameError> {
+    pub fn new(reader: &mut BufReader<&mut &TcpStream>) -> Result<Self, FrameError> {
         let request_str = match read_request(reader) {
             Ok(str) => str,
             Err(err) => {
@@ -64,12 +64,12 @@ impl HttpFrame {
         let mut router: HashMap<&'static str, Option<String>> = HashMap::new();
         let inline_first_line: Vec<_> = first_line.split(' ').collect();
         let method = if let Some(m) = inline_first_line.first() {
-            Some((**m).to_owned())
+            Some((**m).to_string())
         } else {
             None
         };
         let path = if let Some(p) = inline_first_line.get(1) {
-            Some((**p).to_owned())
+            Some((**p).to_string())
         } else {
             None
         };
