@@ -28,8 +28,11 @@ pub fn read_body(reader: &mut BufReader<&mut &TcpStream>, size: usize) -> Result
 pub fn handle_get(path: &PathBuf, route: &str) -> Result<String, CandyError> {
     let status_line = "HTTP/1.1 200 OK";
     let mut path = PathBuf::from(path);
+    let is_file = route.ends_with(".html");
     path.push(route.replace('/', ""));
-    path.push("index.html");
+    if !is_file {
+        path.push("index.html");
+    }
     debug!("{path:?}");
 
     let contents = match fs::read_to_string(&path) {
