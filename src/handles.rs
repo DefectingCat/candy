@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufReader, Error, ErrorKind, Read, Write};
+use std::io::{BufReader, ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -9,6 +9,7 @@ use anyhow::{Context, Result};
 use log::{debug, error, info};
 
 use crate::config::Config;
+use crate::error::CandyError;
 use crate::frame::HttpFrame;
 
 // type Reader<'a> = &'a mut BufReader<&'a TcpStream>;
@@ -23,14 +24,25 @@ pub fn read_body(reader: &mut BufReader<&mut &TcpStream>, size: usize) -> Result
 /// Handle get request.
 /// @params path: static file folder path in config.
 /// @params route: request route.
-pub fn handle_get(path: &PathBuf, route: &str) -> Result<String> {
+pub fn handle_get(path: &PathBuf, route: &str) -> Result<String, CandyError> {
     let status_line = "HTTP/1.1 200 OK";
     let mut path = PathBuf::from(path);
     path.push(route.replace('/', ""));
     path.push("index.html");
     debug!("{path:?}");
-    let contents =
-        fs::read_to_string(&path).with_context(|| format!("Can not read file {path:?}"))?;
+
+    let contents = match fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(err) => {
+            debug!("{err:?}");
+            match err.kind() {
+                ErrorKind::NotFound => {
+                    return Err(CandyError::NotFound(err));
+                }
+                _ => return Err(CandyError::Unknown),
+            }
+        }
+    };
     let length = contents.len();
 
     let response = format!("{status_line}\r\nContent-length: {length}\r\n\r\n{contents}");
@@ -131,11 +143,9 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
             match handle_get(path, route) {
                 Ok(res) => res,
                 Err(err) => {
-                    return match err.downcast_ref::<Error>() {
-                        Some(error) => {
-                            if let ErrorKind::NotFound = error.kind() {
-                                return handle_not_found(path, stream);
-                            }
+                    return match err {
+                        CandyError::NotFound(_) => {
+                            return handle_not_found(path, stream);
                         }
                         _ => {
                             error!("Failed to handle get: {}", err.to_string());
