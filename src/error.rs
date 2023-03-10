@@ -10,9 +10,8 @@ pub enum CandyError {
     #[error("page not found")]
     NotFound(#[from] io::Error),
 
-    #[error("invalid header (expected {expected:?}, found {found:?})")]
-    InvalidHeader { expected: String, found: String },
-
+    // #[error("invalid header (expected {expected:?}, found {found:?})")]
+    // InvalidHeader { expected: String, found: String },
     #[error("unknown data store error")]
     Unknown,
 }

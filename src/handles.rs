@@ -5,10 +5,11 @@ use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use log::{debug, error, info};
 
 use crate::config::Config;
+use crate::consts::NOT_FOUND;
 use crate::error::CandyError;
 use crate::frame::HttpFrame;
 
@@ -79,14 +80,17 @@ pub fn handle_not_found(path: &PathBuf, mut stream: &TcpStream) {
 
     let mut path = PathBuf::from(path);
     path.push("404.html");
-    let contents =
-        match fs::read_to_string(&path).with_context(|| format!("Can not read file {path:?}")) {
-            Ok(c) => c,
-            Err(err) => {
-                error!("{}", err.to_string());
+
+    let contents = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(err) => match err.kind() {
+            ErrorKind::NotFound => NOT_FOUND.to_string(),
+            _ => {
+                debug!("{err:?}");
                 return handle_error(stream);
             }
-        };
+        },
+    };
     let length = contents.len();
     let response = format!("{status_line}\r\nContent-length: {length}\r\n\r\n{contents}");
     stream.write_all(response.as_bytes()).unwrap();
