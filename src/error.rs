@@ -1,5 +1,3 @@
-use std::io;
-
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -8,7 +6,8 @@ pub enum CandyError {
     Parse(String),
 
     #[error("page not found")]
-    NotFound(#[from] io::Error),
+    // NotFound(#[from] io::Error),
+    NotFound,
 
     // #[error("invalid header (expected {expected:?}, found {found:?})")]
     // InvalidHeader { expected: String, found: String },

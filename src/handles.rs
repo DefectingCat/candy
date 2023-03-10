@@ -1,6 +1,5 @@
-use std::collections::HashMap;
 use std::fs;
-use std::io::{BufReader, ErrorKind, Read, Write};
+use std::io::{BufReader, ErrorKind, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -9,44 +8,64 @@ use anyhow::Result;
 use log::{debug, error, info};
 
 use crate::config::Config;
-use crate::consts::{NOT_FOUND, STATIC_FILE_TYPE};
+use crate::consts::{IMAGE_FILE, NOT_FOUND, STATIC_FILE_TYPE};
 use crate::error::CandyError;
 use crate::frame::HttpFrame;
 
 // type Reader<'a> = &'a mut BufReader<&'a TcpStream>;
 
-/// Read rest request body with Content-Length.
-pub fn read_body(reader: &mut BufReader<&mut &TcpStream>, size: usize) -> Result<String> {
-    let mut buffer = vec![0; size];
-    reader.read_exact(&mut buffer)?;
-    Ok(String::from_utf8_lossy(&buffer).to_string())
-}
+// /// Read rest request body with Content-Length.
+// pub fn read_body(reader: &mut BufReader<&mut &TcpStream>, size: usize) -> Result<String> {
+//     let mut buffer = vec![0; size];
+//     reader.read_exact(&mut buffer)?;
+//     Ok(String::from_utf8_lossy(&buffer).to_string())
+// }
 
 /// Handle get request.
-/// @params path: static file folder path in config.
-/// @params route: request route.
-pub fn handle_get(path: &PathBuf, route: &str, try_index: bool) -> Result<String, CandyError> {
+/// params path: static file folder path in config.
+/// params route: request route.
+pub fn handle_get(
+    path: &PathBuf,
+    route: &str,
+    try_index: bool,
+) -> Result<(String, Vec<u8>), CandyError> {
     let status_line = "HTTP/1.1 200 OK";
     let mut path = PathBuf::from(path);
     let is_file = if try_index {
         false
     } else {
         STATIC_FILE_TYPE.iter().any(|t| route.ends_with(t))
+            || IMAGE_FILE.iter().any(|t| route.ends_with(t))
     };
+    let file_type = if is_file {
+        let ext: Vec<_> = route.split('.').collect();
+        if let Some(ex) = ext.last() {
+            dbg!(&ex);
+            match *ex {
+                "png" | "jpg" => format!("image/{ex}"),
+                "html" | "css" => format!("text/{ex}"),
+                _ => return Err(CandyError::Unknown),
+            }
+        } else {
+            return Err(CandyError::Unknown);
+        }
+    } else {
+        format!("text/html")
+    };
+    debug!("{file_type}");
     path.push(route.replacen("/", "", 1));
     if !is_file {
         path.push("index.html");
     }
     debug!("{path:?}");
 
-    let contents = match fs::read_to_string(&path) {
+    let contents = match fs::read(&path) {
         Ok(content) => content,
         Err(err) => {
-            dbg!(&err);
             debug!("{err:?}");
             match err.kind() {
                 ErrorKind::NotFound => {
-                    return Err(CandyError::NotFound(err));
+                    return Err(CandyError::NotFound);
                 }
                 _ => return Err(CandyError::Unknown),
             }
@@ -54,28 +73,29 @@ pub fn handle_get(path: &PathBuf, route: &str, try_index: bool) -> Result<String
     };
     let length = contents.len();
 
-    let response = format!("{status_line}\r\nContent-length: {length}\r\n\r\n{contents}");
-    Ok(response)
+    let response =
+        format!("{status_line}\r\nContent-length: {length}\r\nContent-type: {file_type}\r\n\r\n");
+    Ok((response, contents))
 }
 
-pub fn handle_post(
-    reader: &mut BufReader<&mut &TcpStream>,
-    headers: &HashMap<String, String>,
-) -> Result<String> {
-    let size = headers
-        .get("Content-Length")
-        .expect("cannot read Content-Length")
-        .parse::<usize>()?;
-    let body = read_body(reader, size);
-    debug!("{body:?}");
-
-    let status_line = "HTTP/1.1 200 OK";
-    let contents = fs::read_to_string("./static/index.html")?;
-    let length = contents.len();
-
-    let response = format!("{status_line}\r\nContent-length: {length}\r\n\r\n{contents}");
-    Ok(response)
-}
+// pub fn handle_post(
+//     reader: &mut BufReader<&mut &TcpStream>,
+//     headers: &HashMap<String, String>,
+// ) -> Result<String> {
+//     let size = headers
+//         .get("Content-Length")
+//         .expect("cannot read Content-Length")
+//         .parse::<usize>()?;
+//     let body = read_body(reader, size);
+//     debug!("{body:?}");
+//
+//     let status_line = "HTTP/1.1 200 OK";
+//     let contents = fs::read_to_string("./static/index.html")?;
+//     let length = contents.len();
+//
+//     let response = format!("{status_line}\r\nContent-length: {length}\r\n\r\n{contents}");
+//     Ok(response)
+// }
 
 pub fn handle_error(mut stream: &TcpStream) {
     let status_line = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
@@ -169,10 +189,11 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
                 Ok(res) => res,
                 Err(err) => {
                     return match err {
-                        CandyError::NotFound(_) => {
+                        CandyError::NotFound => {
                             return handle_not_found(path, stream);
                         }
                         _ => {
+                            dbg!(&err);
                             error!("Failed to handle get: {}", err.to_string());
                             handle_error(stream)
                         }
@@ -180,16 +201,17 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
                 }
             }
         }
-        "POST" => {
-            if let Ok(res) = handle_post(&mut buf_reader, &headers) {
-                res
-            } else {
-                return handle_error(stream);
-            }
-        }
+        // "POST" => {
+        //     if let Ok(res) = handle_post(&mut buf_reader, &headers) {
+        //         res
+        //     } else {
+        //         return handle_error(stream);
+        //     }
+        // }
         _ => return handle_error(stream),
     };
 
-    stream.write_all(response.as_bytes()).unwrap();
-    stream.flush().unwrap();
+    stream.write(response.0.as_bytes()).unwrap();
+    stream.write(&response.1).unwrap();
+    // stream.flush().unwrap();
 }
