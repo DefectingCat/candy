@@ -1,5 +1,5 @@
 use std::fs;
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -11,7 +11,7 @@ use env_logger::{Builder, Env};
 use crate::config::Config;
 
 pub fn create_file(file_path: &PathBuf) -> Result<()> {
-    if File::open(file_path).is_ok() {
+    if file_path.exists() {
         return Ok(());
     } else {
         fs::create_dir_all(
