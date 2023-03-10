@@ -25,10 +25,14 @@ pub fn read_body(reader: &mut BufReader<&mut &TcpStream>, size: usize) -> Result
 /// Handle get request.
 /// @params path: static file folder path in config.
 /// @params route: request route.
-pub fn handle_get(path: &PathBuf, route: &str) -> Result<String, CandyError> {
+pub fn handle_get(path: &PathBuf, route: &str, try_index: bool) -> Result<String, CandyError> {
     let status_line = "HTTP/1.1 200 OK";
     let mut path = PathBuf::from(path);
-    let is_file = route.ends_with(".html");
+    let is_file = if try_index {
+        false
+    } else {
+        route.ends_with(".html")
+    };
     path.push(route.replace('/', ""));
     if !is_file {
         path.push("index.html");
@@ -150,7 +154,17 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
                     return handle_error(stream);
                 }
             };
-            match handle_get(path, route) {
+            let try_index = match &config {
+                Ok(config) => match &config.host.try_index {
+                    Some(try_index) => *try_index,
+                    None => return handle_error(stream),
+                },
+                Err(err) => {
+                    error!("failed lock config {}", err.to_string());
+                    return handle_error(stream);
+                }
+            };
+            match handle_get(path, route, try_index) {
                 Ok(res) => res,
                 Err(err) => {
                     return match err {
