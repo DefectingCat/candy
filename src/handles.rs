@@ -9,7 +9,7 @@ use anyhow::Result;
 use log::{debug, error, info};
 
 use crate::config::Config;
-use crate::consts::NOT_FOUND;
+use crate::consts::{NOT_FOUND, STATIC_FILE_TYPE};
 use crate::error::CandyError;
 use crate::frame::HttpFrame;
 
@@ -31,9 +31,9 @@ pub fn handle_get(path: &PathBuf, route: &str, try_index: bool) -> Result<String
     let is_file = if try_index {
         false
     } else {
-        route.ends_with(".html")
+        STATIC_FILE_TYPE.iter().any(|t| route.ends_with(t))
     };
-    path.push(route.replace('/', ""));
+    path.push(route.replacen("/", "", 1));
     if !is_file {
         path.push("index.html");
     }
@@ -42,6 +42,7 @@ pub fn handle_get(path: &PathBuf, route: &str, try_index: bool) -> Result<String
     let contents = match fs::read_to_string(&path) {
         Ok(content) => content,
         Err(err) => {
+            dbg!(&err);
             debug!("{err:?}");
             match err.kind() {
                 ErrorKind::NotFound => {
