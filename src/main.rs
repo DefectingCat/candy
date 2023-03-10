@@ -36,7 +36,17 @@ fn main() {
     let thread_pool = Arc::new(Mutex::new(ThreadPool::new(work_num)));
     let (addr, port) = {
         let host = &config.lock().expect("Can not get config file.").host;
-        (host.listen_addr.clone(), host.listen_port)
+        let addr = if let Some(addr) = &host.listen_addr {
+            addr.clone()
+        } else {
+            exit(1);
+        };
+        let port = if let Some(port) = host.listen_port {
+            port
+        } else {
+            exit(1);
+        };
+        (addr, port)
     };
     let listener = TcpListener::bind(format!("{addr}:{port}")).unwrap_or_else(|err| {
         error!("Can not listen on {addr}:{port}; {}", err.to_string());

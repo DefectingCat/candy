@@ -9,10 +9,11 @@ use crate::args::Args;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Host {
-    pub listen_addr: String,
-    pub listen_port: usize,
-    pub root_folder: PathBuf,
-    pub not_found_page: String,
+    pub listen_addr: Option<String>,
+    pub listen_port: Option<usize>,
+    pub root_folder: Option<PathBuf>,
+    pub not_found_page: Option<String>,
+    pub try_index: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -45,10 +46,29 @@ impl Config {
         if config.works.is_none() {
             config.works = Some(0);
         }
+
+        let mut host = &mut config.host;
         // Check static folder
-        let root_folder = &config.host.root_folder;
+
+        let path = PathBuf::from("/tmp/candy/html");
+        let root_folder = if let Some(folder) = &host.root_folder {
+            folder
+        } else {
+            host.root_folder = Some(path.clone());
+            &path
+        };
         if fs::read_dir(root_folder).is_err() {
             fs::create_dir_all(root_folder).expect("Can not create root folder.")
+        }
+
+        if host.listen_addr.is_none() {
+            host.listen_addr = Some("0.0.0.0".to_string())
+        }
+        if host.listen_port.is_none() {
+            host.listen_port = Some(80)
+        }
+        if host.try_index.is_none() {
+            host.try_index = Some(false)
         }
 
         debug!("{config:?}");
@@ -75,6 +95,9 @@ mod tests {
     #[test]
     fn default_log_path() {
         let config = Config::new();
-        assert_eq!("./logs", config.log_path.unwrap().to_string_lossy());
+        assert_eq!(
+            "/tmp/candy/logs",
+            config.log_path.unwrap().to_string_lossy()
+        );
     }
 }

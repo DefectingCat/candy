@@ -138,7 +138,10 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
             let config = config.lock();
             // let path = &config.host.root_folder;
             let path = match &config {
-                Ok(config) => &config.host.root_folder,
+                Ok(config) => match &config.host.root_folder {
+                    Some(path) => path,
+                    None => return handle_error(stream),
+                },
                 Err(err) => {
                     error!("failed lock config {}", err.to_string());
                     return handle_error(stream);
