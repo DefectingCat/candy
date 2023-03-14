@@ -40,11 +40,15 @@ pub fn handle_get(
     let file_type = if is_file {
         let ext: Vec<_> = route.split('.').collect();
         if let Some(ex) = ext.last() {
-            dbg!(&ex);
             match *ex {
                 "png" | "jpg" => format!("image/{ex}"),
+                "svg" => format!("image/svg+xml"),
                 "html" | "css" => format!("text/{ex}"),
-                _ => return Err(CandyError::Unknown),
+                _ => {
+                    return Err(CandyError::UnknownFileType {
+                        file: ex.to_string(),
+                    })
+                }
             }
         } else {
             return Err(CandyError::Unknown);
@@ -131,7 +135,7 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
         request_str,
         headers,
         router,
-    } = match HttpFrame::new(&mut buf_reader) {
+    } = match HttpFrame::build(&mut buf_reader) {
         Ok(frame) => frame,
         Err(err) => {
             error!("{:?}", err.to_string());
@@ -192,8 +196,13 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
                         CandyError::NotFound => {
                             return handle_not_found(path, stream);
                         }
+                        CandyError::UnknownFileType { file } => {
+                            debug!("{file:?}");
+                            error!("Get Unknown file: {}", file);
+                            return handle_error(stream);
+                        }
                         _ => {
-                            dbg!(&err);
+                            debug!("{err:?}");
                             error!("Failed to handle get: {}", err.to_string());
                             handle_error(stream)
                         }

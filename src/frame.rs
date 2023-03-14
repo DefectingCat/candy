@@ -15,7 +15,7 @@ pub struct HttpFrame {
 }
 
 impl HttpFrame {
-    pub fn new(reader: &mut BufReader<&mut &TcpStream>) -> Result<Self, CandyError> {
+    pub fn build(reader: &mut BufReader<&mut &TcpStream>) -> Result<Self, CandyError> {
         let request_str = match read_request(reader) {
             Ok(str) => str,
             Err(err) => {
