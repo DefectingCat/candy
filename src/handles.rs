@@ -29,7 +29,6 @@ pub fn handle_get(
     route: &str,
     try_index: bool,
 ) -> Result<(String, Vec<u8>), CandyError> {
-    let status_line = "HTTP/1.1 200 OK";
     let mut path = PathBuf::from(path);
     let is_file = if try_index {
         false
@@ -79,8 +78,10 @@ pub fn handle_get(
     };
     let length = contents.len();
 
+    let status_line = "HTTP/1.1 200 OK";
+    let version = env!("CARGO_PKG_VERSION");
     let response =
-        format!("{status_line}\r\nContent-length: {length}\r\nContent-type: {file_type}\r\n\r\n");
+        format!("{status_line}\r\nContent-length: {length}\r\nContent-type: {file_type}\r\nRUA-server: candy v{version}\r\n\r\n");
     Ok((response, contents))
 }
 
