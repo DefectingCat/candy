@@ -11,7 +11,7 @@ A tiny web server built with Rust.
 
 - [x] Add logger.
 - [x] Threads pool.
-- [ ] CLI support.
+- [x] CLI support.
   - [x] parse args.
 - [x] Config file support.
   - [x] parse json file.
@@ -29,7 +29,8 @@ A tiny web server built with Rust.
 - [ ] Styled logo.
 - [ ] More unit test.
 - [x] Log to file.
-- [ ] Clean up after shutdown.
+- [x] Clean up after shutdown.
 - [ ] Dockerfile.
 - [ ] Static file cache.
 - [ ] Async IO.
+- [ ] Gzip
