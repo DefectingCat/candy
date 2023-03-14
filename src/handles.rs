@@ -74,7 +74,7 @@ pub fn handle_get(
     let status_line = "HTTP/1.1 200 OK";
     let version = env!("CARGO_PKG_VERSION");
     let response =
-        format!("{status_line}\r\nContent-length: {length}\r\nContent-type: {file_type}\r\nRUA-server: candy v{version}\r\n\r\n");
+        format!("{status_line}\r\nContent-length: {length}\r\nContent-type: {file_type}\r\nRUA-server: candy v{version}\r\nCache-Control: public, max-age=0, must-revalidate\r\n\r\n");
     Ok((response, contents))
 }
 
