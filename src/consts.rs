@@ -14,6 +14,3 @@ pub static NOT_FOUND: &'static str = r#"<!DOCTYPE html>
   </body>
 </html>
 "#;
-
-pub static STATIC_FILE_TYPE: [&str; 7] = [".html", ".css", ".js", ".json", ".ico", ".wasm", ".svg"];
-pub static IMAGE_FILE: [&str; 3] = [".png", ".jpg", ".ico"];

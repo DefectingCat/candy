@@ -8,7 +8,7 @@ use anyhow::Result;
 use log::{debug, error, info};
 
 use crate::config::Config;
-use crate::consts::{IMAGE_FILE, NOT_FOUND, STATIC_FILE_TYPE};
+use crate::consts::NOT_FOUND;
 use crate::error::CandyError;
 use crate::frame::HttpFrame;
 
@@ -30,39 +30,32 @@ pub fn handle_get(
     try_index: bool,
 ) -> Result<(String, Vec<u8>), CandyError> {
     let mut path = PathBuf::from(path);
-    let is_file = if try_index {
-        false
-    } else {
-        STATIC_FILE_TYPE.iter().any(|t| route.ends_with(t))
-            || IMAGE_FILE.iter().any(|t| route.ends_with(t))
-    };
-    let file_type = if is_file {
-        let ext: Vec<_> = route.split('.').collect();
-        if let Some(ex) = ext.last() {
-            match *ex {
-                "png" | "jpg" => format!("image/{ex}"),
-                "svg" => format!("image/svg+xml"),
-                "html" | "css" => format!("text/{ex}"),
-                "js" => format!("application/javascript"),
-                "ico" => format!("image/x-icon"),
-                _ => {
-                    return Err(CandyError::UnknownFileType {
-                        file: ex.to_string(),
-                    })
-                }
+    let ext: Vec<_> = route.split('.').collect();
+    path.push(route.replacen("/", "", 1));
+    let file_type = if let Some(ex) = ext.last() {
+        debug!("file type {ex}");
+        debug!("access path {route}");
+        match *ex {
+            "png" | "jpg" | "jpeg" => format!("image/{ex}"),
+            "svg" => format!("image/svg+xml"),
+            "html" | "css" => format!("text/{ex}"),
+            "js" => format!("application/javascript"),
+            "ico" => format!("image/x-icon"),
+            // If equal to path, is access to folder.
+            _ if *ex == route => {
+                path.push("index.html");
+                format!("text/html")
             }
-        } else {
-            return Err(CandyError::Unknown);
+            _ => {
+                return Err(CandyError::UnknownFileType {
+                    file: ex.to_string(),
+                })
+            }
         }
     } else {
-        format!("text/html")
+        return Err(CandyError::Unknown);
     };
-    debug!("{file_type}");
-    path.push(route.replacen("/", "", 1));
-    if !is_file {
-        path.push("index.html");
-    }
-    debug!("{path:?}");
+    debug!("access path {path:?}");
 
     let contents = match fs::read(&path) {
         Ok(content) => content,
