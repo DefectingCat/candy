@@ -44,6 +44,8 @@ pub fn handle_get(
                 "png" | "jpg" => format!("image/{ex}"),
                 "svg" => format!("image/svg+xml"),
                 "html" | "css" => format!("text/{ex}"),
+                "js" => format!("application/javascript"),
+                "ico" => format!("image/x-icon"),
                 _ => {
                     return Err(CandyError::UnknownFileType {
                         file: ex.to_string(),
