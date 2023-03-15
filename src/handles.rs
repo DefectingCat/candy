@@ -30,8 +30,9 @@ pub fn handle_get(
     try_index: bool,
 ) -> Result<(String, Vec<u8>), CandyError> {
     let mut path = PathBuf::from(path);
-    let ext: Vec<_> = route.split('.').collect();
     path.push(route.replacen("/", "", 1));
+
+    let ext: Vec<_> = route.split('.').collect();
     let file_type = if let Some(ex) = ext.last() {
         debug!("file type {ex}");
         debug!("access path {route}");
@@ -43,6 +44,10 @@ pub fn handle_get(
             "ico" => format!("image/x-icon"),
             // If equal to path, is access to folder.
             _ if *ex == route => {
+                path.push("index.html");
+                format!("text/html")
+            }
+            _ if try_index => {
                 path.push("index.html");
                 format!("text/html")
             }
