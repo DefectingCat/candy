@@ -2,7 +2,7 @@
   "log_level": "debug",
   "host": {
     "listen_addr": "0.0.0.0",
-    "listen_port": 80,
+    "listen_port": 8080,
     "root_folder": "/tmp/candy/html",
     "not_found_page": "404.html"
   }
