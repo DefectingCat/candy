@@ -1,15 +1,14 @@
-use std::net::TcpListener;
 use std::process::exit;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::thread;
+use anyhow::Result;
 
 use log::{error, info};
 
 use config::Config;
+use tokio::net::TcpListener;
 
 use crate::handles::handle_connection;
-use crate::thread_pool::ThreadPool;
 
 mod args;
 mod config;
@@ -20,7 +19,8 @@ mod handles;
 mod logger;
 mod thread_pool;
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<()> {
     let running = Arc::new(AtomicBool::new(true));
     let r = Arc::clone(&running);
     ctrlc::set_handler(move || r.store(false, Ordering::SeqCst)).expect("");
@@ -32,8 +32,6 @@ fn main() {
     }
     info!("Server starting.");
 
-    let work_num = config.lock().expect("").works.unwrap();
-    let thread_pool = Arc::new(Mutex::new(ThreadPool::new(work_num)));
     let (addr, port) = {
         let host = &config.lock().expect("Can not get config file.").host;
         let addr = if let Some(addr) = &host.listen_addr {
@@ -48,24 +46,20 @@ fn main() {
         };
         (addr, port)
     };
-    let listener = TcpListener::bind(format!("{addr}:{port}")).unwrap_or_else(|err| {
-        error!("Can not listen on {addr}:{port}; {}", err.to_string());
-        exit(1);
-    });
 
-    let pool = Arc::clone(&thread_pool);
-    thread::spawn(move || {
-        for stream in listener.incoming() {
-            let config = Arc::clone(&config);
-            let stream = stream.unwrap();
-            let job = Box::new(move || {
-                handle_connection(&stream, config);
-            });
-            pool.lock().unwrap().execute(job);
-        }
-    });
+    let listener = TcpListener::bind(format!("{addr}:{port}")).await?;
 
     info!("Listen on {addr}:{port}.");
-    while running.load(Ordering::SeqCst) {}
-    thread_pool.lock().unwrap().exit();
+    while running.load(Ordering::SeqCst) {
+        let (mut stream, _) = listener.accept().await?;
+        let config  = Arc::clone(&confg);
+
+        tokio::task::spawn(async move {
+            handle_connection(&stream, config);
+        });
+    }
+    println!("Exiting...");
+
+
+    Ok(())
 }

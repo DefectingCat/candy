@@ -24,7 +24,7 @@ use crate::frame::HttpFrame;
 /// Handle get request.
 /// params path: static file folder path in config.
 /// params route: request route.
-pub fn handle_get(
+pub async fn handle_get(
     path: &PathBuf,
     route: &str,
     try_index: bool,
@@ -62,7 +62,7 @@ pub fn handle_get(
     };
     debug!("access path {path:?}");
 
-    let contents = match fs::read(&path) {
+    let contents = match tokio::fs::read(&path).await? {
         Ok(content) => content,
         Err(err) => {
             debug!("{err:?}");
@@ -129,7 +129,7 @@ pub fn handle_not_found(path: &PathBuf, mut stream: &TcpStream) {
     stream.write_all(response.as_bytes()).unwrap();
 }
 
-pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
+pub async fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
     let mut buf_reader = BufReader::new(&mut stream);
 
     let HttpFrame {
@@ -190,7 +190,7 @@ pub fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
                     return handle_error(stream);
                 }
             };
-            match handle_get(path, route, try_index) {
+            match handle_get(path, route, try_index).await {
                 Ok(res) => res,
                 Err(err) => {
                     return match err {
