@@ -1,10 +1,9 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use log::error;
-use std::{
-    collections::HashMap,
-    io::{BufRead, BufReader},
-    net::TcpStream,
-};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::net::TcpStream;
 
 use crate::error::CandyError;
 
@@ -15,8 +14,8 @@ pub struct HttpFrame {
 }
 
 impl HttpFrame {
-    pub fn build(reader: &mut BufReader<&mut &TcpStream>) -> Result<Self, CandyError> {
-        let request_str = match read_request(reader) {
+    pub async fn build(reader: BufReader<&mut TcpStream>) -> Result<Self, CandyError> {
+        let request_str = match read_request(reader).await {
             Ok(str) => str,
             Err(err) => {
                 error!("{:?}", err);
@@ -62,10 +61,10 @@ impl HttpFrame {
 }
 
 /// Read http request to string.
-fn read_request(reader: &mut BufReader<&mut &TcpStream>) -> Result<String> {
+async fn read_request(mut reader: BufReader<&mut TcpStream>) -> Result<String> {
     let mut request_string = String::new();
     loop {
-        let byte = reader.read_line(&mut request_string)?;
+        let byte = reader.read_line(&mut request_string).await?;
         if byte < 3 {
             break;
         }

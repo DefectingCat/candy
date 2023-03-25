@@ -1,11 +1,13 @@
-use std::fs;
-use std::io::{BufReader, ErrorKind, Write};
-use std::net::TcpStream;
+use std::io::ErrorKind;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use anyhow::Result;
 use log::{debug, error, info};
+use tokio::fs;
+use tokio::io::{AsyncWriteExt, BufReader};
+use tokio::net::TcpStream;
+use tokio::sync::Mutex;
 
 use crate::config::Config;
 use crate::consts::NOT_FOUND;
@@ -62,7 +64,7 @@ pub async fn handle_get(
     };
     debug!("access path {path:?}");
 
-    let contents = match tokio::fs::read(&path).await? {
+    let contents = match tokio::fs::read(&path).await {
         Ok(content) => content,
         Err(err) => {
             debug!("{err:?}");
@@ -102,45 +104,45 @@ pub async fn handle_get(
 //     Ok(response)
 // }
 
-pub fn handle_error(mut stream: &TcpStream) {
+pub async fn handle_error(mut stream: TcpStream) {
     let status_line = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
     let response = status_line.to_string();
-    stream.write_all(response.as_bytes()).unwrap();
+    stream.write_all(response.as_bytes()).await.unwrap();
 }
 
-pub fn handle_not_found(path: &PathBuf, mut stream: &TcpStream) {
+pub async fn handle_not_found(path: &PathBuf, mut stream: TcpStream) {
     let status_line = "HTTP/1.1 404 Not Found";
 
     let mut path = PathBuf::from(path);
     path.push("404.html");
 
-    let contents = match fs::read_to_string(&path) {
+    let contents = match fs::read_to_string(&path).await {
         Ok(c) => c,
         Err(err) => match err.kind() {
             ErrorKind::NotFound => NOT_FOUND.to_string(),
             _ => {
                 debug!("{err:?}");
-                return handle_error(stream);
+                return handle_error(stream).await;
             }
         },
     };
     let length = contents.len();
     let response = format!("{status_line}\r\nContent-length: {length}\r\n\r\n{contents}");
-    stream.write_all(response.as_bytes()).unwrap();
+    stream.write_all(response.as_bytes()).await.unwrap();
 }
 
-pub async fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>>) {
-    let mut buf_reader = BufReader::new(&mut stream);
+pub async fn handle_connection(mut stream: TcpStream, config: Arc<Mutex<Config>>) {
+    let buf_reader = BufReader::new(&mut stream);
 
     let HttpFrame {
         request_str,
         headers,
         router,
-    } = match HttpFrame::build(&mut buf_reader) {
+    } = match HttpFrame::build(buf_reader).await {
         Ok(frame) => frame,
         Err(err) => {
             error!("{:?}", err.to_string());
-            return handle_error(stream);
+            return handle_error(stream).await;
         }
     };
 
@@ -159,35 +161,31 @@ pub async fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>
     let method = if let Some(Some(m)) = router.get("method") {
         &m[..]
     } else {
-        return handle_error(stream);
+        return handle_error(stream).await;
     };
     let route = if let Some(Some(r)) = router.get("path") {
         &r[..]
     } else {
-        return handle_error(stream);
+        return handle_error(stream).await;
     };
     let response = match method {
         "GET" => {
-            let config = config.lock();
+            let config = config.lock().await;
+            let path = &config.host.root_folder;
             // let path = &config.host.root_folder;
-            let path = match &config {
-                Ok(config) => match &config.host.root_folder {
-                    Some(path) => path,
-                    None => return handle_error(stream),
-                },
-                Err(err) => {
-                    error!("failed lock config {}", err.to_string());
-                    return handle_error(stream);
+            let path = match &path {
+                Some(path) => path,
+                None => {
+                    error!("failed lock config");
+                    return handle_error(stream).await;
                 }
             };
-            let try_index = match &config {
-                Ok(config) => match &config.host.try_index {
-                    Some(try_index) => *try_index,
-                    None => return handle_error(stream),
-                },
-                Err(err) => {
-                    error!("failed lock config {}", err.to_string());
-                    return handle_error(stream);
+            let try_index = config.host.try_index;
+            let try_index = match try_index {
+                Some(try_index) => try_index,
+                None => {
+                    error!("failed lock config");
+                    return handle_error(stream).await;
                 }
             };
             match handle_get(path, route, try_index).await {
@@ -195,17 +193,17 @@ pub async fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>
                 Err(err) => {
                     return match err {
                         CandyError::NotFound => {
-                            return handle_not_found(path, stream);
+                            return handle_not_found(path, stream).await;
                         }
                         CandyError::UnknownFileType { file } => {
                             debug!("{file:?}");
                             error!("Get Unknown file: {}", file);
-                            return handle_error(stream);
+                            return handle_error(stream).await;
                         }
                         _ => {
                             debug!("{err:?}");
                             error!("Failed to handle get: {}", err.to_string());
-                            handle_error(stream)
+                            handle_error(stream).await;
                         }
                     };
                 }
@@ -218,10 +216,10 @@ pub async fn handle_connection(mut stream: &TcpStream, config: Arc<Mutex<Config>
         //         return handle_error(stream);
         //     }
         // }
-        _ => return handle_error(stream),
+        _ => return handle_error(stream).await,
     };
 
-    stream.write(response.0.as_bytes()).unwrap();
-    stream.write(&response.1).unwrap();
+    stream.write(response.0.as_bytes()).await.unwrap();
+    stream.write(&response.1).await.unwrap();
     // stream.flush().unwrap();
 }
