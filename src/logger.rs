@@ -50,13 +50,14 @@ pub async fn init_logger(config: Arc<Mutex<Config>>) -> Result<()> {
 
             let file_path = file_path.clone();
             tokio::spawn(async move {
-                let target = OpenOptions::new()
+                OpenOptions::new()
                     .write(true)
                     .read(true)
                     .create(true)
                     .append(true)
                     .open(&file_path)
-                    .await;
+                    .await
+                    .unwrap();
             });
             writeln!(buf, "{log}")
         })

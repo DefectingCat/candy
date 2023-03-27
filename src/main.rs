@@ -1,12 +1,12 @@
 use anyhow::Result;
 use std::process::exit;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use log::{error, info};
 
 use config::Config;
 use tokio::net::TcpListener;
+use tokio::signal;
 use tokio::sync::Mutex;
 
 use crate::handles::handle_connection;
@@ -18,14 +18,9 @@ mod error;
 mod frame;
 mod handles;
 mod logger;
-mod thread_pool;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let running = Arc::new(AtomicBool::new(true));
-    let r = Arc::clone(&running);
-    ctrlc::set_handler(move || r.store(false, Ordering::SeqCst)).expect("");
-
     let config = Arc::new(Mutex::new(Config::new()));
     if let Err(err) = logger::init_logger(Arc::clone(&config)).await {
         error!("Failed to create logger; {}", err.to_string());
@@ -49,19 +44,29 @@ async fn main() -> Result<()> {
     };
 
     let listener = TcpListener::bind(format!("{addr}:{port}")).await?;
-
     info!("Listen on {addr}:{port}.");
-    // while running.load(Ordering::SeqCst) {
-    loop {
-        let (stream, _) = listener.accept().await?;
-        let config = Arc::clone(&config);
 
-        tokio::spawn(async move {
-            handle_connection(stream, config).await;
-        });
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            let config = Arc::clone(&config);
+
+            tokio::spawn(async move {
+                handle_connection(stream, config).await;
+            });
+        }
+    });
+
+    match signal::ctrl_c().await {
+        Ok(()) => {
+            println!("Exiting...");
+            return Ok(());
+        }
+        Err(err) => {
+            error!("Unable to listen for shutdown signal: {}", err);
+        }
     }
+    // while running.load(Ordering::SeqCst) {
     // }
     println!("Exiting...");
-
     Ok(())
 }
