@@ -7,6 +7,7 @@ use chrono::Local;
 use env_logger::{Builder, Env};
 use tokio::{
     fs::{self, OpenOptions},
+    io::AsyncWriteExt,
     sync::Mutex,
 };
 
@@ -47,19 +48,21 @@ pub async fn init_logger(config: Arc<Mutex<Config>>) -> Result<()> {
         .format(move |buf, record| {
             let formatted = format!("{}", now.format("%Y-%m-%d %H:%M:%S"));
             let log = format!("{} - {} - {}", formatted, record.level(), record.args());
+            writeln!(buf, "{log}")?;
 
             let file_path = file_path.clone();
             tokio::spawn(async move {
-                OpenOptions::new()
+                let mut file = OpenOptions::new()
                     .write(true)
                     .read(true)
                     .create(true)
                     .append(true)
                     .open(&file_path)
                     .await
-                    .unwrap();
+                    .expect("");
+                file.write(log.as_bytes()).await.expect("");
             });
-            writeln!(buf, "{log}")
+            Ok(())
         })
         // .target(env_logger::Target::Pipe(target))
         // .filter(None, LevelFilter::Info)
