@@ -22,7 +22,7 @@ mod thread_pool;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-     let running = Arc::new(AtomicBool::new(true));
+    let running = Arc::new(AtomicBool::new(true));
     let r = Arc::clone(&running);
     ctrlc::set_handler(move || r.store(false, Ordering::SeqCst)).expect("");
 
