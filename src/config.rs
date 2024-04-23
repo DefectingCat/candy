@@ -13,7 +13,7 @@ pub struct SettingRoute {
 pub struct SettingHost {
     pub ip: String,
     pub port: u32,
-    pub route: SettingRoute,
+    pub route: Vec<SettingRoute>,
     pub index: Vec<String>,
 }
 

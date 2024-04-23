@@ -1,5 +1,6 @@
 use std::pin::Pin;
 
+use crate::error::{Error, Result};
 use futures_util::Future;
 use http_body_util::Full;
 use hyper::{
@@ -15,16 +16,17 @@ use tracing::error;
 use crate::config::SettingHost;
 
 impl SettingHost {
-    pub fn mk_server(self) -> impl Future<Output = anyhow::Result<()>> + 'static {
+    pub fn mk_server(&self) -> impl Future<Output = anyhow::Result<()>> + 'static {
         let addr = format!("{}:{}", self.ip, self.port);
+        let host = self.clone();
         #[allow(unreachable_code)]
         async move {
             let listener = TcpListener::bind(addr).await?;
             loop {
+                let host = host.clone();
                 let (stream, _) = listener.accept().await?;
                 let io = TokioIo::new(stream);
 
-                let host = self.clone();
                 tokio::spawn(async move {
                     if let Err(err) = http1::Builder::new().serve_connection(io, host).await {
                         error!("Serving connection: {:?}", err);
@@ -38,22 +40,23 @@ impl SettingHost {
 
 impl Service<Request<IncomingBody>> for SettingHost {
     type Response = Response<Full<Bytes>>;
-    type Error = hyper::Error;
+    type Error = Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn call(&self, req: Request<IncomingBody>) -> Self::Future {
-        let res = match req.uri().path() {
-            "/" => mk_response(format!("home! counter ")),
-            "/posts" => mk_response(format!("posts, of course! counter ")),
-            "/authors" => mk_response(format!("authors extraordinare! counter")),
-            // Return the 404 Not Found for other routes, and don't increment counter.
-            _ => return Box::pin(async { mk_response("oh no! not found".into()) }),
-        };
-
-        Box::pin(async { res })
+        Box::pin(mk_response(req))
     }
 }
 
-async fn mk_response(s: String) -> Result<Response<Full<Bytes>>, hyper::Error> {
-    Ok(Response::builder().body(Full::new(Bytes::from(s))).unwrap())
+pub async fn mk_response(req: Request<IncomingBody>) -> Result<Response<Full<Bytes>>> {
+    // let route = &self.route;
+
+    let req_path = req.uri().path();
+    let res = match req_path {
+        // Return the 404 Not Found for other routes.
+        _ => "404",
+    };
+    let res = Response::builder().body(Full::new(Bytes::from(res)))?;
+
+    Ok(res)
 }
