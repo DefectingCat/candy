@@ -6,7 +6,7 @@ use serde::Deserialize;
 #[derive(Deserialize, Clone, Debug)]
 pub struct SettingRoute {
     pub location: String,
-    pub root: PathBuf,
+    pub root: String,
 }
 
 #[derive(Deserialize, Clone, Debug)]

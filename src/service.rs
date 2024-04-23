@@ -1,6 +1,9 @@
 use std::pin::Pin;
 
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    utils::find_static_path,
+};
 use futures_util::{Future, TryStreamExt};
 use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
 use hyper::{
@@ -17,19 +20,17 @@ use tracing::error;
 use crate::config::SettingHost;
 
 impl SettingHost {
-    pub fn mk_server(&self) -> impl Future<Output = anyhow::Result<()>> + 'static {
+    pub fn mk_server(&'static self) -> impl Future<Output = anyhow::Result<()>> + 'static {
         let addr = format!("{}:{}", self.ip, self.port);
-        let host = self.clone();
         #[allow(unreachable_code)]
         async move {
             let listener = TcpListener::bind(addr).await?;
             loop {
-                let host = host.clone();
                 let (stream, _) = listener.accept().await?;
                 let io = TokioIo::new(stream);
 
                 tokio::spawn(async move {
-                    if let Err(err) = http1::Builder::new().serve_connection(io, host).await {
+                    if let Err(err) = http1::Builder::new().serve_connection(io, self).await {
                         error!("Serving connection: {:?}", err);
                     };
                 });
@@ -39,8 +40,8 @@ impl SettingHost {
     }
 }
 
-impl Service<Request<IncomingBody>> for SettingHost {
-    type Response = Response<Test<Bytes>>;
+impl Service<Request<IncomingBody>> for &SettingHost {
+    type Response = Response<CandyBody<Bytes>>;
     type Error = Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
@@ -49,13 +50,16 @@ impl Service<Request<IncomingBody>> for SettingHost {
     }
 }
 
-pub async fn mk_response(req: Request<IncomingBody>) -> Result<Response<Test<Bytes>>> {
+pub async fn mk_response(req: Request<IncomingBody>) -> Result<Response<CandyBody<Bytes>>> {
     // let route = &self.route;
 
     let req_path = req.uri().path();
     let req_method = req.method();
 
-    let res = match (req_method, req_path) {
+    let test = find_static_path(req_path, "/");
+    dbg!(test);
+
+    let res = match req_method {
         // Return the 404 Not Found for other routes.
         _ => not_found(),
     };
@@ -63,8 +67,8 @@ pub async fn mk_response(req: Request<IncomingBody>) -> Result<Response<Test<Byt
     Ok(res)
 }
 
-type Test<T, E = Error> = BoxBody<T, E>;
-async fn handle_file(path: &str) -> Result<Response<Test<Bytes>>> {
+type CandyBody<T, E = Error> = BoxBody<T, E>;
+async fn handle_file(path: &str) -> Result<Response<CandyBody<Bytes>>> {
     // Open file for reading
     let file = File::open(path).await;
     let file = match file {
@@ -80,7 +84,7 @@ async fn handle_file(path: &str) -> Result<Response<Test<Bytes>>> {
     // Convert to http_body_util::BoxBody
     let stream_body = StreamBody::new(reader_stream.map_ok(Frame::data));
     // let boxed_body = stream_body.map_err(|e| Error::IoError(e)).boxed();
-    let boxed_body = BodyExt::map_err(stream_body, Error::IoError).boxed();
+    let boxed_body = BodyExt::map_err(stream_body, Error::Io).boxed();
 
     // Send response
     let response = Response::builder()
@@ -92,7 +96,7 @@ async fn handle_file(path: &str) -> Result<Response<Test<Bytes>>> {
 
 // HTTP status code 404
 static NOT_FOUND: &[u8] = b"Not Found";
-fn not_found() -> Response<Test<Bytes>> {
+fn not_found() -> Response<CandyBody<Bytes>> {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
         .body(Full::new(NOT_FOUND.into()).map_err(|e| match e {}).boxed())
