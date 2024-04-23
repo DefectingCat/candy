@@ -12,7 +12,6 @@ async fn main() -> Result<()> {
     init_logger();
     let settings = init_config().with_context(|| "init config failed")?;
     debug!("settings {:?}", settings);
-    println!("Hello World");
     info!("Hello");
     Ok(())
 }

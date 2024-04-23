@@ -8,6 +8,5 @@ pub fn init_logger() {
         .with_writer(std::io::stdout);
 
     let env_layer = EnvFilter::try_from_env("CANDY_LOG").unwrap_or_else(|_| "info".into());
-
     registry().with(env_layer).with(formatting_layer).init();
 }
