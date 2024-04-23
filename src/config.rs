@@ -1,18 +1,28 @@
 use crate::error::Result;
-use config::Config;
-use serde_derive::Deserialize;
+use std::{fs, path::PathBuf};
+
+use serde::Deserialize;
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct SettingRoute {
+    pub location: String,
+    pub root: PathBuf,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct SettingHost {
+    pub port: u32,
+    pub route: SettingRoute,
+    pub index: Vec<String>,
+}
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Settings {
-    pub port: u32,
+    pub host: Vec<SettingHost>,
 }
 
 pub fn init_config() -> Result<Settings> {
-    let config = Config::builder()
-        .add_source(config::File::with_name("./config.toml"))
-        .add_source(config::Environment::with_prefix("CANDY"))
-        .build()?;
-
-    let settings: Settings = config.try_deserialize()?;
+    let file = fs::read_to_string("./config.toml")?;
+    let settings: Settings = toml::from_str(&file)?;
     Ok(settings)
 }
