@@ -11,6 +11,7 @@ pub struct SettingRoute {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct SettingHost {
+    pub ip: String,
     pub port: u32,
     pub route: SettingRoute,
     pub index: Vec<String>,
