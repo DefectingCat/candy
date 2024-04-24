@@ -18,7 +18,7 @@ pub fn find_static_path<'a>(req_path: &'a str, location: &str) -> Option<&'a str
     }
     let path = &req_path[..location_len];
     if path == location {
-        Some(&req_path[location_len - 1..])
+        Some(&req_path[location_len..])
     } else {
         None
     }
