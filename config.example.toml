@@ -1,8 +1,9 @@
 [[host]]
 ip = "0.0.0.0"
 port = 4000
-index = "index.html"
-[host.route]
+# index file name and format
+index = ["index.html"]
+[[host.route]]
 # route path: GET /
 location = "/"
 # static file path
