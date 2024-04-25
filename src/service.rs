@@ -8,7 +8,7 @@ use hyper::{
     body::{Bytes, Frame, Incoming as IncomingBody},
     server::conn::http1,
     service::service_fn,
-    Request, Response, StatusCode,
+    Method, Request, Response, StatusCode,
 };
 use hyper_util::rt::TokioIo;
 use tokio::{fs::File, net::TcpListener};
@@ -16,6 +16,8 @@ use tokio_util::io::ReaderStream;
 use tracing::{error, warn};
 
 use crate::config::SettingHost;
+
+type CandyBody<T, E = Error> = BoxBody<T, E>;
 
 impl SettingHost {
     pub fn mk_server(&'static self) -> impl Future<Output = anyhow::Result<()>> + 'static {
@@ -66,17 +68,23 @@ async fn handle_connection(
         .route_map
         .get(req_path)
         .ok_or(Error::NotFound(format!("route {} not found", req_path)))?;
-    let test = find_static_path(req_path, "/");
-    dbg!(test, router);
+    let assets_path = find_static_path(req_path, &router.location).unwrap_or("/");
+    let _index = &host.index;
+    let path = if assets_path.ends_with('/') {
+        format!("{}{}{}", router.root, assets_path, host.index[0])
+    } else {
+        format!("{}{}/{}", router.root, assets_path, host.index[0])
+    };
+    dbg!(&path);
 
     let res = match req_method {
+        &Method::GET => handle_file(&path).await?,
         // Return the 404 Not Found for other routes.
         _ => not_found(),
     };
     Ok(res)
 }
 
-type CandyBody<T, E = Error> = BoxBody<T, E>;
 async fn handle_file(path: &str) -> Result<Response<CandyBody<Bytes>>> {
     // Open file for reading
     let file = File::open(path).await;

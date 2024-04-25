@@ -5,7 +5,9 @@ use serde::Deserialize;
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct SettingRoute {
+    /// The register route
     pub location: String,
+    /// The static assets root folder
     pub root: String,
 }
 
@@ -16,6 +18,7 @@ pub struct SettingHost {
     route: Vec<Option<SettingRoute>>,
     #[serde(skip_deserializing, skip_serializing)]
     pub route_map: BTreeMap<String, SettingRoute>,
+    /// Index files format
     pub index: Vec<String>,
 }
 
