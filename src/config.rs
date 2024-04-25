@@ -11,6 +11,8 @@ pub struct SettingRoute {
     pub root: String,
 }
 
+pub type HostRouteMap = BTreeMap<String, SettingRoute>;
+
 #[derive(Deserialize, Clone, Debug)]
 pub struct SettingHost {
     pub ip: String,

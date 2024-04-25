@@ -1,6 +1,12 @@
-use std::time::{self, Instant};
+use std::{
+    path::Path,
+    time::{self, Instant},
+};
 
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Error::NotFound, Result},
+    utils::{find_route, parse_assets_path},
+};
 
 use futures_util::{Future, TryStreamExt};
 use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
@@ -69,43 +75,32 @@ async fn handle_connection(
     let req_path = req.uri().path();
     let req_method = req.method();
 
-    let mut index = 1;
-    let len = req_path.len();
-    let not_found_err = Error::NotFound(format!("route {} not found", req_path));
-    let (router, assets_path) = loop {
-        if index > len {
+    // find route path
+    let not_found_err = NotFound(format!("resource {} not found", &req_path));
+    let (router, assets_path) = find_route(req_path, &host.route_map)?;
+
+    // find resource local file path
+    let mut path = None;
+    for index in host.index.iter() {
+        let p = parse_assets_path(assets_path, &router.root, index);
+        if Path::new(&p).exists() {
+            path = Some(p);
+            break;
+        }
+    }
+    let path = match path {
+        Some(p) => p,
+        None => {
             return Err(not_found_err);
         }
-        let check_path = &req_path[..index];
-        match host.route_map.get(check_path) {
-            Some(router) => break (router, &req_path[index..]),
-            None => {
-                index += 1;
-            }
-        }
     };
-    // TODO: find index format
-    let _index = &host.index;
-    let path = match assets_path {
-        str if str.ends_with('/') => {
-            format!("{}{}{}", router.root, assets_path, host.index[0])
-        }
-        str if str.contains('.') && !str.starts_with('/') => {
-            format!("{}/{}", router.root, assets_path)
-        }
-        str if !str.starts_with('/') => {
-            format!("{}/{}{}", router.root, assets_path, host.index[0])
-        }
-        _ => {
-            format!("{}{}/{}", router.root, assets_path, host.index[0])
-        }
-    };
-    dbg!(&path);
 
     let res = match req_method {
         &Method::GET => handle_file(&path).await?,
         // Return the 404 Not Found for other routes.
-        _ => not_found(),
+        _ => {
+            return Err(not_found_err);
+        }
     };
     Ok(res)
 }
