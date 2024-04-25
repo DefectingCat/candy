@@ -15,7 +15,7 @@ pub struct SettingHost {
     pub port: u32,
     route: Vec<Option<SettingRoute>>,
     #[serde(skip_deserializing, skip_serializing)]
-    route_map: BTreeMap<String, SettingRoute>,
+    pub route_map: BTreeMap<String, SettingRoute>,
     pub index: Vec<String>,
 }
 
