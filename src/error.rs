@@ -1,5 +1,6 @@
 use std::io;
 
+#[allow(clippy::enum_variant_names)]
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     // from
@@ -10,9 +11,11 @@ pub enum Error {
     #[error("failed to handle http {0}")]
     Http(#[from] hyper::http::Error),
 
-    // self
+    // http
     #[error("route not found {0}")]
     NotFound(String),
+    #[error("internal server error {0}")]
+    InternalServerError(#[from] anyhow::Error),
 }
 
 pub type Result<T, E = Error> = anyhow::Result<T, E>;

@@ -1,7 +1,5 @@
-use crate::{
-    error::{Error, Result},
-    utils::find_static_path,
-};
+use crate::error::{Error, Result};
+
 use futures_util::{Future, TryStreamExt};
 use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
 use hyper::{
@@ -29,28 +27,27 @@ impl SettingHost {
                 let (stream, _) = listener.accept().await?;
                 let io = TokioIo::new(stream);
 
-                tokio::spawn(async move {
-                    if let Err(err) = http1::Builder::new()
-                        .serve_connection(
-                            io,
-                            service_fn(|req| async move {
-                                let res = handle_connection(req, self).await;
-                                let response = match res {
-                                    Ok(res) => res,
-                                    Err(Error::NotFound(err)) => {
-                                        warn!("{err}");
-                                        not_found()
-                                    }
-                                    _ => todo!(),
-                                };
-                                anyhow::Ok(response)
-                            }),
-                        )
-                        .await
-                    {
-                        error!("Serving connection: {:?}", err);
+                let service = move |req| async move {
+                    let res = handle_connection(req, self).await;
+                    let response = match res {
+                        Ok(res) => res,
+                        Err(Error::NotFound(err)) => {
+                            warn!("{err}");
+                            not_found()
+                        }
+                        _ => todo!(),
                     };
+                    anyhow::Ok(response)
+                };
+
+                let handler = tokio::spawn(async move {
+                    http1::Builder::new()
+                        .serve_connection(io, service_fn(service))
+                        .await
+                        .map_err(|err| Error::InternalServerError(err.into()))?;
+                    anyhow::Ok(())
                 });
+                handler.await??;
             }
             anyhow::Ok(())
         }
@@ -67,19 +64,19 @@ async fn handle_connection(
     let mut index = 1;
     let len = req_path.len();
     let not_found_err = Error::NotFound(format!("route {} not found", req_path));
-    let router = loop {
+    let (router, assets_path) = loop {
         if index > len {
             return Err(not_found_err);
         }
         let check_path = &req_path[..index];
         match host.route_map.get(check_path) {
-            Some(router) => break router,
+            Some(router) => break (router, &req_path[index..]),
             None => {
                 index += 1;
             }
         }
     };
-    let assets_path = find_static_path(req_path, &router.location).unwrap_or("/");
+    // TODO: find index format
     let _index = &host.index;
     let path = match assets_path {
         str if str.ends_with('/') => {
