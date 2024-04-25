@@ -1,3 +1,5 @@
+use std::time::{self, Instant};
+
 use crate::error::{Error, Result};
 
 use futures_util::{Future, TryStreamExt};
@@ -11,7 +13,7 @@ use hyper::{
 use hyper_util::rt::TokioIo;
 use tokio::{fs::File, net::TcpListener};
 use tokio_util::io::ReaderStream;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 use crate::config::SettingHost;
 
@@ -22,12 +24,15 @@ impl SettingHost {
         let addr = format!("{}:{}", self.ip, self.port);
         #[allow(unreachable_code)]
         async move {
-            let listener = TcpListener::bind(addr).await?;
+            let listener = TcpListener::bind(&addr).await?;
+            info!("host bind on {}", addr);
             loop {
-                let (stream, _) = listener.accept().await?;
+                let (stream, addr) = listener.accept().await?;
+                info!("accept from {}", &addr);
                 let io = TokioIo::new(stream);
 
                 let service = move |req| async move {
+                    let start_time = time::Instant::now();
                     let res = handle_connection(req, self).await;
                     let response = match res {
                         Ok(res) => res,
@@ -37,6 +42,9 @@ impl SettingHost {
                         }
                         _ => todo!(),
                     };
+                    let end_time = (Instant::now() - start_time).as_micros() as f32;
+                    let end_time = end_time / 1000_f32;
+                    info!("end {} {:.3}ms", addr, end_time);
                     anyhow::Ok(response)
                 };
 
