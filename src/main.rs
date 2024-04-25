@@ -5,10 +5,12 @@ use tracing::{debug, info};
 
 use crate::{
     config::{init_config, Settings},
+    consts::{ARCH, NAME, OS, VERSION},
     utils::init_logger,
 };
 
 mod config;
+mod consts;
 mod error;
 mod service;
 mod utils;
@@ -19,6 +21,8 @@ async fn main() -> Result<()> {
     let settings = init_config().with_context(|| "init config failed")?;
     let settings: &'static Settings = Box::leak(Box::new(settings));
     debug!("settings {:?}", settings);
+    info!("{}/{}", NAME, VERSION);
+    info!("OS: {} {}", OS, ARCH);
 
     let mut servers = settings
         .host
@@ -26,7 +30,7 @@ async fn main() -> Result<()> {
         .map(|host| host.mk_server())
         .collect::<JoinSet<_>>();
 
-    info!("Server started");
+    info!("server started");
 
     while let Some(res) = servers.join_next().await {
         res??;
