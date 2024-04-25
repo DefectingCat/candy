@@ -64,16 +64,36 @@ async fn handle_connection(
     let req_path = req.uri().path();
     let req_method = req.method();
 
-    let router = host
-        .route_map
-        .get(req_path)
-        .ok_or(Error::NotFound(format!("route {} not found", req_path)))?;
+    let mut index = 1;
+    let len = req_path.len();
+    let not_found_err = Error::NotFound(format!("route {} not found", req_path));
+    let router = loop {
+        if index > len {
+            return Err(not_found_err);
+        }
+        let check_path = &req_path[..index];
+        match host.route_map.get(check_path) {
+            Some(router) => break router,
+            None => {
+                index += 1;
+            }
+        }
+    };
     let assets_path = find_static_path(req_path, &router.location).unwrap_or("/");
     let _index = &host.index;
-    let path = if assets_path.ends_with('/') {
-        format!("{}{}{}", router.root, assets_path, host.index[0])
-    } else {
-        format!("{}{}/{}", router.root, assets_path, host.index[0])
+    let path = match assets_path {
+        str if str.ends_with('/') => {
+            format!("{}{}{}", router.root, assets_path, host.index[0])
+        }
+        str if str.contains('.') && !str.starts_with('/') => {
+            format!("{}/{}", router.root, assets_path)
+        }
+        str if !str.starts_with('/') => {
+            format!("{}/{}{}", router.root, assets_path, host.index[0])
+        }
+        _ => {
+            format!("{}{}/{}", router.root, assets_path, host.index[0])
+        }
     };
     dbg!(&path);
 
