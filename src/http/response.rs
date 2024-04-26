@@ -16,14 +16,14 @@ pub type CandyBody<T, E = Error> = BoxBody<T, E>;
 // pub fn default_headers() {}
 
 /// Open local file by path, then use `ReaderStream` to stream to client
-pub async fn stream_file(path: &str) -> Result<Response<CandyBody<Bytes>>> {
+pub async fn stream_file(path: &str) -> Result<CandyBody<Bytes>> {
     // Open file for reading
     let file = File::open(path).await;
     let file = match file {
         Ok(f) => f,
         Err(err) => {
             error!("Unable to open file {err}");
-            return Ok(not_found());
+            return Err(Error::NotFound(format!("path not found {}", path)));
         }
     };
 
@@ -34,12 +34,7 @@ pub async fn stream_file(path: &str) -> Result<Response<CandyBody<Bytes>>> {
     // let boxed_body = stream_body.map_err(|e| Error::IoError(e)).boxed();
     let boxed_body = BodyExt::map_err(stream_body, Error::Io).boxed();
 
-    // Send response
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .body(boxed_body)?;
-
-    Ok(response)
+    Ok(boxed_body)
 }
 
 // HTTP status code 404

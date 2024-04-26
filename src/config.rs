@@ -1,7 +1,4 @@
-use crate::{
-    consts::{keep_alive_timeoutd_efault},
-    error::Result,
-};
+use crate::{consts::keep_alive_timeoutd_efault, error::Result};
 use std::{collections::BTreeMap, fs};
 
 use serde::Deserialize;

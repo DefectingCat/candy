@@ -6,13 +6,14 @@ use std::{
 
 use crate::{
     error::{
-        Error::{self, NotFound},
+        Error::{self},
         Result,
     },
     http::{not_found, stream_file, CandyBody},
     utils::{find_route, parse_assets_path},
 };
 
+use anyhow::anyhow;
 use futures_util::Future;
 
 use hyper::{
@@ -96,6 +97,8 @@ async fn handle_connection(
     req: Request<IncomingBody>,
     host: &SettingHost,
 ) -> Result<Response<CandyBody<Bytes>>> {
+    use Error::*;
+
     let req_path = req.uri().path();
     let req_method = req.method();
 
@@ -119,14 +122,17 @@ async fn handle_connection(
         }
     };
 
-    // TODO: build response here
-    // 1. set status
-    // 2. set headers
-    // 3. set bodys
+    // build the response for client
+    let mut response = Response::builder();
+    let headers = response.headers_mut().ok_or(InternalServerError(anyhow!(
+        "build response failed, cannot get headser"
+    )))?;
+    headers.insert("Content-Type", "application/html".parse()?);
 
     // http method handle
-    let res = match req_method {
-        &Method::GET => stream_file(&path).await?,
+    let res = match *req_method {
+        Method::GET => response.body(stream_file(&path).await?)?,
+        Method::POST => response.body(stream_file(&path).await?)?,
         // Return the 404 Not Found for other routes.
         _ => {
             return Err(not_found_err);
