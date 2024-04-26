@@ -4,6 +4,7 @@ use crate::{
 };
 
 /// Parse assets file path
+#[inline]
 pub fn parse_assets_path(assets_path: &str, assets_root: &str, index_file: &str) -> String {
     match assets_path {
         str if str.ends_with('/') => {
