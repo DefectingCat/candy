@@ -1,5 +1,7 @@
 use std::io;
 
+use hyper::header::InvalidHeaderValue;
+
 #[allow(clippy::enum_variant_names)]
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -16,6 +18,8 @@ pub enum Error {
     NotFound(String),
     #[error("internal server error {0}")]
     InternalServerError(#[from] anyhow::Error),
+    #[error("invalide header value {0}")]
+    InvalidHeader(#[from] InvalidHeaderValue),
 }
 
 pub type Result<T, E = Error> = anyhow::Result<T, E>;
