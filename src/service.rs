@@ -1,6 +1,7 @@
 use std::{
     path::Path,
-    time::{self, Instant},
+    pin::pin,
+    time::{self, Duration, Instant},
 };
 
 use crate::{
@@ -17,9 +18,9 @@ use hyper::{
     Method, Request, Response, StatusCode,
 };
 use hyper_util::rt::TokioIo;
-use tokio::{fs::File, net::TcpListener};
+use tokio::{fs::File, net::TcpListener, select};
 use tokio_util::io::ReaderStream;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::config::SettingHost;
 
@@ -27,6 +28,11 @@ type CandyBody<T, E = Error> = BoxBody<T, E>;
 
 impl SettingHost {
     pub fn mk_server(&'static self) -> impl Future<Output = anyhow::Result<()>> + 'static {
+        // Use a 5 second timeout for incoming connections to the server.
+        // If a request is in progress when the 5 second timeout elapses,
+        // use a 2 second timeout for processing the final request and graceful shutdown.
+        let connection_timeouts = [Duration::from_secs(5), Duration::from_secs(2)];
+
         let addr = format!("{}:{}", self.ip, self.port);
         #[allow(unreachable_code)]
         async move {
@@ -55,13 +61,28 @@ impl SettingHost {
                 };
 
                 let handler = tokio::spawn(async move {
-                    http1::Builder::new()
-                        .serve_connection(io, service_fn(service))
-                        .await
-                        .map_err(|err| Error::InternalServerError(err.into()))?;
+                    let conn = http1::Builder::new().serve_connection(io, service_fn(service));
+                    let mut conn = pin!(conn);
+                    // Iterate the timeouts.  Use tokio::select! to wait on the
+                    // result of polling the connection itself,
+                    // and also on tokio::time::sleep for the current timeout duration.
+                    for (i, sleep_duration) in connection_timeouts.iter().enumerate() {
+                        debug!("iter {} duration {:?}", i, sleep_duration);
+                        select! {
+                            res = conn.as_mut() => {
+                                res?;
+                            }
+                            _ = tokio::time::sleep(*sleep_duration) => {
+                                info!("iter = {} got timeout_interval, calling conn.graceful_shutdown", i);
+                                conn.as_mut().graceful_shutdown();
+                            }
+                        }
+                    }
                     anyhow::Ok(())
                 });
-                handler.await??;
+                if let Err(err) = handler.await {
+                    error!("handle connection {:?}", err);
+                }
             }
             anyhow::Ok(())
         }
