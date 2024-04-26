@@ -1,5 +1,5 @@
 use crate::{
-    consts::{keep_alive_timeoutd_efault, KEEP_ALIVE_TIMEOUTD_EFAULT},
+    consts::{keep_alive_timeoutd_efault},
     error::Result,
 };
 use std::{collections::BTreeMap, fs};

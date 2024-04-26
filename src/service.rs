@@ -5,26 +5,28 @@ use std::{
 };
 
 use crate::{
-    error::{Error, Error::NotFound, Result},
+    error::{
+        Error::{self, NotFound},
+        Result,
+    },
+    http::{not_found, stream_file, CandyBody},
     utils::{find_route, parse_assets_path},
 };
 
-use futures_util::{Future, TryStreamExt};
-use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
+use futures_util::Future;
+
 use hyper::{
-    body::{Bytes, Frame, Incoming as IncomingBody},
+    body::{Bytes, Incoming as IncomingBody},
     server::conn::http1,
     service::service_fn,
-    Method, Request, Response, StatusCode,
+    Method, Request, Response,
 };
 use hyper_util::rt::TokioIo;
-use tokio::{fs::File, net::TcpListener, select};
-use tokio_util::io::ReaderStream;
+use tokio::{net::TcpListener, select};
+
 use tracing::{debug, error, info, warn};
 
 use crate::config::SettingHost;
-
-type CandyBody<T, E = Error> = BoxBody<T, E>;
 
 impl SettingHost {
     pub fn mk_server(&'static self) -> impl Future<Output = anyhow::Result<()>> + 'static {
@@ -52,6 +54,7 @@ impl SettingHost {
                             warn!("{err}");
                             not_found()
                         }
+                        // TODO: handle other error
                         _ => todo!(),
                     };
                     let end_time = (Instant::now() - start_time).as_micros() as f32;
@@ -116,47 +119,18 @@ async fn handle_connection(
         }
     };
 
+    // TODO: build response here
+    // 1. set status
+    // 2. set headers
+    // 3. set bodys
+
+    // http method handle
     let res = match req_method {
-        &Method::GET => handle_file(&path).await?,
+        &Method::GET => stream_file(&path).await?,
         // Return the 404 Not Found for other routes.
         _ => {
             return Err(not_found_err);
         }
     };
     Ok(res)
-}
-
-async fn handle_file(path: &str) -> Result<Response<CandyBody<Bytes>>> {
-    // Open file for reading
-    let file = File::open(path).await;
-    let file = match file {
-        Ok(f) => f,
-        Err(err) => {
-            error!("Unable to open file {err}");
-            return Ok(not_found());
-        }
-    };
-
-    // Wrap to a tokio_util::io::ReaderStream
-    let reader_stream = ReaderStream::new(file);
-    // Convert to http_body_util::BoxBody
-    let stream_body = StreamBody::new(reader_stream.map_ok(Frame::data));
-    // let boxed_body = stream_body.map_err(|e| Error::IoError(e)).boxed();
-    let boxed_body = BodyExt::map_err(stream_body, Error::Io).boxed();
-
-    // Send response
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .body(boxed_body)?;
-
-    Ok(response)
-}
-
-// HTTP status code 404
-static NOT_FOUND: &[u8] = b"Not Found";
-fn not_found() -> Response<CandyBody<Bytes>> {
-    Response::builder()
-        .status(StatusCode::NOT_FOUND)
-        .body(Full::new(NOT_FOUND.into()).map_err(|e| match e {}).boxed())
-        .unwrap()
 }
