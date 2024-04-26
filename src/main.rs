@@ -12,6 +12,7 @@ use crate::{
 mod config;
 mod consts;
 mod error;
+mod http;
 mod service;
 mod utils;
 
