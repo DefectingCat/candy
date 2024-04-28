@@ -47,7 +47,7 @@ pub async fn handle_file(path: &str) -> Result<CandyBody<Bytes>> {
         let cache = get_cache().read()?;
         match cache.get(path) {
             Some(time) => {
-                dbg!(time, last_modified);
+                // dbg!(time, last_modified);
             }
             None => {
                 drop(cache);
@@ -77,5 +77,17 @@ pub fn not_found() -> Response<CandyBody<Bytes>> {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
         .body(Full::new(NOT_FOUND.into()).map_err(|e| match e {}).boxed())
+        .unwrap()
+}
+
+static INTERNAL_SERVER_ERROR: &[u8] = b"Internal Server Error";
+pub fn internal_server_error() -> Response<CandyBody<Bytes>> {
+    Response::builder()
+        .status(StatusCode::INTERNAL_SERVER_ERROR)
+        .body(
+            Full::new(INTERNAL_SERVER_ERROR.into())
+                .map_err(|e| match e {})
+                .boxed(),
+        )
         .unwrap()
 }

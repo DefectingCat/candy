@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     error::{Error, Result},
-    http::{handle_file, not_found, CandyBody},
+    http::{handle_file, internal_server_error, not_found, CandyBody},
     utils::{find_route, parse_assets_path},
 };
 
@@ -54,8 +54,7 @@ impl SettingHost {
                             warn!("{err}");
                             not_found()
                         }
-                        // TODO: handle other error
-                        _ => todo!(),
+                        _ => internal_server_error(),
                     };
                     let end_time = (Instant::now() - start_time).as_micros() as f32;
                     let end_time = end_time / 1000_f32;
