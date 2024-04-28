@@ -1,4 +1,7 @@
-use crate::{consts::keep_alive_timeoutd_efault, error::Result};
+use crate::{
+    consts::{host_index, keep_alive_timeoutd_efault, process_timeout},
+    error::Result,
+};
 use std::{collections::BTreeMap, fs};
 
 use serde::Deserialize;
@@ -21,10 +24,14 @@ pub struct SettingHost {
     #[serde(skip_deserializing, skip_serializing)]
     pub route_map: BTreeMap<String, SettingRoute>,
     /// Index files format
+    #[serde(default = "host_index")]
     pub index: Vec<String>,
     /// HTTP keep-alive timeout
     #[serde(default = "keep_alive_timeoutd_efault")]
     pub keep_alive: u16,
+    // http process max timeout
+    #[serde(default = "process_timeout")]
+    pub process_timeout: u16,
 }
 
 #[derive(Deserialize, Clone, Debug)]
