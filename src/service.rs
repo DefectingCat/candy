@@ -5,11 +5,8 @@ use std::{
 };
 
 use crate::{
-    error::{
-        Error::{self},
-        Result,
-    },
-    http::{not_found, stream_file, CandyBody},
+    error::{Error, Result},
+    http::{handle_file, not_found, CandyBody},
     utils::{find_route, parse_assets_path},
 };
 
@@ -133,8 +130,8 @@ async fn handle_connection(
 
     // http method handle
     let res = match *req_method {
-        Method::GET => response.body(stream_file(&path).await?)?,
-        Method::POST => response.body(stream_file(&path).await?)?,
+        Method::GET => response.body(handle_file(&path).await?)?,
+        Method::POST => response.body(handle_file(&path).await?)?,
         // Return the 404 Not Found for other routes.
         _ => {
             return Err(not_found_err);

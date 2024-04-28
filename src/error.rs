@@ -1,5 +1,6 @@
-use std::io;
+use std::{io, sync::PoisonError, time::SystemTimeError};
 
+use anyhow::anyhow;
 use hyper::header::InvalidHeaderValue;
 
 #[allow(clippy::enum_variant_names)]
@@ -12,6 +13,8 @@ pub enum Error {
     TomlDecode(#[from] toml::de::Error),
     #[error("failed to handle http {0}")]
     Http(#[from] hyper::http::Error),
+    #[error("failed to handle system time {0}")]
+    Time(#[from] SystemTimeError),
 
     // http
     #[error("route not found {0}")]
@@ -23,3 +26,9 @@ pub enum Error {
 }
 
 pub type Result<T, E = Error> = anyhow::Result<T, E>;
+
+impl<T> From<PoisonError<T>> for Error {
+    fn from(err: PoisonError<T>) -> Self {
+        Self::InternalServerError(anyhow!("global cache poisoned {err}"))
+    }
+}

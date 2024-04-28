@@ -6,4 +6,4 @@ A tiny web server built with Rust.
 
 - [ ] HTTP Etag: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag#etag_value
 - [x] Graceful shutdown
-- [ ] `keep-alive` timeout setting
+- [x] `keep-alive` timeout setting
