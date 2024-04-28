@@ -31,11 +31,6 @@ use crate::config::SettingHost;
 
 impl SettingHost {
     pub fn mk_server(&'static self) -> impl Future<Output = anyhow::Result<()>> + 'static {
-        // Use a 5 second timeout for incoming connections to the server.
-        // If a request is in progress when the 5 second timeout elapses,
-        // use a 2 second timeout for processing the final request and graceful shutdown.
-        let connection_timeouts = [Duration::from_secs(5), Duration::from_secs(2)];
-
         let addr = format!("{}:{}", self.ip, self.port);
         #[allow(unreachable_code)]
         async move {
@@ -45,6 +40,13 @@ impl SettingHost {
                 let (stream, addr) = listener.accept().await?;
                 info!("accept from {}", &addr);
                 let io = TokioIo::new(stream);
+
+                // Use keep_alive in config for incoming connections to the server.
+                // use process_timeout in config for processing the final request and graceful shutdown.
+                let connection_timeouts = [
+                    Duration::from_secs(self.keep_alive.into()),
+                    Duration::from_secs(self.process_timeout.into()),
+                ];
 
                 let service = move |req| async move {
                     let start_time = time::Instant::now();
@@ -127,7 +129,7 @@ async fn handle_connection(
     let headers = response.headers_mut().ok_or(InternalServerError(anyhow!(
         "build response failed, cannot get headser"
     )))?;
-    headers.insert("Content-Type", "application/html".parse()?);
+    headers.insert("Content-Type", "text/html".parse()?);
 
     // http method handle
     let res = match *req_method {

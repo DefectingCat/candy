@@ -1,0 +1,14 @@
+[[host]]
+ip = "0.0.0.0"
+port = 4000
+# index file name and format
+index = ["index.html"]
+# http keep alive timeout
+keep-alive = 75
+# http process max timeout
+process-timeout = 15
+[[host.route]]
+# route path: GET /
+location = "/"
+# static file path
+root = "./html"
