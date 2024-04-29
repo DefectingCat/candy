@@ -12,7 +12,7 @@ use hyper::{
     Response, StatusCode,
 };
 
-use tokio::fs::File;
+use tokio::{fs::File, io::AsyncReadExt};
 use tokio_util::io::ReaderStream;
 use tracing::error;
 
@@ -29,7 +29,7 @@ pub type CandyBody<T, E = Error> = BoxBody<T, E>;
 pub async fn handle_file(path: &str) -> Result<CandyBody<Bytes>> {
     // Open file for reading
     let file = File::open(path).await;
-    let file = match file {
+    let mut file = match file {
         Ok(f) => f,
         Err(err) => {
             error!("Unable to open file {err}");
@@ -43,23 +43,30 @@ pub async fn handle_file(path: &str) -> Result<CandyBody<Bytes>> {
         .duration_since(UNIX_EPOCH)?
         .as_secs();
 
-    {
+    let has_cache = {
         let cache = get_cache().read()?;
         match cache.get(path) {
             Some(time) => {
                 // dbg!(time, last_modified);
+                true
             }
             None => {
                 drop(cache);
                 let mut cache = get_cache().write()?;
                 cache.insert(path.to_string(), last_modified);
+                false
             }
         }
+    };
+
+    if has_cache {
+        read_file(&mut file).await
+    } else {
+        stream_file(file).await
     }
-    stream_file(file).await
 }
 
-/// Open local file by path, then use `ReaderStream` to stream to client
+/// Open then use `ReaderStream` to stream to client
 pub async fn stream_file(file: File) -> Result<CandyBody<Bytes>> {
     // Wrap to a tokio_util::io::ReaderStream
     let reader_stream = ReaderStream::new(file);
@@ -69,6 +76,14 @@ pub async fn stream_file(file: File) -> Result<CandyBody<Bytes>> {
     let boxed_body = BodyExt::map_err(stream_body, Error::Io).boxed();
 
     Ok(boxed_body)
+}
+
+/// Open local file by
+pub async fn read_file(file: &mut File) -> Result<CandyBody<Bytes>> {
+    let mut buffer = Vec::with_capacity(1024);
+    file.read_to_end(&mut buffer).await?;
+    let body = Full::new(buffer.into()).map_err(|e| match e {}).boxed();
+    Ok(body)
 }
 
 // HTTP status code 404
