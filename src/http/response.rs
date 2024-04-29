@@ -36,12 +36,10 @@ pub async fn handle_file(path: &str) -> Result<CandyBody<Bytes>> {
             return Err(Error::NotFound(format!("path not found {}", path)));
         }
     };
-    let last_modified = file
-        .metadata()
-        .await?
-        .modified()?
-        .duration_since(UNIX_EPOCH)?
-        .as_secs();
+    let matedata = file.metadata().await?;
+    let size = matedata.len();
+    let last_modified = matedata.modified()?.duration_since(UNIX_EPOCH)?.as_secs();
+    dbg!(size);
 
     let has_cache = {
         let cache = get_cache().read()?;
@@ -59,14 +57,19 @@ pub async fn handle_file(path: &str) -> Result<CandyBody<Bytes>> {
         }
     };
 
+    // read_file(&mut file).await
+    // stream_file(file).await
     if has_cache {
         read_file(&mut file).await
+        // stream_file(file).await
     } else {
-        stream_file(file).await
+        // stream_file(file).await
+        read_file(&mut file).await
     }
 }
 
-/// Open then use `ReaderStream` to stream to client
+/// Open then use `ReaderStream` to stream to client.
+/// Stream a file more suit large file, but its slower than read file to memory.
 pub async fn stream_file(file: File) -> Result<CandyBody<Bytes>> {
     // Wrap to a tokio_util::io::ReaderStream
     let reader_stream = ReaderStream::new(file);
@@ -74,11 +77,10 @@ pub async fn stream_file(file: File) -> Result<CandyBody<Bytes>> {
     let stream_body = StreamBody::new(reader_stream.map_ok(Frame::data));
     // let boxed_body = stream_body.map_err(|e| Error::IoError(e)).boxed();
     let boxed_body = BodyExt::map_err(stream_body, Error::Io).boxed();
-
     Ok(boxed_body)
 }
 
-/// Open local file by
+/// Open local file to memory
 pub async fn read_file(file: &mut File) -> Result<CandyBody<Bytes>> {
     let mut buffer = Vec::with_capacity(1024);
     file.read_to_end(&mut buffer).await?;
