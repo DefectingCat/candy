@@ -1,4 +1,4 @@
-use std::{io, sync::PoisonError, time::SystemTimeError};
+use std::{io, num::TryFromIntError, sync::PoisonError, time::SystemTimeError};
 
 use anyhow::anyhow;
 use hyper::header::InvalidHeaderValue;
@@ -15,6 +15,8 @@ pub enum Error {
     Http(#[from] hyper::http::Error),
     #[error("failed to handle system time {0}")]
     Time(#[from] SystemTimeError),
+    #[error("failed to convert int {0}")]
+    TryFromInt(#[from] TryFromIntError),
 
     // http
     #[error("route not found {0}")]

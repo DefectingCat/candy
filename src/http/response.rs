@@ -9,11 +9,11 @@ use futures_util::TryStreamExt;
 use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
 use hyper::{
     body::{Bytes, Frame},
-    Response, StatusCode,
+    HeaderMap, Response, StatusCode,
 };
 
 use tokio::{fs::File, io::AsyncReadExt};
-use tokio_util::io::ReaderStream;
+use tokio_util::{bytes::BytesMut, io::ReaderStream};
 use tracing::error;
 
 pub type CandyBody<T, E = Error> = BoxBody<T, E>;
@@ -26,7 +26,7 @@ pub type CandyBody<T, E = Error> = BoxBody<T, E>;
 /// ## Arguments
 ///
 /// `path`: local file path
-pub async fn handle_file(path: &str) -> Result<CandyBody<Bytes>> {
+pub async fn handle_file(path: &str, headers: &mut HeaderMap) -> Result<CandyBody<Bytes>> {
     // Open file for reading
     let file = File::open(path).await;
     let mut file = match file {
@@ -39,33 +39,24 @@ pub async fn handle_file(path: &str) -> Result<CandyBody<Bytes>> {
     let matedata = file.metadata().await?;
     let size = matedata.len();
     let last_modified = matedata.modified()?.duration_since(UNIX_EPOCH)?.as_secs();
-    dbg!(size);
+    // headers.insert("Last-", last_modified.into());
+    headers.insert("Etag", format!("{last_modified}-{size}").parse()?);
 
-    let has_cache = {
+    /* {
         let cache = get_cache().read()?;
         match cache.get(path) {
             Some(time) => {
                 // dbg!(time, last_modified);
-                true
             }
             None => {
                 drop(cache);
                 let mut cache = get_cache().write()?;
                 cache.insert(path.to_string(), last_modified);
-                false
             }
         }
-    };
+    } */
 
-    // read_file(&mut file).await
-    // stream_file(file).await
-    if has_cache {
-        read_file(&mut file).await
-        // stream_file(file).await
-    } else {
-        // stream_file(file).await
-        read_file(&mut file).await
-    }
+    read_file(&mut file, size).await
 }
 
 /// Open then use `ReaderStream` to stream to client.
@@ -81,10 +72,11 @@ pub async fn stream_file(file: File) -> Result<CandyBody<Bytes>> {
 }
 
 /// Open local file to memory
-pub async fn read_file(file: &mut File) -> Result<CandyBody<Bytes>> {
-    let mut buffer = Vec::with_capacity(1024);
-    file.read_to_end(&mut buffer).await?;
-    let body = Full::new(buffer.into()).map_err(|e| match e {}).boxed();
+pub async fn read_file(file: &mut File, size: u64) -> Result<CandyBody<Bytes>> {
+    let mut buffer = vec![0u8; size.try_into()?];
+    file.read_exact(&mut buffer[..]).await?;
+    let bytes = Bytes::from_iter(buffer);
+    let body = Full::new(bytes).map_err(|e| match e {}).boxed();
     Ok(body)
 }
 

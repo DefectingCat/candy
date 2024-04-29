@@ -127,10 +127,11 @@ async fn handle_connection(
     )))?;
     headers.insert("Content-Type", "text/html".parse()?);
 
+    let body = handle_file(&path, headers).await?;
     // http method handle
     let res = match *req_method {
-        Method::GET => response.body(handle_file(&path).await?)?,
-        Method::POST => response.body(handle_file(&path).await?)?,
+        Method::GET => response.body(body)?,
+        Method::POST => response.body(body)?,
         // Return the 404 Not Found for other routes.
         _ => {
             return Err(not_found_err);
