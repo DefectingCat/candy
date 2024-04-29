@@ -1,7 +1,7 @@
 use std::{io, num::TryFromIntError, sync::PoisonError, time::SystemTimeError};
 
 use anyhow::anyhow;
-use hyper::header::InvalidHeaderValue;
+use hyper::header::{InvalidHeaderValue, ToStrError};
 
 #[allow(clippy::enum_variant_names)]
 #[derive(thiserror::Error, Debug)]
@@ -17,6 +17,8 @@ pub enum Error {
     Time(#[from] SystemTimeError),
     #[error("failed to convert int {0}")]
     TryFromInt(#[from] TryFromIntError),
+    #[error("failed to convert str {0}")]
+    ToStr(#[from] ToStrError),
 
     // http
     #[error("route not found {0}")]

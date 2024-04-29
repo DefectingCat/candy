@@ -120,6 +120,20 @@ async fn handle_connection(
         }
     };
 
+    // prepare compress
+    let accept_encoding = req.headers().get("Accept-Encoding");
+    match accept_encoding {
+        Some(accept) => {
+            let accept = accept.to_str()?;
+            dbg!(accept);
+            match accept {
+                str if str.contains("zstd") => {}
+                _ => todo!(),
+            }
+        }
+        None => todo!(),
+    }
+
     // build the response for client
     let mut response = Response::builder();
     let headers = response.headers_mut().ok_or(InternalServerError(anyhow!(
