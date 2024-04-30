@@ -102,6 +102,8 @@ pub fn internal_server_error() -> Response<CandyBody<Bytes>> {
 }
 
 // HTTP methods
+/// handle http get method
+/// read static file and check If-None-Match cache
 pub async fn handle_get(
     req: Request<Incoming>,
     mut res: Builder,
@@ -123,6 +125,17 @@ pub async fn handle_get(
     headers.insert("Content-Type", "text/html".parse()?);
     headers.insert("Etag", etag.parse()?);
     let file_buffer = read_file_bytes(&mut file, size).await?;
+
+    // check cache
+    let if_none_match = req.headers().get("If-None-Match");
+    match if_none_match {
+        Some(inm) if *inm == *etag => {
+            let res = res.status(304);
+            let body = Full::new(vec![].into()).map_err(|e| match e {}).boxed();
+            return Ok(res.body(body)?);
+        }
+        _ => {}
+    }
 
     // prepare compress
     let accept_encoding = req.headers().get("Accept-Encoding");
