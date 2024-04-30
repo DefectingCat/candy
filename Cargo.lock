@@ -98,6 +98,7 @@ dependencies = [
  "async-compression",
  "config",
  "futures-util",
+ "http",
  "http-body-util",
  "hyper",
  "hyper-util",

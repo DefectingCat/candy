@@ -1,17 +1,22 @@
 use std::time::UNIX_EPOCH;
 
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    utils::zstd::compress,
+};
 
+use anyhow::anyhow;
 use futures_util::TryStreamExt;
+use http::response::Builder;
 use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
 use hyper::{
-    body::{Bytes, Frame},
-    HeaderMap, Response, StatusCode,
+    body::{Bytes, Frame, Incoming},
+    Request, Response, StatusCode,
 };
 
 use tokio::{fs::File, io::AsyncReadExt};
 use tokio_util::io::ReaderStream;
-use tracing::error;
+use tracing::{debug, error};
 
 pub type CandyBody<T, E = Error> = BoxBody<T, E>;
 
@@ -23,21 +28,17 @@ pub type CandyBody<T, E = Error> = BoxBody<T, E>;
 /// ## Arguments
 ///
 /// `path`: local file path
-pub async fn handle_file(path: &str, headers: &mut HeaderMap) -> Result<Vec<u8>> {
+pub async fn open_file(path: &str) -> Result<File> {
     // Open file for reading
     let file = File::open(path).await;
-    let mut file = match file {
+    let file = match file {
         Ok(f) => f,
         Err(err) => {
             error!("Unable to open file {err}");
             return Err(Error::NotFound(format!("path not found {}", path)));
         }
     };
-    let matedata = file.metadata().await?;
-    let size = matedata.len();
-    let last_modified = matedata.modified()?.duration_since(UNIX_EPOCH)?.as_secs();
-    // headers.insert("Last-", last_modified.into());
-    headers.insert("Etag", format!("{last_modified}-{size}").parse()?);
+    Ok(file)
 
     /* {
         let cache = get_cache().read()?;
@@ -52,8 +53,6 @@ pub async fn handle_file(path: &str, headers: &mut HeaderMap) -> Result<Vec<u8>>
             }
         }
     } */
-
-    read_file_bytes(&mut file, size).await
 }
 
 /// Open then use `ReaderStream` to stream to client.
@@ -100,4 +99,48 @@ pub fn internal_server_error() -> Response<CandyBody<Bytes>> {
                 .boxed(),
         )
         .unwrap()
+}
+
+// HTTP methods
+pub async fn handle_get(
+    req: Request<Incoming>,
+    mut res: Builder,
+    path: &str,
+) -> Result<Response<CandyBody<Bytes>>> {
+    use Error::*;
+
+    let headers = res
+        .headers_mut()
+        .ok_or(InternalServerError(anyhow!("build response failed")))?;
+
+    // file bytes
+    let mut file = open_file(path).await?;
+    // file info
+    let matedata = file.metadata().await?;
+    let size = matedata.len();
+    let last_modified = matedata.modified()?.duration_since(UNIX_EPOCH)?.as_secs();
+    let etag = format!("{last_modified}-{size}");
+    headers.insert("Content-Type", "text/html".parse()?);
+    headers.insert("Etag", etag.parse()?);
+    let file_buffer = read_file_bytes(&mut file, size).await?;
+
+    // prepare compress
+    let accept_encoding = req.headers().get("Accept-Encoding");
+    let bytes = match accept_encoding {
+        Some(accept) => {
+            let accept = accept.to_str()?;
+            debug!("Accept-Encoding {}", accept);
+            match accept {
+                str if str.contains("zstd") => {
+                    headers.insert("Content-Encoding", "zstd".parse()?);
+                    compress(&file_buffer).await?
+                }
+                _ => file_buffer,
+            }
+        }
+        None => file_buffer,
+    };
+
+    let body = Full::new(bytes.into()).map_err(|e| match e {}).boxed();
+    Ok(res.body(body)?)
 }

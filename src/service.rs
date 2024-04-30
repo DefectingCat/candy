@@ -1,5 +1,4 @@
 use std::{
-    borrow::Borrow,
     path::Path,
     pin::pin,
     time::{self, Duration, Instant},
@@ -7,14 +6,12 @@ use std::{
 
 use crate::{
     error::{Error, Result},
-    http::{handle_file, internal_server_error, not_found, CandyBody},
-    utils::{find_route, parse_assets_path, zstd::compress},
+    http::{handle_get, internal_server_error, not_found, CandyBody},
+    utils::{find_route, parse_assets_path},
 };
 
-use anyhow::anyhow;
 use futures_util::Future;
 
-use http_body_util::{BodyExt, Full};
 use hyper::{
     body::{Bytes, Incoming as IncomingBody},
     server::conn::http1,
@@ -123,37 +120,12 @@ async fn handle_connection(
     };
 
     // build the response for client
-    let mut response = Response::builder();
-    let headers = response.headers_mut().ok_or(InternalServerError(anyhow!(
-        "build response failed, cannot get headser"
-    )))?;
-    headers.insert("Content-Type", "text/html".parse()?);
+    let res = Response::builder();
 
-    // file bytes
-    let bytes = handle_file(&path, headers).await?;
-
-    // prepare compress
-    let accept_encoding = req.headers().get("Accept-Encoding");
-    let bytes = match accept_encoding {
-        Some(accept) => {
-            let accept = accept.to_str()?;
-            debug!(accept);
-            match accept {
-                str if str.contains("zstd") => {
-                    headers.insert("Content-Encoding", "zstd".parse()?);
-                    compress(&bytes).await?
-                }
-                _ => bytes,
-            }
-        }
-        None => bytes,
-    };
-
-    let body = Full::new(bytes.into()).map_err(|e| match e {}).boxed();
     // http method handle
     let res = match *req_method {
-        Method::GET => response.body(body)?,
-        Method::POST => response.body(body)?,
+        Method::GET => handle_get(req, res, &path).await?,
+        Method::POST => handle_get(req, res, &path).await?,
         // Return the 404 Not Found for other routes.
         _ => {
             return Err(not_found_err);
