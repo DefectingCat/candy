@@ -61,7 +61,7 @@ impl SettingHost {
                     anyhow::Ok(response)
                 };
 
-                let handler = tokio::spawn(async move {
+                tokio::spawn(async move {
                     let conn = http1::Builder::new().serve_connection(io, service_fn(service));
                     let mut conn = pin!(conn);
                     // Iterate the timeouts.  Use tokio::select! to wait on the
@@ -71,7 +71,9 @@ impl SettingHost {
                         debug!("iter {} duration {:?}", i, sleep_duration);
                         select! {
                             res = conn.as_mut() => {
-                                res?;
+                                if let Err(err)  = res {
+                                    error!("handle connection {:?}", err);
+                                }
                             }
                             _ = tokio::time::sleep(*sleep_duration) => {
                                 info!("iter = {} got timeout_interval, calling conn.graceful_shutdown", i);
@@ -79,11 +81,7 @@ impl SettingHost {
                             }
                         }
                     }
-                    anyhow::Ok(())
                 });
-                if let Err(err) = handler.await {
-                    error!("handle connection {:?}", err);
-                }
             }
             anyhow::Ok(())
         }
