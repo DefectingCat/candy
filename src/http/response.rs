@@ -1,9 +1,6 @@
 use std::time::UNIX_EPOCH;
 
-use crate::{
-    error::{Error, Result},
-    get_cache,
-};
+use crate::error::{Error, Result};
 
 use futures_util::TryStreamExt;
 use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
@@ -13,7 +10,7 @@ use hyper::{
 };
 
 use tokio::{fs::File, io::AsyncReadExt};
-use tokio_util::{bytes::BytesMut, io::ReaderStream};
+use tokio_util::io::ReaderStream;
 use tracing::error;
 
 pub type CandyBody<T, E = Error> = BoxBody<T, E>;
@@ -26,7 +23,7 @@ pub type CandyBody<T, E = Error> = BoxBody<T, E>;
 /// ## Arguments
 ///
 /// `path`: local file path
-pub async fn handle_file(path: &str, headers: &mut HeaderMap) -> Result<CandyBody<Bytes>> {
+pub async fn handle_file(path: &str, headers: &mut HeaderMap) -> Result<Vec<u8>> {
     // Open file for reading
     let file = File::open(path).await;
     let mut file = match file {
@@ -56,11 +53,11 @@ pub async fn handle_file(path: &str, headers: &mut HeaderMap) -> Result<CandyBod
         }
     } */
 
-    read_file(&mut file, size).await
+    read_file_bytes(&mut file, size).await
 }
 
 /// Open then use `ReaderStream` to stream to client.
-/// Stream a file more suit large file, but its slower than read file to memory.
+/// Stream a file more suitable for large file, but its slower than read file to memory.
 pub async fn stream_file(file: File) -> Result<CandyBody<Bytes>> {
     // Wrap to a tokio_util::io::ReaderStream
     let reader_stream = ReaderStream::new(file);
@@ -71,12 +68,16 @@ pub async fn stream_file(file: File) -> Result<CandyBody<Bytes>> {
     Ok(boxed_body)
 }
 
-/// Open local file to memory
-pub async fn read_file(file: &mut File, size: u64) -> Result<CandyBody<Bytes>> {
+pub async fn read_file_bytes(file: &mut File, size: u64) -> Result<Vec<u8>> {
     let mut buffer = vec![0u8; size.try_into()?];
     file.read_exact(&mut buffer[..]).await?;
-    let bytes = Bytes::from_iter(buffer);
-    let body = Full::new(bytes).map_err(|e| match e {}).boxed();
+    Ok(buffer)
+}
+
+/// Open local file to memory
+pub async fn read_file(file: &mut File, size: u64) -> Result<CandyBody<Bytes>> {
+    let bytes = read_file_bytes(file, size).await?;
+    let body = Full::new(bytes.into()).map_err(|e| match e {}).boxed();
     Ok(body)
 }
 

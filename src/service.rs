@@ -1,4 +1,5 @@
 use std::{
+    borrow::Borrow,
     path::Path,
     pin::pin,
     time::{self, Duration, Instant},
@@ -7,12 +8,13 @@ use std::{
 use crate::{
     error::{Error, Result},
     http::{handle_file, internal_server_error, not_found, CandyBody},
-    utils::{find_route, parse_assets_path},
+    utils::{find_route, parse_assets_path, zstd::compress},
 };
 
 use anyhow::anyhow;
 use futures_util::Future;
 
+use http_body_util::{BodyExt, Full};
 use hyper::{
     body::{Bytes, Incoming as IncomingBody},
     server::conn::http1,
@@ -120,20 +122,6 @@ async fn handle_connection(
         }
     };
 
-    // prepare compress
-    let accept_encoding = req.headers().get("Accept-Encoding");
-    match accept_encoding {
-        Some(accept) => {
-            let accept = accept.to_str()?;
-            dbg!(accept);
-            match accept {
-                str if str.contains("zstd") => {}
-                _ => todo!(),
-            }
-        }
-        None => todo!(),
-    }
-
     // build the response for client
     let mut response = Response::builder();
     let headers = response.headers_mut().ok_or(InternalServerError(anyhow!(
@@ -141,7 +129,27 @@ async fn handle_connection(
     )))?;
     headers.insert("Content-Type", "text/html".parse()?);
 
-    let body = handle_file(&path, headers).await?;
+    // file bytes
+    let bytes = handle_file(&path, headers).await?;
+
+    // prepare compress
+    let accept_encoding = req.headers().get("Accept-Encoding");
+    let bytes = match accept_encoding {
+        Some(accept) => {
+            let accept = accept.to_str()?;
+            debug!(accept);
+            match accept {
+                str if str.contains("zstd") => {
+                    headers.insert("Content-Encoding", "zstd".parse()?);
+                    compress(&bytes).await?
+                }
+                _ => bytes,
+            }
+        }
+        None => bytes,
+    };
+
+    let body = Full::new(bytes.into()).map_err(|e| match e {}).boxed();
     // http method handle
     let res = match *req_method {
         Method::GET => response.body(body)?,
