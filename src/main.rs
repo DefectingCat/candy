@@ -1,5 +1,3 @@
-use std::{collections::BTreeMap, sync::OnceLock, sync::RwLock};
-
 use anyhow::{Context, Result};
 
 use tokio::task::JoinSet;
@@ -17,11 +15,6 @@ mod error;
 mod http;
 mod service;
 mod utils;
-
-static CACHE: OnceLock<RwLock<BTreeMap<String, u64>>> = OnceLock::new();
-pub fn get_cache() -> &'static RwLock<BTreeMap<String, u64>> {
-    CACHE.get_or_init(|| RwLock::new(BTreeMap::new()))
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
