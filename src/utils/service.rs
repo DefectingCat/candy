@@ -1,9 +1,14 @@
-use crate::{
-    config::{HostRouteMap, SettingRoute},
-    error::{Error, Result},
-};
+use crate::error::{Error, Result};
+
+use crate::config::{HostRouteMap, SettingRoute};
 
 /// Parse assets file path
+///
+/// ## Arguments
+///
+/// `assets_path`: the rest part of client request path
+/// `assets_root`: local directory path from config file
+/// `index_file`: index file format from config file
 #[inline]
 pub fn parse_assets_path(assets_path: &str, assets_root: &str, index_file: &str) -> String {
     match assets_path {
@@ -32,6 +37,8 @@ pub fn parse_assets_path(assets_path: &str, assets_root: &str, index_file: &str)
 /// ## Return
 ///
 /// a result. return none when path not registried
+/// `router`: host from config file
+/// `assets_path`: the rest part of client request path
 pub fn find_route<'a>(
     req_path: &'a str,
     route_map: &'a HostRouteMap,
