@@ -1,4 +1,6 @@
 use std::{
+    error::Error as StdError,
+    io::ErrorKind::NotConnected,
     path::Path,
     pin::pin,
     time::{self, Duration, Instant},
@@ -57,7 +59,7 @@ impl SettingHost {
                     };
                     let end_time = (Instant::now() - start_time).as_micros() as f32;
                     let end_time = end_time / 1000_f32;
-                    info!("end {} {:.3}ms", addr, end_time);
+                    info!("done {} {:.3}ms", addr, end_time);
                     anyhow::Ok(response)
                 };
 
@@ -71,8 +73,15 @@ impl SettingHost {
                         debug!("iter {} duration {:?}", i, sleep_duration);
                         select! {
                             res = conn.as_mut() => {
-                                if let Err(err)  = res {
-                                    error!("handle connection {:?}", err);
+                                match res {
+                                    Ok(_) => {},
+                                    Err(err) if err.source().is_some() && err.source().unwrap().downcast_ref::<std::io::Error>().unwrap().kind() == NotConnected => {
+                                        // The client closed connection
+                                        debug!("client closed connection")
+                                    }
+                                    Err(err) => {
+                                        error!("handle connection {:?}", err);
+                                    }
                                 }
                             }
                             _ = tokio::time::sleep(*sleep_duration) => {
