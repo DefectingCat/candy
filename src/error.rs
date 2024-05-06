@@ -27,6 +27,8 @@ pub enum Error {
     InternalServerError(#[from] anyhow::Error),
     #[error("invalide header value {0}")]
     InvalidHeader(#[from] InvalidHeaderValue),
+    #[error("")]
+    Empty,
 }
 
 pub type Result<T, E = Error> = anyhow::Result<T, E>;
