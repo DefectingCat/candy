@@ -122,6 +122,7 @@ pub async fn handle_get(
     let size = matedata.len();
     let last_modified = matedata.modified()?.duration_since(UNIX_EPOCH)?.as_secs();
     let etag = format!("{last_modified}-{size}");
+    // TODO: file mime type
     headers.insert("Content-Type", "text/html".parse()?);
     headers.insert("Etag", etag.parse()?);
     let file_buffer = read_file_bytes(&mut file, size).await?;
