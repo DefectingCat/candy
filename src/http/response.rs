@@ -2,7 +2,7 @@ use std::time::UNIX_EPOCH;
 
 use crate::{
     error::{Error, Result},
-    utils::zstd::compress,
+    utils::compress::{compress, CompressType},
 };
 
 use anyhow::anyhow;
@@ -109,6 +109,7 @@ pub async fn handle_get(
     mut res: Builder,
     path: &str,
 ) -> Result<Response<CandyBody<Bytes>>> {
+    use CompressType::*;
     use Error::*;
 
     let headers = res
@@ -147,7 +148,7 @@ pub async fn handle_get(
             match accept {
                 str if str.contains("zstd") => {
                     headers.insert("Content-Encoding", "zstd".parse()?);
-                    compress(&file_buffer).await?
+                    compress(Zstd, &file_buffer).await?
                 }
                 _ => file_buffer,
             }
