@@ -1,7 +1,8 @@
-use std::time::UNIX_EPOCH;
+use std::{path::PathBuf, str::FromStr, time::UNIX_EPOCH};
 
 use crate::{
     error::{Error, Result},
+    match_mime,
     utils::compress::{compress, CompressType},
 };
 
@@ -119,10 +120,14 @@ pub async fn handle_get(
     // file bytes
     let mut file = open_file(path).await?;
     // file info
-    let matedata = file.metadata().await?;
-    let size = matedata.len();
-    let last_modified = matedata.modified()?.duration_since(UNIX_EPOCH)?.as_secs();
+    let metadata = file.metadata().await?;
+    let size = metadata.len();
+    let last_modified = metadata.modified()?.duration_since(UNIX_EPOCH)?.as_secs();
     let etag = format!("{last_modified}-{size}");
+    let extension = PathBuf::from_str(path)
+        .map_err(|err| InternalServerError(anyhow!(err)))?
+        .extension()
+        .ok_or(anyhow!(NotFound("".to_string())))?;
     // TODO: file mime type
     headers.insert("Content-Type", "text/html".parse()?);
     headers.insert("Etag", etag.parse()?);

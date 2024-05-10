@@ -53,3 +53,19 @@ mime!(TEXT_STAR, "text/*");
 mime!(IMAGE_STAR, "image/*");
 mime!(VIDEO_STAR, "video/*");
 mime!(AUDIO_STAR, "audio/*");
+
+// #[macro_export]
+// macro_rules! match_mime {
+//     ($a:ident) => {
+//         match $a {
+//             _ => AUDIO_STAR,
+//         }
+//     };
+// }
+
+// fn parse(extension: &str) -> &'static str {
+//     match extension {
+//         _ => AUDIO_STAR,
+//     }
+// }
+// impl From<OsStr> for
