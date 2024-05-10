@@ -5,6 +5,6 @@
 - [x] HTTP Etag: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag#etag_value
 - [ ] Content compress
   - [x] zstd
-  - [ ] gzip
-  - [ ] deflate
-  - [ ] br
+  - [x] gzip
+  - [x] deflate
+  - [x] br

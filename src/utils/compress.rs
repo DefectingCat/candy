@@ -1,15 +1,19 @@
-use async_compression::tokio::write::{GzipEncoder, ZstdEncoder};
+use async_compression::tokio::write::{BrotliEncoder, DeflateEncoder, GzipEncoder, ZstdEncoder};
 use std::io::Result;
 use tokio::io::AsyncWriteExt;
 
 pub enum CompressType {
     Zstd,
     Gzip,
+    Deflate,
+    Brotli,
 }
 
 pub enum Encoder {
-    Zstd(ZstdEncoder<Vec<u8>>),
-    Gzip(GzipEncoder<Vec<u8>>),
+    Zstd(Box<ZstdEncoder<Vec<u8>>>),
+    Gzip(Box<GzipEncoder<Vec<u8>>>),
+    Deflate(Box<DeflateEncoder<Vec<u8>>>),
+    Brotli(Box<BrotliEncoder<Vec<u8>>>),
 }
 
 impl Encoder {
@@ -25,6 +29,16 @@ impl Encoder {
                 encoder.shutdown().await?;
                 Ok(encoder.into_inner())
             }
+            Encoder::Deflate(mut encoder) => {
+                encoder.write_all(in_data).await?;
+                encoder.shutdown().await?;
+                Ok(encoder.into_inner())
+            }
+            Encoder::Brotli(mut encoder) => {
+                encoder.write_all(in_data).await?;
+                encoder.shutdown().await?;
+                Ok(encoder.into_inner())
+            }
         }
     }
 }
@@ -33,8 +47,10 @@ pub async fn compress(compress_type: CompressType, in_data: &[u8]) -> Result<Vec
     use CompressType::*;
 
     let encoder = match compress_type {
-        Zstd => Encoder::Zstd(ZstdEncoder::new(vec![])),
-        Gzip => Encoder::Gzip(GzipEncoder::new(vec![])),
+        Zstd => Encoder::Zstd(Box::new(ZstdEncoder::new(vec![]))),
+        Gzip => Encoder::Gzip(Box::new(GzipEncoder::new(vec![]))),
+        Deflate => Encoder::Deflate(Box::new(DeflateEncoder::new(vec![]))),
+        Brotli => Encoder::Brotli(Box::new(BrotliEncoder::new(vec![]))),
     };
     encoder.encode(in_data).await
 }
