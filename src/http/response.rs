@@ -150,6 +150,18 @@ pub async fn handle_get(
                     headers.insert("Content-Encoding", "zstd".parse()?);
                     compress(Zstd, &file_buffer).await?
                 }
+                str if str.contains("gzip") => {
+                    headers.insert("Content-Encoding", "gzip".parse()?);
+                    compress(Gzip, &file_buffer).await?
+                }
+                str if str.contains("deflate") => {
+                    headers.insert("Content-Encoding", "deflate".parse()?);
+                    compress(Deflate, &file_buffer).await?
+                }
+                str if str.contains("br") => {
+                    headers.insert("Content-Encoding", "br".parse()?);
+                    compress(Brotli, &file_buffer).await?
+                }
                 _ => file_buffer,
             }
         }
