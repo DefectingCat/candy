@@ -11,3 +11,4 @@
 - [ ] File MIME type
 - [ ] Logging to file
 - [ ] Proxy
+- [ ] FastCGI
