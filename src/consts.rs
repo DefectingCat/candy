@@ -20,3 +20,8 @@ pub const PROCESS_TIMEOUT: u16 = 75;
 pub fn process_timeout() -> u16 {
     PROCESS_TIMEOUT
 }
+
+pub const MIME_DEFAULT: &str = "application/octet-stream";
+pub fn mime_default() -> String {
+    MIME_DEFAULT.to_string()
+}
