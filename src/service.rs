@@ -9,11 +9,13 @@ use std::{
 
 use crate::{
     config::SettingHost,
+    consts::NAME,
     error::{Error, Result},
     http::{handle_get, internal_server_error, not_found, CandyBody},
     utils::{find_route, parse_assets_path},
 };
 
+use anyhow::anyhow;
 use futures_util::Future;
 use http::{Method, Request, Response};
 use hyper::{
@@ -32,18 +34,15 @@ use tracing::{debug, error, info, warn};
 impl SettingHost {
     pub fn mk_server(&'static self) -> impl Future<Output = anyhow::Result<()>> + 'static {
         let addr = format!("{}:{}", self.ip, self.port);
-        #[allow(unreachable_code)]
         async move {
             let listener = TcpListener::bind(&addr).await?;
             info!("host bind on {}", addr);
             loop {
                 let socket = listener.accept().await?;
-
                 tokio::spawn(async move {
                     graceful_shutdown(self, socket).await;
                 });
             }
-            anyhow::Ok(())
         }
     }
 }
@@ -152,7 +151,12 @@ pub async fn handle_connection(
     };
 
     // build the response for client
-    let res = Response::builder();
+    let mut res = Response::builder();
+    // TODO: headers from config
+    let headers = res
+        .headers_mut()
+        .ok_or(InternalServerError(anyhow!("build response failed")))?;
+    headers.insert("Server", NAME.parse()?);
 
     // http method handle
     let res = match *req_method {
