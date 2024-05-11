@@ -1,5 +1,28 @@
-use std::{collections::BTreeMap, env};
+use std::{collections::BTreeMap, env, process::exit, sync::OnceLock};
 
+use anyhow::Context;
+use tracing::error;
+
+use crate::config::{init_config, Settings};
+
+// global settings
+static SETTINGS: OnceLock<Settings> = OnceLock::new();
+pub fn get_settings() -> &'static Settings {
+    SETTINGS.get_or_init(|| {
+        init_config()
+            .with_context(|| "init config failed")
+            .map_err(|err| {
+                error!("{err}");
+                if let Some(err) = err.source() {
+                    error!("cause by {:?}", err)
+                }
+                exit(1);
+            })
+            .unwrap()
+    })
+}
+
+// pre defined
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const OS: &str = env::consts::OS;
@@ -11,21 +34,25 @@ pub fn host_index() -> Vec<String> {
     HOST_INDEX.map(|h| h.to_string()).to_vec()
 }
 
+// default http keep alive timeout
 pub const KEEP_ALIVE_TIMEOUTD_EFAULT: u16 = 75;
 pub fn keep_alive_timeoutd_efault() -> u16 {
     KEEP_ALIVE_TIMEOUTD_EFAULT
 }
 
+// default process for single http request
 pub const PROCESS_TIMEOUT: u16 = 75;
 pub fn process_timeout() -> u16 {
     PROCESS_TIMEOUT
 }
 
+// default mime type for unknow file
 pub const MIME_DEFAULT: &str = "application/octet-stream";
 pub fn mime_default() -> String {
     MIME_DEFAULT.to_string()
 }
 
+// default mime types
 pub fn types_default() -> BTreeMap<String, String> {
     BTreeMap::new()
 }
