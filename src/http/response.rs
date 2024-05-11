@@ -1,22 +1,20 @@
 use std::{path::PathBuf, str::FromStr, time::UNIX_EPOCH};
 
 use crate::{
-    config::SettingHost,
     error::{Error, Result},
+    get_settings,
     utils::compress::{compress, CompressType},
 };
 
 use anyhow::anyhow;
-use futures_util::TryStreamExt;
 use http::response::Builder;
-use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
+use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use hyper::{
-    body::{Bytes, Frame, Incoming},
+    body::{Bytes, Incoming},
     Request, Response, StatusCode,
 };
 
 use tokio::{fs::File, io::AsyncReadExt};
-use tokio_util::io::ReaderStream;
 use tracing::{debug, error};
 
 pub type CandyBody<T, E = Error> = BoxBody<T, E>;
@@ -124,12 +122,21 @@ pub async fn handle_get(
     let size = metadata.len();
     let last_modified = metadata.modified()?.duration_since(UNIX_EPOCH)?.as_secs();
     let etag = format!("{last_modified}-{size}");
-    let extension = PathBuf::from_str(path)
-        .map_err(|err| InternalServerError(anyhow!(err)))?
+    let extension = PathBuf::from_str(path).map_err(|err| InternalServerError(anyhow!(err)))?;
+    let extension = extension
         .extension()
-        .ok_or(anyhow!(NotFound("".to_string())))?;
-    // TODO: file mime type
-    headers.insert("Content-Type", "text/html".parse()?);
+        .ok_or(InternalServerError(anyhow!("read file extension failed")))?;
+
+    let settings = get_settings();
+    let content_type = settings.types.get(
+        extension
+            .to_str()
+            .ok_or(InternalServerError(anyhow!("read file extension failed")))?,
+    );
+    headers.insert(
+        "Content-Type",
+        content_type.unwrap_or(&settings.default_type).parse()?,
+    );
     headers.insert("Etag", etag.parse()?);
     let file_buffer = read_file_bytes(&mut file, size).await?;
 
