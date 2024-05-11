@@ -11,4 +11,6 @@
 - [ ] File MIME type
 - [ ] Logging to file
 - [ ] Proxy
+- [ ] Config init tests
+- [ ] Benchs
 - [ ] FastCGI
