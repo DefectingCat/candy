@@ -39,6 +39,7 @@ mime!(FONT_WOFF2, "font/woff2");
 
 mime!(APPLICATION_JSON, "application/json");
 mime!(APPLICATION_JAVASCRIPT, "application/javascript");
+mime!(APPLICATION_WASM, "application/wasm");
 mime!(
     APPLICATION_JAVASCRIPT_UTF_8,
     "application/javascript; charset=utf-8"

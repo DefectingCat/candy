@@ -9,6 +9,7 @@
   - [x] deflate
   - [x] br
 - [ ] File MIME type
+- [ ] Add headers in config
 - [ ] Logging to file
 - [ ] Proxy
 - [ ] Config init tests

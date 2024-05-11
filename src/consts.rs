@@ -81,4 +81,5 @@ pub fn insert_default_mimes(map: &mut BTreeMap<String, String>) {
     insert_mime!("wbmp", IMAGE_WBMP, map);
 
     insert_mime!("js", APPLICATION_JAVASCRIPT, map);
+    insert_mime!("wasm", APPLICATION_WASM, map);
 }
