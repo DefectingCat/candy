@@ -1,6 +1,7 @@
 use std::{path::PathBuf, str::FromStr, time::UNIX_EPOCH};
 
 use crate::{
+    config::SettingHost,
     error::{Error, Result},
     utils::compress::{compress, CompressType},
 };
@@ -57,15 +58,15 @@ pub async fn open_file(path: &str) -> Result<File> {
 
 /// Open then use `ReaderStream` to stream to client.
 /// Stream a file more suitable for large file, but its slower than read file to memory.
-pub async fn stream_file(file: File) -> Result<CandyBody<Bytes>> {
-    // Wrap to a tokio_util::io::ReaderStream
-    let reader_stream = ReaderStream::new(file);
-    // Convert to http_body_util::BoxBody
-    let stream_body = StreamBody::new(reader_stream.map_ok(Frame::data));
-    // let boxed_body = stream_body.map_err(|e| Error::IoError(e)).boxed();
-    let boxed_body = BodyExt::map_err(stream_body, Error::Io).boxed();
-    Ok(boxed_body)
-}
+// pub async fn stream_file(file: File) -> Result<CandyBody<Bytes>> {
+//     // Wrap to a tokio_util::io::ReaderStream
+//     let reader_stream = ReaderStream::new(file);
+//     // Convert to http_body_util::BoxBody
+//     let stream_body = StreamBody::new(reader_stream.map_ok(Frame::data));
+//     // let boxed_body = stream_body.map_err(|e| Error::IoError(e)).boxed();
+//     let boxed_body = BodyExt::map_err(stream_body, Error::Io).boxed();
+//     Ok(boxed_body)
+// }
 
 pub async fn read_file_bytes(file: &mut File, size: u64) -> Result<Vec<u8>> {
     let mut buffer = vec![0u8; size.try_into()?];
@@ -73,12 +74,12 @@ pub async fn read_file_bytes(file: &mut File, size: u64) -> Result<Vec<u8>> {
     Ok(buffer)
 }
 
-/// Open local file to memory
-pub async fn read_file(file: &mut File, size: u64) -> Result<CandyBody<Bytes>> {
-    let bytes = read_file_bytes(file, size).await?;
-    let body = Full::new(bytes.into()).map_err(|e| match e {}).boxed();
-    Ok(body)
-}
+// Open local file to memory
+// pub async fn read_file(file: &mut File, size: u64) -> Result<CandyBody<Bytes>> {
+//     let bytes = read_file_bytes(file, size).await?;
+//     let body = Full::new(bytes.into()).map_err(|e| match e {}).boxed();
+//     Ok(body)
+// }
 
 // HTTP status code 404
 static NOT_FOUND: &[u8] = b"Not Found";

@@ -27,8 +27,6 @@ async fn main() -> Result<()> {
     info!("{}/{}", NAME, VERSION);
     info!("OS: {} {}", OS, ARCH);
 
-    // global cache
-
     let mut servers = settings
         .host
         .iter()
