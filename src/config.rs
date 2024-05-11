@@ -1,5 +1,8 @@
 use crate::{
-    consts::{host_index, keep_alive_timeoutd_efault, mime_default, process_timeout},
+    consts::{
+        host_index, insert_default_mimes, keep_alive_timeoutd_efault, mime_default,
+        process_timeout, types_default,
+    },
     error::Result,
 };
 use std::{collections::BTreeMap, fs};
@@ -38,6 +41,8 @@ pub struct SettingHost {
 pub struct Settings {
     #[serde(default = "mime_default")]
     pub default_type: String,
+    #[serde(default = "types_default")]
+    pub types: BTreeMap<String, String>,
     pub host: Vec<SettingHost>,
 }
 
@@ -45,6 +50,7 @@ pub fn init_config() -> Result<Settings> {
     let file = fs::read_to_string("./config.toml")?;
     let mut settings: Settings = toml::from_str(&file)?;
 
+    // convert route map
     settings.host.iter_mut().for_each(|host| {
         let routes = &mut host.route;
         for route in routes.iter_mut() {
@@ -55,6 +61,9 @@ pub fn init_config() -> Result<Settings> {
             host.route_map.insert(route.location.to_string(), route);
         }
     });
+
+    // combine mime types
+    insert_default_mimes(&mut settings.types);
 
     Ok(settings)
 }

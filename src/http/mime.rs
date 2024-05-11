@@ -1,4 +1,5 @@
 // https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types
+#![allow(dead_code)]
 
 macro_rules! mime {
     ($a:ident, $b:literal) => {
@@ -27,6 +28,9 @@ mime!(TEXT_VCARD, "text/vcard");
 mime!(IMAGE_JPEG, "image/jpeg");
 mime!(IMAGE_GIF, "image/gif");
 mime!(IMAGE_PNG, "image/png");
+mime!(IMAGE_ICON, "image/x-icon");
+mime!(IMAGE_JNG, "image/x-jng");
+mime!(IMAGE_WBMP, "image/vnd.wap.wbmp ");
 mime!(IMAGE_BMP, "image/bmp");
 mime!(IMAGE_SVG, "image/svg+xml");
 
@@ -53,19 +57,3 @@ mime!(TEXT_STAR, "text/*");
 mime!(IMAGE_STAR, "image/*");
 mime!(VIDEO_STAR, "video/*");
 mime!(AUDIO_STAR, "audio/*");
-
-// #[macro_export]
-// macro_rules! match_mime {
-//     ($a:ident) => {
-//         match $a {
-//             _ => AUDIO_STAR,
-//         }
-//     };
-// }
-
-// fn parse(extension: &str) -> &'static str {
-//     match extension {
-//         _ => AUDIO_STAR,
-//     }
-// }
-// impl From<OsStr> for

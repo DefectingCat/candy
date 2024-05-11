@@ -1,4 +1,4 @@
-use std::env;
+use std::{collections::BTreeMap, env};
 
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -24,4 +24,34 @@ pub fn process_timeout() -> u16 {
 pub const MIME_DEFAULT: &str = "application/octet-stream";
 pub fn mime_default() -> String {
     MIME_DEFAULT.to_string()
+}
+
+pub fn types_default() -> BTreeMap<String, String> {
+    BTreeMap::new()
+}
+macro_rules! insert_mime {
+    ($name:literal, $mime:ident, $map:ident) => {
+        $map.entry($name.to_string()).or_insert($mime.to_string());
+    };
+}
+pub fn insert_default_mimes(map: &mut BTreeMap<String, String>) {
+    use crate::http::mime::*;
+
+    insert_mime!("html", TEXT_HTML, map);
+    insert_mime!("htm", TEXT_HTML, map);
+    insert_mime!("shtml", TEXT_HTML, map);
+    insert_mime!("css", TEXT_CSS, map);
+    insert_mime!("xml", TEXT_XML, map);
+    insert_mime!("rss", TEXT_XML, map);
+    insert_mime!("txt", TEXT_PLAIN, map);
+
+    insert_mime!("gif", IMAGE_GIF, map);
+    insert_mime!("jpg", IMAGE_JPEG, map);
+    insert_mime!("jpeg", IMAGE_JPEG, map);
+    insert_mime!("png", IMAGE_PNG, map);
+    insert_mime!("ico", IMAGE_ICON, map);
+    insert_mime!("jng", IMAGE_JNG, map);
+    insert_mime!("wbmp", IMAGE_WBMP, map);
+
+    insert_mime!("js", APPLICATION_JAVASCRIPT, map);
 }
