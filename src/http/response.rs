@@ -2,7 +2,6 @@ use std::{path::PathBuf, str::FromStr, time::UNIX_EPOCH};
 
 use crate::{
     error::{Error, Result},
-    match_mime,
     utils::compress::{compress, CompressType},
 };
 

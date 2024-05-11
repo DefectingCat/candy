@@ -1,5 +1,5 @@
 use crate::{
-    consts::{host_index, keep_alive_timeoutd_efault, process_timeout},
+    consts::{host_index, keep_alive_timeoutd_efault, mime_default, process_timeout},
     error::Result,
 };
 use std::{collections::BTreeMap, fs};
@@ -36,6 +36,8 @@ pub struct SettingHost {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Settings {
+    #[serde(default = "mime_default")]
+    pub default_type: String,
     pub host: Vec<SettingHost>,
 }
 

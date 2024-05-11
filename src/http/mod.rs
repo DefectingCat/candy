@@ -1,4 +1,3 @@
-pub mod cache;
 pub mod mime;
 pub mod response;
 

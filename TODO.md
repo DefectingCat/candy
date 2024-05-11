@@ -9,3 +9,5 @@
   - [x] deflate
   - [x] br
 - [ ] File MIME type
+- [ ] Logging to file
+- [ ] Proxy
