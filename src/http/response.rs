@@ -34,7 +34,7 @@ pub async fn open_file(path: &str) -> Result<File> {
         Ok(f) => f,
         Err(err) => {
             error!("Unable to open file {err}");
-            return Err(Error::NotFound(format!("path not found {}", path)));
+            return Err(Error::NotFound(format!("path not found {}", path).into()));
         }
     };
     Ok(file)

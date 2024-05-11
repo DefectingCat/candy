@@ -1,4 +1,4 @@
-use std::{io, num::TryFromIntError, sync::PoisonError, time::SystemTimeError};
+use std::{borrow::Cow, io, num::TryFromIntError, sync::PoisonError, time::SystemTimeError};
 
 use anyhow::anyhow;
 use hyper::header::{InvalidHeaderValue, ToStrError};
@@ -22,7 +22,7 @@ pub enum Error {
 
     // http
     #[error("route not found {0}")]
-    NotFound(String),
+    NotFound(Cow<'static, str>),
     #[error("internal server error {0}")]
     InternalServerError(#[from] anyhow::Error),
     #[error("invalide header value {0}")]

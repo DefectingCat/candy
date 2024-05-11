@@ -132,7 +132,7 @@ pub async fn handle_connection(
     let req_method = req.method();
 
     // find route path
-    let not_found_err = NotFound(format!("resource {} not found", &req_path));
+    let not_found_err = NotFound(format!("resource {} not found", &req_path).into());
     let (router, assets_path) = find_route(req_path, &host.route_map)?;
 
     // find resource local file path

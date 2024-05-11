@@ -45,7 +45,7 @@ pub fn find_route<'a>(
 ) -> Result<(&'a SettingRoute, &'a str)> {
     let mut index = 1;
     let len = req_path.len();
-    let not_found_err = format!("resource {} not found", &req_path);
+    let not_found_err = format!("resource {} not found", &req_path).into();
     let (router, assets_path) = loop {
         if index > len {
             return Err(Error::NotFound(not_found_err));
