@@ -1,13 +1,10 @@
-use std::{process::exit, sync::OnceLock};
-
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use tokio::task::JoinSet;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 use crate::{
-    config::{init_config, Settings},
-    consts::{ARCH, NAME, OS, VERSION},
+    consts::{get_settings, ARCH, NAME, OS, VERSION},
     utils::init_logger,
 };
 
@@ -17,19 +14,6 @@ mod error;
 mod http;
 mod service;
 mod utils;
-
-static SETTINGS: OnceLock<Settings> = OnceLock::new();
-pub fn get_settings() -> &'static Settings {
-    SETTINGS.get_or_init(|| {
-        init_config()
-            .with_context(|| "init config failed")
-            .map_err(|err| {
-                error!("{err}");
-                exit(1);
-            })
-            .unwrap()
-    })
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
