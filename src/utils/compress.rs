@@ -46,11 +46,12 @@ impl Encoder {
 pub async fn compress(compress_type: CompressType, in_data: &[u8]) -> Result<Vec<u8>> {
     use CompressType::*;
 
+    let buffer = Vec::with_capacity(in_data.len());
     let encoder = match compress_type {
-        Zstd => Encoder::Zstd(Box::new(ZstdEncoder::new(vec![]))),
-        Gzip => Encoder::Gzip(Box::new(GzipEncoder::new(vec![]))),
-        Deflate => Encoder::Deflate(Box::new(DeflateEncoder::new(vec![]))),
-        Brotli => Encoder::Brotli(Box::new(BrotliEncoder::new(vec![]))),
+        Zstd => Encoder::Zstd(Box::new(ZstdEncoder::new(buffer))),
+        Gzip => Encoder::Gzip(Box::new(GzipEncoder::new(buffer))),
+        Deflate => Encoder::Deflate(Box::new(DeflateEncoder::new(buffer))),
+        Brotli => Encoder::Brotli(Box::new(BrotliEncoder::new(buffer))),
     };
     encoder.encode(in_data).await
 }
