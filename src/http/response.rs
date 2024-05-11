@@ -139,7 +139,6 @@ pub async fn handle_get(
         content_type.unwrap_or(&settings.default_type).parse()?,
     );
     headers.insert("Etag", etag.parse()?);
-    let file_buffer = read_file_bytes(&mut file, size).await?;
 
     // check cache
     let if_none_match = req.headers().get("If-None-Match");
@@ -152,6 +151,8 @@ pub async fn handle_get(
         _ => {}
     }
 
+    // TODO: stream
+    let file_buffer = read_file_bytes(&mut file, size).await?;
     // prepare compress
     let accept_encoding = req.headers().get("Accept-Encoding");
     let bytes = match accept_encoding {
