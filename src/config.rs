@@ -7,6 +7,7 @@ use crate::{
 };
 use std::{collections::BTreeMap, fs};
 
+use anyhow::Context;
 use serde::Deserialize;
 
 #[derive(Deserialize, Clone, Debug)]
@@ -47,7 +48,7 @@ pub struct Settings {
 }
 
 pub fn init_config() -> Result<Settings> {
-    let file = fs::read_to_string("./config.toml")?;
+    let file = fs::read_to_string("./config.toml").with_context(|| "read ./config.toml failed")?;
     let mut settings: Settings = toml::from_str(&file)?;
 
     // convert route map

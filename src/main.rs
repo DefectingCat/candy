@@ -1,9 +1,10 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use tokio::task::JoinSet;
 use tracing::{debug, info};
 
 use crate::{
+    config::init_config,
     consts::{get_settings, ARCH, NAME, OS, VERSION},
     utils::init_logger,
 };
@@ -18,6 +19,7 @@ mod utils;
 #[tokio::main]
 async fn main() -> Result<()> {
     init_logger();
+    init_config().with_context(|| "init config failed")?;
 
     // global config
     let settings = get_settings();
