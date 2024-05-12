@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, env, process::exit, sync::OnceLock};
 
-use anyhow::Context;
 use tracing::error;
 
 use crate::config::{init_config, Settings};
@@ -10,12 +9,8 @@ static SETTINGS: OnceLock<Settings> = OnceLock::new();
 pub fn get_settings() -> &'static Settings {
     SETTINGS.get_or_init(|| {
         init_config()
-            .with_context(|| "init config failed")
             .map_err(|err| {
-                error!("{err}");
-                if let Some(err) = err.source() {
-                    error!("cause by {:?}", err)
-                }
+                error!("get_or_init config failed: {err}");
                 exit(1);
             })
             .unwrap()
