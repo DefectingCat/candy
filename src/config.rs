@@ -1,7 +1,6 @@
 use crate::{
     consts::{
-        host_index, insert_default_mimes, keep_alive_timeoutd_efault, mime_default,
-        process_timeout, types_default,
+        host_index, insert_default_mimes, keep_alive_timeoutd_efault, mime_default, types_default,
     },
     error::Result,
 };
@@ -31,19 +30,13 @@ pub struct SettingHost {
     #[serde(default = "host_index")]
     pub index: Vec<String>,
     /// HTTP keep-alive timeout
-    #[serde(
-        default = "keep_alive_timeoutd_efault",
-        rename(deserialize = "keep-alive")
-    )]
+    #[serde(default = "keep_alive_timeoutd_efault")]
     pub keep_alive: u16,
-    // http process max timeout
-    #[serde(default = "process_timeout", rename(deserialize = "process-timeout"))]
-    pub process_timeout: u16,
 }
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Settings {
-    #[serde(default = "mime_default", rename(deserialize = "default-type"))]
+    #[serde(default = "mime_default")]
     pub default_type: String,
     #[serde(default = "types_default")]
     pub types: BTreeMap<String, String>,

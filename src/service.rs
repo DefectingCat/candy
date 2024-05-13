@@ -60,10 +60,7 @@ pub async fn graceful_shutdown(host: &SettingHost, socket: (TcpStream, SocketAdd
 
     // Use keep_alive in config for incoming connections to the server.
     // use process_timeout in config for processing the final request and graceful shutdown.
-    let connection_timeouts = [
-        Duration::from_secs(host.keep_alive.into()),
-        Duration::from_secs(host.process_timeout.into()),
-    ];
+    let connection_timeout = Duration::from_secs(host.keep_alive.into());
 
     // service_fn
     let service = move |req| async move {
@@ -88,34 +85,33 @@ pub async fn graceful_shutdown(host: &SettingHost, socket: (TcpStream, SocketAdd
     // Iterate the timeouts.  Use tokio::select! to wait on the
     // result of polling the connection itself,
     // and also on tokio::time::sleep for the current timeout duration.
-    for (i, sleep_duration) in connection_timeouts.iter().enumerate() {
-        debug!("iter {} duration {:?}", i, sleep_duration);
-        select! {
-            res = conn.as_mut() => {
-                match res {
-                    Ok(_) => {}
-                    Err(err)
-                        if err.source().is_some()
-                            && err
-                                .source()
-                                .unwrap()
-                                .downcast_ref::<std::io::Error>()
-                                .unwrap_or(&std::io::Error::new(NotFound, &Error::Empty))
-                                .kind()
-                                == NotConnected =>
-                    {
-                        // The client closed connection
-                        debug!("client closed connection")
-                    }
-                    Err(err) => {
-                        error!("handle connection {:?}", err);
-                    }
+    select! {
+        res = conn.as_mut() => {
+            match res {
+                Ok(_) => {
+                    debug!("close connection");
+                }
+                Err(err)
+                    if err.source().is_some()
+                        && err
+                            .source()
+                            .unwrap()
+                            .downcast_ref::<std::io::Error>()
+                            .unwrap_or(&std::io::Error::new(NotFound, &Error::Empty))
+                            .kind()
+                            == NotConnected =>
+                {
+                    // The client closed connection
+                    debug!("client closed connection");
+                }
+                Err(err) => {
+                    error!("handle connection {:?}", err);
                 }
             }
-            _ = tokio::time::sleep(*sleep_duration) => {
-                debug!("iter = {} got timeout_interval, calling conn.graceful_shutdown", i);
-                conn.as_mut().graceful_shutdown();
-            }
+        }
+        _ = tokio::time::sleep(connection_timeout) => {
+            debug!("keep-alive timeout {}s, calling conn.graceful_shutdown", host.keep_alive);
+            conn.as_mut().graceful_shutdown();
         }
     }
 }
