@@ -15,3 +15,4 @@
 - [ ] Config init tests
 - [ ] Benchs
 - [ ] FastCGI
+- [ ] Docker build file
