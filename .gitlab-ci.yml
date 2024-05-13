@@ -1,0 +1,76 @@
+stages:
+    - build
+
+variables:
+    APP_NAME: "candy"
+
+image: "rust:latest"
+
+before_script:
+    - apt update -y
+    - mkdir $HOME/.cargo
+    - echo "[source.crates-io]" >> $HOME/.cargo/config
+    - echo "replace-with = 'ustc'" >> $HOME/.cargo/config
+    - echo "" >> $HOME/.cargo/config
+    - echo "[source.ustc]" >> $HOME/.cargo/config
+    - echo "registry = \"sparse+https://mirrors.ustc.edu.cn/crates.io-index/\"" >> $HOME/.cargo/config
+    - mkdir public
+    - "command -v ssh-agent >/dev/null || ( apt-get update -y && apt-get install openssh-client -y )"
+    - eval $(ssh-agent -s)
+    - chmod 400 "$SSH_PRIVATE_KEY"
+    - ssh-add "$SSH_PRIVATE_KEY"
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+
+build:linux-gnu-amd64:
+    stage: build
+    rules:
+        - if: $CI_COMMIT_TAG
+    script:
+        - cargo build --release
+        - "mv target/release/$APP_NAME target/release/$APP_NAME-x86_64-unknown-linux-gnu-$CI_COMMIT_TAG"
+        - "mv target/release/$APP_NAME-x86_64-unknown-linux-gnu-$CI_COMMIT_TAG public/"
+    artifacts:
+        paths:
+            - "public/$APP_NAME-x86_64-unknown-linux-gnu-$CI_COMMIT_TAG"
+
+build:linux-musl-amd64:
+    stage: build
+    rules:
+        - if: $CI_COMMIT_TAG
+    script:
+        - apt-get update -y
+        - apt-get install -y musl-tools libssl-dev
+        - rustup target add x86_64-unknown-linux-musl
+        - cargo build --release --target x86_64-unknown-linux-musl
+        - "mv target/x86_64-unknown-linux-musl/release/$APP_NAME target/x86_64-unknown-linux-musl/release/$APP_NAME-x86_64-unknown-linux-musl-$CI_COMMIT_TAG"
+        - "mv target/x86_64-unknown-linux-musl/release/$APP_NAME-x86_64-unknown-linux-musl-$CI_COMMIT_TAG public/"
+    artifacts:
+        paths:
+            - public/$APP_NAME-x86_64-unknown-linux-musl-$CI_COMMIT_TAG
+
+build:windows-amd64:
+    stage: build
+    rules:
+        - if: $CI_COMMIT_TAG
+    script:
+        - apt-get install -y g++-mingw-w64-x86-64
+        - rustup target add x86_64-pc-windows-gnu
+        - rustup toolchain install stable-x86_64-pc-windows-gnu
+        - cargo build --release --target x86_64-pc-windows-gnu
+        - "mv target/x86_64-pc-windows-gnu/release/$APP_NAME.exe target/x86_64-pc-windows-gnu/release/$APP_NAME-x86_64-pc-windows-gnu-$CI_COMMIT_TAG.exe"
+        - "mv target/x86_64-pc-windows-gnu/release/$APP_NAME-x86_64-pc-windows-gnu-$CI_COMMIT_TAG.exe public/"
+    artifacts:
+        paths:
+            - public/$APP_NAME-x86_64-pc-windows-gnu-$CI_COMMIT_TAG.exe
+
+rustdoc:
+    stage: build
+    rules:
+        - if: $CI_COMMIT_TAG
+    script:
+        - cargo doc --no-deps
+    artifacts:
+        paths:
+            - target/doc
+
