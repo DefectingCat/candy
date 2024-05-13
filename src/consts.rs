@@ -31,7 +31,7 @@ pub fn host_index() -> Vec<String> {
 
 // default http keep alive timeout
 pub const KEEP_ALIVE_TIMEOUTD_EFAULT: u16 = 75;
-pub fn keep_alive_timeoutd_efault() -> u16 {
+pub fn keep_alive_timeout_default() -> u16 {
     KEEP_ALIVE_TIMEOUTD_EFAULT
 }
 
