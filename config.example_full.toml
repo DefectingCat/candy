@@ -9,9 +9,7 @@ port = 4000
 # index file name and format
 index = ["index.html"]
 # http keep alive timeout
-keep_alive = 75
-# http process max timeout
-process_timeout = 15
+keep_alive = 15
 [[host.route]]
 # route path: GET /
 location = "/"

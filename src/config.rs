@@ -1,6 +1,6 @@
 use crate::{
     consts::{
-        host_index, insert_default_mimes, keep_alive_timeoutd_efault, mime_default, types_default,
+        host_index, insert_default_mimes, keep_alive_timeout_default, mime_default, types_default,
     },
     error::Result,
 };
@@ -30,7 +30,7 @@ pub struct SettingHost {
     #[serde(default = "host_index")]
     pub index: Vec<String>,
     /// HTTP keep-alive timeout
-    #[serde(default = "keep_alive_timeoutd_efault")]
+    #[serde(default = "keep_alive_timeout_default")]
     pub keep_alive: u16,
 }
 
