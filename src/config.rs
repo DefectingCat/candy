@@ -31,16 +31,19 @@ pub struct SettingHost {
     #[serde(default = "host_index")]
     pub index: Vec<String>,
     /// HTTP keep-alive timeout
-    #[serde(default = "keep_alive_timeoutd_efault")]
+    #[serde(
+        default = "keep_alive_timeoutd_efault",
+        rename(deserialize = "keep-alive")
+    )]
     pub keep_alive: u16,
     // http process max timeout
-    #[serde(default = "process_timeout")]
+    #[serde(default = "process_timeout", rename(deserialize = "process-timeout"))]
     pub process_timeout: u16,
 }
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Settings {
-    #[serde(default = "mime_default")]
+    #[serde(default = "mime_default", rename(deserialize = "default-type"))]
     pub default_type: String,
     #[serde(default = "types_default")]
     pub types: BTreeMap<String, String>,

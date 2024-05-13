@@ -36,7 +36,7 @@ pub fn keep_alive_timeoutd_efault() -> u16 {
 }
 
 // default process for single http request
-pub const PROCESS_TIMEOUT: u16 = 75;
+pub const PROCESS_TIMEOUT: u16 = 15;
 pub fn process_timeout() -> u16 {
     PROCESS_TIMEOUT
 }
