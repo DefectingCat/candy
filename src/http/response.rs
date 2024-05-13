@@ -3,7 +3,7 @@ use std::{path::PathBuf, str::FromStr, time::UNIX_EPOCH};
 use crate::{
     error::{Error, Result},
     get_settings,
-    utils::compress::{compress, CompressType},
+    utils::compress::{stream_compress, CompressType},
 };
 
 use anyhow::anyhow;
@@ -15,7 +15,10 @@ use hyper::{
     Request, Response, StatusCode,
 };
 
-use tokio::{fs::File, io::AsyncReadExt};
+use tokio::{
+    fs::File,
+    io::{AsyncBufRead, BufReader},
+};
 use tokio_util::io::ReaderStream;
 use tracing::{debug, error};
 
@@ -38,40 +41,27 @@ pub async fn open_file(path: &str) -> Result<File> {
         }
     };
     Ok(file)
-
-    /* {
-        let cache = get_cache().read()?;
-        match cache.get(path) {
-            Some(time) => {
-                // dbg!(time, last_modified);
-            }
-            None => {
-                drop(cache);
-                let mut cache = get_cache().write()?;
-                cache.insert(path.to_string(), last_modified);
-            }
-        }
-    } */
 }
 
 /// Open then use `ReaderStream` to stream to client.
 /// Stream a file more suitable for large file, but its slower than read file to memory.
-#[allow(unused)]
-pub async fn stream_file(file: File) -> Result<CandyBody<Bytes>> {
+pub async fn stream_file<R>(file: R) -> CandyBody<Bytes>
+where
+    R: AsyncBufRead + Sync + Send + 'static,
+{
     // Wrap to a tokio_util::io::ReaderStream
     let reader_stream = ReaderStream::new(file);
     // Convert to http_body_util::BoxBody
     let stream_body = StreamBody::new(reader_stream.map_ok(Frame::data));
     // let boxed_body = stream_body.map_err(|e| Error::IoError(e)).boxed();
-    let boxed_body = BodyExt::map_err(stream_body, Error::Io).boxed();
-    Ok(boxed_body)
+    BodyExt::map_err(stream_body, Error::Io).boxed()
 }
 
-pub async fn read_file_bytes(file: &mut File, size: u64) -> Result<Vec<u8>> {
-    let mut buffer = vec![0u8; size.try_into()?];
-    file.read_exact(&mut buffer[..]).await?;
-    Ok(buffer)
-}
+// pub async fn read_file_bytes(file: &mut File, size: u64) -> Result<Vec<u8>> {
+//     let mut buffer = vec![0u8; size.try_into()?];
+//     file.read_exact(&mut buffer[..]).await?;
+//     Ok(buffer)
+// }
 
 // Open local file to memory
 // pub async fn read_file(file: &mut File, size: u64) -> Result<CandyBody<Bytes>> {
@@ -117,7 +107,7 @@ pub async fn handle_get(
         .ok_or(InternalServerError(anyhow!("build response failed")))?;
 
     // file bytes
-    let mut file = open_file(path).await?;
+    let file = open_file(path).await?;
     // file info
     let metadata = file.metadata().await?;
     let size = metadata.len();
@@ -151,37 +141,35 @@ pub async fn handle_get(
         _ => {}
     }
 
-    // TODO: stream
-    let file_buffer = read_file_bytes(&mut file, size).await?;
+    let file_reader = BufReader::new(file);
     // prepare compress
     let accept_encoding = req.headers().get("Accept-Encoding");
-    let bytes = match accept_encoding {
+    let boxed_body = match accept_encoding {
         Some(accept) => {
             let accept = accept.to_str()?;
             debug!("Accept-Encoding {}", accept);
             match accept {
                 str if str.contains("zstd") => {
                     headers.insert("Content-Encoding", "zstd".parse()?);
-                    compress(Zstd, &file_buffer).await?
+                    stream_compress(Zstd, file_reader)
                 }
                 str if str.contains("gzip") => {
                     headers.insert("Content-Encoding", "gzip".parse()?);
-                    compress(Gzip, &file_buffer).await?
+                    stream_compress(Gzip, file_reader)
                 }
                 str if str.contains("deflate") => {
                     headers.insert("Content-Encoding", "deflate".parse()?);
-                    compress(Deflate, &file_buffer).await?
+                    stream_compress(Deflate, file_reader)
                 }
                 str if str.contains("br") => {
                     headers.insert("Content-Encoding", "br".parse()?);
-                    compress(Brotli, &file_buffer).await?
+                    stream_compress(Brotli, file_reader)
                 }
-                _ => file_buffer,
+                _ => stream_file(file_reader).await,
             }
         }
-        None => file_buffer,
+        None => stream_file(file_reader).await,
     };
 
-    let body = Full::new(bytes.into()).map_err(|e| match e {}).boxed();
-    Ok(res.body(body)?)
+    Ok(res.body(boxed_body)?)
 }

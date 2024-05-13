@@ -1,6 +1,11 @@
-use async_compression::tokio::write::{BrotliEncoder, DeflateEncoder, GzipEncoder, ZstdEncoder};
-use std::io::Result;
-use tokio::io::AsyncWriteExt;
+use async_compression::tokio::bufread::{BrotliEncoder, DeflateEncoder, GzipEncoder, ZstdEncoder};
+use futures_util::TryStreamExt;
+use http_body_util::{BodyExt, StreamBody};
+use hyper::body::{Bytes, Frame};
+use tokio::io::{AsyncBufRead, BufReader};
+use tokio_util::io::ReaderStream;
+
+use crate::{error::Error, http::CandyBody};
 
 pub enum CompressType {
     Zstd,
@@ -9,49 +14,30 @@ pub enum CompressType {
     Brotli,
 }
 
-pub enum Encoder {
-    Zstd(Box<ZstdEncoder<Vec<u8>>>),
-    Gzip(Box<GzipEncoder<Vec<u8>>>),
-    Deflate(Box<DeflateEncoder<Vec<u8>>>),
-    Brotli(Box<BrotliEncoder<Vec<u8>>>),
+macro_rules! encode {
+    ($encoder:ident, $file:ident) => {{
+        let encoder_stream = $encoder::new($file);
+        let reader_stream = ReaderStream::new(encoder_stream);
+        let stream_body = StreamBody::new(reader_stream.map_ok(Frame::data));
+        let boxed_body = BodyExt::map_err(stream_body, Error::Io).boxed();
+        boxed_body
+    }};
 }
 
-impl Encoder {
-    pub async fn encode(self, in_data: &[u8]) -> Result<Vec<u8>> {
-        match self {
-            Encoder::Zstd(mut encoder) => {
-                encoder.write_all(in_data).await?;
-                encoder.shutdown().await?;
-                Ok(encoder.into_inner())
-            }
-            Encoder::Gzip(mut encoder) => {
-                encoder.write_all(in_data).await?;
-                encoder.shutdown().await?;
-                Ok(encoder.into_inner())
-            }
-            Encoder::Deflate(mut encoder) => {
-                encoder.write_all(in_data).await?;
-                encoder.shutdown().await?;
-                Ok(encoder.into_inner())
-            }
-            Encoder::Brotli(mut encoder) => {
-                encoder.write_all(in_data).await?;
-                encoder.shutdown().await?;
-                Ok(encoder.into_inner())
-            }
-        }
-    }
-}
-
-pub async fn compress(compress_type: CompressType, in_data: &[u8]) -> Result<Vec<u8>> {
+pub fn stream_compress<R>(compress_type: CompressType, reader: R) -> CandyBody<Bytes>
+where
+    R: AsyncBufRead + Sync + Send + 'static,
+{
     use CompressType::*;
 
-    let buffer = Vec::with_capacity(in_data.len());
-    let encoder = match compress_type {
-        Zstd => Encoder::Zstd(Box::new(ZstdEncoder::new(buffer))),
-        Gzip => Encoder::Gzip(Box::new(GzipEncoder::new(buffer))),
-        Deflate => Encoder::Deflate(Box::new(DeflateEncoder::new(buffer))),
-        Brotli => Encoder::Brotli(Box::new(BrotliEncoder::new(buffer))),
-    };
-    encoder.encode(in_data).await
+    let file_reader = BufReader::new(reader);
+
+    match compress_type {
+        Zstd => {
+            encode!(ZstdEncoder, file_reader)
+        }
+        Gzip => encode!(GzipEncoder, file_reader),
+        Deflate => encode!(DeflateEncoder, file_reader),
+        Brotli => encode!(BrotliEncoder, file_reader),
+    }
 }
