@@ -35,12 +35,6 @@ pub fn keep_alive_timeoutd_efault() -> u16 {
     KEEP_ALIVE_TIMEOUTD_EFAULT
 }
 
-// default process for single http request
-pub const PROCESS_TIMEOUT: u16 = 15;
-pub fn process_timeout() -> u16 {
-    PROCESS_TIMEOUT
-}
-
 // default mime type for unknow file
 pub const MIME_DEFAULT: &str = "application/octet-stream";
 pub fn mime_default() -> String {

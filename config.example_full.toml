@@ -1,5 +1,5 @@
 # mime
-default-type = "application/octet-stream"
+default_type = "application/octet-stream"
 # add mime types
 [types]
 wasm = "application/wasm"
@@ -9,9 +9,9 @@ port = 4000
 # index file name and format
 index = ["index.html"]
 # http keep alive timeout
-keep-alive = 75
+keep_alive = 75
 # http process max timeout
-process-timeout = 15
+process_timeout = 15
 [[host.route]]
 # route path: GET /
 location = "/"
