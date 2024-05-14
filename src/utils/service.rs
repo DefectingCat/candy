@@ -60,3 +60,27 @@ pub fn find_route<'a>(
     };
     Ok((router, assets_path))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    #[test]
+    fn parse_assets_path_works() {
+        let path = parse_assets_path("/docs/", "./public", "index.html");
+        assert_eq!(path, "./public/docs/index.html".to_string())
+    }
+
+    #[test]
+    fn find_route_works() {
+        let setting_route = SettingRoute {
+            location: "/".to_string(),
+            root: "./public".to_string(),
+        };
+        let map = BTreeMap::from([("/".to_string(), setting_route)]);
+        let (_, assets_path) = find_route("/docs/home", &map).unwrap();
+        assert_eq!(assets_path, "docs/home")
+    }
+}
