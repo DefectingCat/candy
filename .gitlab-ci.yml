@@ -1,9 +1,10 @@
 stages:
+    - test
     - build
 
 variables:
     APP_NAME: "candy"
-    GIT_CLONE_PATH: '$CI_BUILDS_DIR/$CI_PROJECT_NAME/$CI_PIPELINE_ID'
+    GIT_CLONE_PATH: "$CI_BUILDS_DIR/$CI_PROJECT_NAME/$CI_PIPELINE_ID"
 
 image: "rust:latest"
 
@@ -16,6 +17,11 @@ before_script:
     - echo "[source.ustc]" >> $HOME/.cargo/config
     - echo "registry = \"sparse+https://mirrors.ustc.edu.cn/crates.io-index/\"" >> $HOME/.cargo/config
     - mkdir public
+
+test:
+    stage: test
+    script:
+        - cargo test
 
 build:linux-gnu-amd64:
     stage: build
@@ -68,4 +74,3 @@ rustdoc:
     artifacts:
         paths:
             - target/doc
-
