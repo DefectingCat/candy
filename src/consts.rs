@@ -1,8 +1,8 @@
-use std::{collections::BTreeMap, env, process::exit, sync::OnceLock};
+use std::{borrow::Cow, collections::BTreeMap, env, process::exit, sync::OnceLock};
 
 use tracing::error;
 
-use crate::config::{init_config, Settings};
+use crate::config::{init_config, MIMEType, Settings};
 
 // global settings
 static SETTINGS: OnceLock<Settings> = OnceLock::new();
@@ -37,20 +37,20 @@ pub fn keep_alive_timeout_default() -> u16 {
 
 // default mime type for unknow file
 pub const MIME_DEFAULT: &str = "application/octet-stream";
-pub fn mime_default() -> String {
-    MIME_DEFAULT.to_string()
+pub fn mime_default() -> Cow<'static, str> {
+    MIME_DEFAULT.into()
 }
 
 // default mime types
-pub fn types_default() -> BTreeMap<String, String> {
+pub fn types_default() -> MIMEType {
     BTreeMap::new()
 }
 macro_rules! insert_mime {
     ($name:literal, $mime:ident, $map:ident) => {
-        $map.entry($name.to_string()).or_insert($mime.to_string());
+        $map.entry($name.into()).or_insert($mime.into());
     };
 }
-pub fn insert_default_mimes(map: &mut BTreeMap<String, String>) {
+pub fn insert_default_mimes(map: &mut MIMEType) {
     use crate::http::mime::*;
 
     insert_mime!("html", TEXT_HTML, map);

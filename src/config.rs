@@ -4,7 +4,7 @@ use crate::{
     },
     error::Result,
 };
-use std::{collections::BTreeMap, fs};
+use std::{borrow::Cow, collections::BTreeMap, fs};
 
 use anyhow::Context;
 use serde::Deserialize;
@@ -25,7 +25,7 @@ pub struct SettingHost {
     pub port: u32,
     route: Vec<Option<SettingRoute>>,
     #[serde(skip_deserializing, skip_serializing)]
-    pub route_map: BTreeMap<String, SettingRoute>,
+    pub route_map: HostRouteMap,
     /// Index files format
     #[serde(default = "host_index")]
     pub index: Vec<String>,
@@ -34,12 +34,14 @@ pub struct SettingHost {
     pub keep_alive: u16,
 }
 
+pub type MIMEType = BTreeMap<Cow<'static, str>, Cow<'static, str>>;
+
 #[derive(Deserialize, Clone, Debug)]
 pub struct Settings {
     #[serde(default = "mime_default")]
-    pub default_type: String,
+    pub default_type: Cow<'static, str>,
     #[serde(default = "types_default")]
-    pub types: BTreeMap<String, String>,
+    pub types: MIMEType,
     pub host: Vec<SettingHost>,
 }
 
@@ -63,4 +65,12 @@ pub fn init_config() -> Result<Settings> {
     insert_default_mimes(&mut settings.types);
 
     Ok(settings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // #[test]
+    // fn
 }
