@@ -66,11 +66,3 @@ pub fn init_config() -> Result<Settings> {
 
     Ok(settings)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // #[test]
-    // fn
-}
