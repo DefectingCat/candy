@@ -7,7 +7,7 @@ use tracing_subscriber::{
 pub fn init_logger() {
     let formatting_layer = fmt::layer()
         // .pretty()
-        .with_thread_ids(true)
+        // .with_thread_ids(true)
         .with_target(false)
         .with_writer(std::io::stdout);
 
