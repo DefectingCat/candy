@@ -95,7 +95,7 @@ pub fn internal_server_error() -> Response<CandyBody<Bytes>> {
 /// handle http get method
 /// read static file and check If-None-Match cache
 pub async fn handle_get(
-    req: Request<Incoming>,
+    req: &Request<Incoming>,
     mut res: Builder,
     path: &str,
 ) -> Result<Response<CandyBody<Bytes>>> {

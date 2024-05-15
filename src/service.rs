@@ -9,7 +9,7 @@ use std::{
 
 use crate::{
     config::SettingHost,
-    consts::NAME,
+    consts::{NAME, VERSION},
     error::{Error, Result},
     http::{handle_get, internal_server_error, not_found, CandyBody},
     utils::{find_route, parse_assets_path},
@@ -63,9 +63,9 @@ pub async fn graceful_shutdown(host: &SettingHost, socket: (TcpStream, SocketAdd
     let connection_timeout = Duration::from_secs(host.keep_alive.into());
 
     // service_fn
-    let service = move |req| async move {
+    let service = move |req: Request<Incoming>| async move {
         let start_time = time::Instant::now();
-        let res = handle_connection(req, host).await;
+        let res = handle_connection(&req, host).await;
         let response = match res {
             Ok(res) => res,
             Err(Error::NotFound(err)) => {
@@ -76,7 +76,14 @@ pub async fn graceful_shutdown(host: &SettingHost, socket: (TcpStream, SocketAdd
         };
         let end_time = (Instant::now() - start_time).as_micros() as f32;
         let end_time = end_time / 1000_f32;
-        info!("done {} {:.3}ms", addr, end_time);
+        let method = &req.method();
+        let path = &req.uri().path();
+        let version = &req.version();
+        let res_status = response.status();
+        info!(
+            "\"{}\" {} {} {:?} {} {:.3}ms",
+            addr, method, path, version, res_status, end_time
+        );
         anyhow::Ok(response)
     };
 
@@ -118,7 +125,7 @@ pub async fn graceful_shutdown(host: &SettingHost, socket: (TcpStream, SocketAdd
 
 /// Connection handler in service_fn
 pub async fn handle_connection(
-    req: Request<Incoming>,
+    req: &Request<Incoming>,
     host: &SettingHost,
 ) -> Result<Response<CandyBody<Bytes>>> {
     use Error::*;
@@ -152,7 +159,8 @@ pub async fn handle_connection(
     let headers = res
         .headers_mut()
         .ok_or(InternalServerError(anyhow!("build response failed")))?;
-    headers.insert("Server", NAME.parse()?);
+    let server = format!("{}/{}", NAME, VERSION);
+    headers.insert("Server", server.parse()?);
 
     // http method handle
     let res = match *req_method {
