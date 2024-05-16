@@ -8,7 +8,7 @@ use crate::config::{init_config, MIMEType, Settings};
 static SETTINGS: OnceLock<Settings> = OnceLock::new();
 pub fn get_settings() -> &'static Settings {
     SETTINGS.get_or_init(|| {
-        init_config()
+        init_config("./config.toml")
             .map_err(|err| {
                 error!("get_or_init config failed: {err}");
                 exit(1);
