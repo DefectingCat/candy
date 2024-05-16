@@ -45,8 +45,8 @@ pub struct Settings {
     pub host: Vec<SettingHost>,
 }
 
-pub fn init_config() -> Result<Settings> {
-    let file = fs::read_to_string("./config.toml").with_context(|| "read ./config.toml failed")?;
+pub fn init_config(path: &str) -> Result<Settings> {
+    let file = fs::read_to_string(path).with_context(|| format!("read {path} failed"))?;
     let mut settings: Settings = toml::from_str(&file)?;
 
     // convert route map

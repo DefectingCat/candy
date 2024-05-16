@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 
+use clap::Parser;
 use tokio::task::JoinSet;
 use tracing::{debug, info};
 
@@ -9,6 +10,7 @@ use crate::{
     utils::init_logger,
 };
 
+mod cli;
 mod config;
 mod consts;
 mod error;
@@ -18,8 +20,9 @@ mod utils;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let args = cli::Cli::parse();
     init_logger();
-    init_config().with_context(|| "init config failed")?;
+    init_config(&args.config).with_context(|| "init config failed")?;
 
     // global config
     let settings = get_settings();
