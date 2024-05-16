@@ -28,7 +28,7 @@ build:freebsd:
     stage: build
     script:
         - apt-get update -y
-        - apt-get install -y musl-tools libssl-dev docker
+        - apt-get install -y musl-tools libssl-dev docker.io
         - rustup target add x86_64-unknown-freebsd
         - cross build --release --target x86_64-unknown-freebsd
         - "mv target/release/$APP_NAME target/release/$APP_NAME-x86_64-unknown-freebsd-$CI_COMMIT_TAG"
