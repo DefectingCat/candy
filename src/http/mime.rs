@@ -33,6 +33,22 @@ mime!(IMAGE_JNG, "image/x-jng");
 mime!(IMAGE_WBMP, "image/vnd.wap.wbmp ");
 mime!(IMAGE_BMP, "image/bmp");
 mime!(IMAGE_SVG, "image/svg+xml");
+mime!(IMAGE_AVIF, "image/avif");
+mime!(IMAGE_TIFF, "image/tiff");
+mime!(IMAGE_WEBP, "image/webp");
+
+mime!(VIDEO_3GPP, "video/3gpp");
+mime!(VIDEO_MP2T, "video/mp2t");
+mime!(VIDEO_MP4, "video/mp4");
+mime!(VIDEO_MPEG, "video/mpeg");
+mime!(VIDEO_QUICKTIME, "video/quicktime");
+mime!(VIDEO_WEBM, "video/webm");
+mime!(VIDEO_X_FLV, "video/x-flv");
+mime!(VIDEO_X_M4V, "video/x-m4v");
+mime!(VIDEO_X_MNG, "video/x-mng");
+mime!(VIDEO_X_MS_ASF, "video/x-ms-asf");
+mime!(VIDEO_X_MS_WMV, "video/x-ms-wmv");
+mime!(VIDEO_X_MSVIDEO, "video/x-msvideo");
 
 mime!(FONT_WOFF, "font/woff");
 mime!(FONT_WOFF2, "font/woff2");
@@ -52,6 +68,8 @@ mime!(APPLICATION_OCTET_STREAM, "application/octet-stream");
 mime!(APPLICATION_MSGPACK, "application/msgpack");
 mime!(APPLICATION_PDF, "application/pdf");
 mime!(APPLICATION_DNS, "application/dns-message");
+mime!(APPLICATION_JAVA_ARCHIVE, "application/java-archive");
+mime!(APPLICATION_APPLE_MPEGURL, "application/vnd.apple.mpegurl");
 
 mime!(STAR_STAR, "*/*");
 mime!(TEXT_STAR, "text/*");
