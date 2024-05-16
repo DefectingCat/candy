@@ -26,6 +26,7 @@ futures-util = "0.3.30"
 tokio-util = "0.7.11"
 async-compression = { version = "0.4.10", features = ["tokio", "zstd", "gzip", "deflate", "brotli"] }
 http = "1.1.0"
+clap = { version = "4.5.4", features = ["derive"] }
 
 [profile.release]
 lto = true

@@ -26,5 +26,6 @@
 -   [ ] FastCGI
 -   [ ] SSL
 -   [ ] Cli
+    -   [x] Specific custom config location
 -   [ ] HTTP 2
 -   [ ] HTTP 3
