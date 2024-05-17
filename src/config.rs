@@ -32,6 +32,7 @@ pub struct SettingHost {
     /// HTTP keep-alive timeout
     #[serde(default = "keep_alive_timeout_default")]
     pub keep_alive: u16,
+    pub headers: Option<BTreeMap<String, String>>,
 }
 
 pub type MIMEType = BTreeMap<Cow<'static, str>, Cow<'static, str>>;

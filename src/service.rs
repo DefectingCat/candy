@@ -54,7 +54,7 @@ impl SettingHost {
 ///
 /// `host`: host configuration from config file
 /// `socket`: the socket what tokio TcpListener accepted
-pub async fn graceful_shutdown(host: &SettingHost, socket: (TcpStream, SocketAddr)) {
+pub async fn graceful_shutdown(host: &'static SettingHost, socket: (TcpStream, SocketAddr)) {
     let (stream, addr) = socket;
     let io = TokioIo::new(stream);
 
@@ -126,7 +126,7 @@ pub async fn graceful_shutdown(host: &SettingHost, socket: (TcpStream, SocketAdd
 /// Connection handler in service_fn
 pub async fn handle_connection(
     req: &Request<Incoming>,
-    host: &SettingHost,
+    host: &'static SettingHost,
 ) -> Result<Response<CandyBody<Bytes>>> {
     use Error::*;
 
@@ -155,12 +155,17 @@ pub async fn handle_connection(
 
     // build the response for client
     let mut res = Response::builder();
-    // TODO: headers from config
     let headers = res
         .headers_mut()
         .ok_or(InternalServerError(anyhow!("build response failed")))?;
     let server = format!("{}/{}", NAME, VERSION);
     headers.insert("Server", server.parse()?);
+    // config headers overrite
+    if let Some(c_headers) = &host.headers {
+        for (k, v) in c_headers {
+            headers.insert(k.as_str(), v.parse()?);
+        }
+    }
 
     // http method handle
     let res = match *req_method {

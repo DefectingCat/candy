@@ -15,3 +15,6 @@ keep_alive = 15
 location = "/"
 # static file path
 root = "./html"
+# overrite headers
+[host.headers]
+X-Powered-By = "candy"
