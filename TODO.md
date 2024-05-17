@@ -11,10 +11,10 @@
 
 ### Configuration
 
--   [ ] File MIME type
--   [ ] Add headers in config
--   [ ] Logging to file
+-   [x] File MIME type
+-   [x] Overrite headers in config
 -   [x] Config init tests
+-   [ ] Logging to file
 -   [ ] Docker build file
 -   [ ] Benchs
 -   [ ] Max body size
