@@ -11,7 +11,7 @@ use crate::{
     config::SettingHost,
     consts::{NAME, VERSION},
     error::{Error, Result},
-    http::{handle_get, internal_server_error, not_found, CandyBody},
+    http::{handle_get, handle_not_found, internal_server_error, not_found, CandyBody},
     utils::{find_route, parse_assets_path},
 };
 
@@ -134,24 +134,10 @@ pub async fn handle_connection(
     let req_method = req.method();
 
     // find route path
-    let not_found_err = NotFound(format!("resource {} not found", &req_path).into());
+    // TODO: router find optimize
     let (router, assets_path) = find_route(req_path, &host.route_map)?;
-
-    // find resource local file path
-    let mut path = None;
-    for index in router.index.iter() {
-        let p = parse_assets_path(assets_path, &router.root, index);
-        if Path::new(&p).exists() {
-            path = Some(p);
-            break;
-        }
-    }
-    let path = match path {
-        Some(p) => p,
-        None => {
-            return Err(not_found_err);
-        }
-    };
+    debug!("router = {:?}", router);
+    debug!("assets_path = {}", assets_path);
 
     // build the response for client
     let mut res = Response::builder();
@@ -167,13 +153,35 @@ pub async fn handle_connection(
         }
     }
 
+    // find resource local file path
+    let mut path = None;
+    for index in router.index.iter() {
+        let p = parse_assets_path(assets_path, &router.root, index);
+        if Path::new(&p).exists() {
+            path = Some(p);
+            break;
+        }
+    }
+    let path = match path {
+        Some(p) => p,
+        None => {
+            return handle_not_found(req, res, router, assets_path).await;
+            // return Err(not_found_err);
+        }
+    };
+
     // http method handle
     let res = match *req_method {
         Method::GET => handle_get(req, res, &path).await?,
         Method::POST => handle_get(req, res, &path).await?,
         // Return the 404 Not Found for other routes.
         _ => {
-            return Err(not_found_err);
+            if let Some(err_page) = &router.error_page {
+                let res = res.status(err_page.status);
+                handle_get(req, res, &err_page.page).await?
+            } else {
+                not_found()
+            }
         }
     };
     Ok(res)
