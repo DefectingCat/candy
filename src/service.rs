@@ -139,7 +139,7 @@ pub async fn handle_connection(
 
     // find resource local file path
     let mut path = None;
-    for index in host.index.iter() {
+    for index in router.index.iter() {
         let p = parse_assets_path(assets_path, &router.root, index);
         if Path::new(&p).exists() {
             path = Some(p);

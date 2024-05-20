@@ -6,13 +6,13 @@ wasm = "application/wasm"
 [[host]]
 ip = "0.0.0.0"
 port = 4000
-# index file name and format
-index = ["index.html"]
 # http keep alive timeout
 keep_alive = 15
 [[host.route]]
+# index file name and format
+index = ["index.htm"]
 # route path: GET /
-location = "/"
+location = "/test"
 # static file path
 root = "./html"
 # overrite headers
