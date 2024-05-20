@@ -78,6 +78,7 @@ mod tests {
         let setting_route = SettingRoute {
             location: "/".to_string(),
             root: "./public".to_string(),
+            index: vec!["index.html".into()],
         };
         let map = BTreeMap::from([("/".to_string(), setting_route)]);
         let (_, assets_path) = find_route("/docs/home", &map).unwrap();

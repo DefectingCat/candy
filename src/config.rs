@@ -15,6 +15,9 @@ pub struct SettingRoute {
     pub location: String,
     /// The static assets root folder
     pub root: String,
+    /// Index files format
+    #[serde(default = "host_index")]
+    pub index: Vec<String>,
 }
 
 pub type HostRouteMap = BTreeMap<String, SettingRoute>;
@@ -26,9 +29,6 @@ pub struct SettingHost {
     route: Vec<Option<SettingRoute>>,
     #[serde(skip_deserializing, skip_serializing)]
     pub route_map: HostRouteMap,
-    /// Index files format
-    #[serde(default = "host_index")]
-    pub index: Vec<String>,
     /// HTTP keep-alive timeout
     #[serde(default = "keep_alive_timeout_default")]
     pub keep_alive: u16,

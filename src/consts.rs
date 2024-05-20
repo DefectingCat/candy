@@ -5,10 +5,10 @@ use tracing::error;
 use crate::config::{init_config, MIMEType, Settings};
 
 // global settings
-static SETTINGS: OnceLock<Settings> = OnceLock::new();
+pub static SETTINGS: OnceLock<Settings> = OnceLock::new();
 pub fn get_settings() -> &'static Settings {
     SETTINGS.get_or_init(|| {
-        init_config("./config.toml")
+        init_config("")
             .map_err(|err| {
                 error!("get_or_init config failed: {err}");
                 exit(1);

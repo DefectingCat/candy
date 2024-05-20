@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 
 use clap::Parser;
 use tokio::task::JoinSet;
@@ -6,7 +6,7 @@ use tracing::{debug, info};
 
 use crate::{
     config::init_config,
-    consts::{get_settings, ARCH, NAME, OS, VERSION},
+    consts::{get_settings, ARCH, NAME, OS, SETTINGS, VERSION},
     utils::init_logger,
 };
 
@@ -22,7 +22,10 @@ mod utils;
 async fn main() -> Result<()> {
     let args = cli::Cli::parse();
     init_logger();
-    init_config(&args.config).with_context(|| "init config failed")?;
+    let settings = init_config(&args.config).with_context(|| "init config failed")?;
+    SETTINGS
+        .set(settings)
+        .map_err(|err| anyhow!("init config failed {err:?}"))?;
 
     // global config
     let settings = get_settings();
