@@ -10,6 +10,12 @@ use anyhow::Context;
 use serde::Deserialize;
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct ErrorRoute {
+    pub status: u16,
+    pub page: String,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct SettingRoute {
     /// The register route
     pub location: String,
@@ -18,6 +24,7 @@ pub struct SettingRoute {
     /// Index files format
     #[serde(default = "host_index")]
     pub index: Vec<String>,
+    pub error_page: Option<ErrorRoute>,
 }
 
 pub type HostRouteMap = BTreeMap<String, SettingRoute>;

@@ -10,11 +10,22 @@ port = 4000
 keep_alive = 15
 [[host.route]]
 # index file name and format
+index = ["index.html"]
+# route path: GET /
+location = "/www"
+# static file path
+root = "./html"
+[[host.route]]
+# index file name and format
 index = ["index.htm"]
 # route path: GET /
 location = "/test"
 # static file path
 root = "./html"
+# custom error page
+[host.route.error_page]
+status = 500
+page = "404.html"
 # overrite headers
 [host.headers]
 X-Powered-By = "candy"

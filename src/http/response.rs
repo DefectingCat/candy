@@ -1,9 +1,13 @@
 use std::{path::PathBuf, str::FromStr, time::UNIX_EPOCH};
 
 use crate::{
+    config::SettingRoute,
     error::{Error, Result},
     get_settings,
-    utils::compress::{stream_compress, CompressType},
+    utils::{
+        compress::{stream_compress, CompressType},
+        parse_assets_path,
+    },
 };
 
 use anyhow::anyhow;
@@ -102,6 +106,8 @@ pub async fn handle_get(
     use CompressType::*;
     use Error::*;
 
+    dbg!(&path);
+
     let headers = res
         .headers_mut()
         .ok_or(InternalServerError(anyhow!("build response failed")))?;
@@ -172,4 +178,21 @@ pub async fn handle_get(
     };
 
     Ok(res.body(boxed_body)?)
+}
+
+pub async fn handle_not_found(
+    req: &Request<Incoming>,
+    res: Builder,
+    router: &SettingRoute,
+    assets_path: &str,
+) -> Result<Response<CandyBody<Bytes>>> {
+    let res = if let Some(err_page) = &router.error_page {
+        let res = res.status(err_page.status);
+        let path = parse_assets_path(assets_path, &router.root, &err_page.page);
+        // let path = format!("{}/{}", &assets_path, &err_page.page);
+        handle_get(req, res, &path).await?
+    } else {
+        not_found()
+    };
+    Ok(res)
 }
