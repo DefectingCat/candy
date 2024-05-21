@@ -134,10 +134,7 @@ pub async fn handle_connection(
     let req_method = req.method();
 
     // find route path
-    // TODO: router find optimize
     let (router, assets_path) = find_route(req_path, &host.route_map)?;
-    debug!("router = {:?}", router);
-    debug!("assets_path = {}", assets_path);
 
     // build the response for client
     let mut res = Response::builder();

@@ -1,3 +1,5 @@
+use tracing::debug;
+
 use crate::error::{Error, Result};
 
 use crate::config::{HostRouteMap, SettingRoute};
@@ -43,21 +45,35 @@ pub fn find_route<'a>(
     req_path: &'a str,
     route_map: &'a HostRouteMap,
 ) -> Result<(&'a SettingRoute, &'a str)> {
-    let mut index = 1;
-    let len = req_path.len();
-    let not_found_err = format!("resource {} not found", &req_path).into();
-    let (router, assets_path) = loop {
-        if index > len {
-            return Err(Error::NotFound(not_found_err));
+    let not_found_err = format!("resource {} not found", &req_path);
+    // /public/www/test
+    // then find all stash's index
+    let all_stash = &req_path
+        .bytes()
+        .enumerate()
+        .filter(|(_, b)| *b == b'/')
+        .map(|(index, _)| index + 1)
+        .collect::<Vec<_>>();
+    // loop the all_stash
+    // /public/
+    // /public/www/
+    let mut all_stash_index = 0;
+    let (router, assets_index) = loop {
+        if all_stash_index >= all_stash.len() {
+            return Err(Error::NotFound(not_found_err.clone().into()));
         }
-        let check_path = &req_path[..index];
-        match route_map.get(check_path) {
-            Some(router) => break (router, &req_path[index..]),
+        let index = all_stash[all_stash_index];
+        match route_map.get(&req_path[..index]) {
+            Some(router) => break (router, index),
             None => {
-                index += 1;
+                all_stash_index += 1;
             }
         }
     };
+    // rest path is assets_path /public/test -> test
+    let assets_path = &req_path[assets_index..];
+    debug!("router {:?}", &router);
+    debug!("assets_path {assets_path}");
     Ok((router, assets_path))
 }
 
