@@ -162,8 +162,7 @@ pub async fn handle_connection(
     let path = match path {
         Some(p) => p,
         None => {
-            return handle_not_found(req, res, router, assets_path).await;
-            // return Err(not_found_err);
+            return handle_not_found(req, res, router, "").await;
         }
     };
 
