@@ -25,3 +25,7 @@ cross build --release --target x86_64-pc-windows-gnu
 rm -rf ./target/release/
 rm -rf ./target/debug/
 cross build --release --target x86_64-unknown-freebsd
+
+rm -rf ./target/release/
+rm -rf ./target/debug/
+cross build --release --target loongarch64-unknown-linux-gnu

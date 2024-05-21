@@ -22,6 +22,14 @@
 
 ### Features
 
+-   [ ] Cross platform compile
+    -   [x] x86_64-unknown-linux-gnu
+    -   [x] x86_64-unknown-linux-musl
+    -   [x] aarch64-unknown-linux-gnu
+    -   [x] aarch64-unknown-linux-musl
+    -   [x] x86_64-pc-windows-gnu
+    -   [x] x86_64-unknown-freebsd
+    -   [x] loongarch64-unknown-linux-gnu
 -   [ ] Proxy
 -   [ ] FastCGI
 -   [ ] SSL
