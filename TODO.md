@@ -1,5 +1,7 @@
 ## TODO
 
+-   [ ] Dockerization
+-   [ ] Docs
 -   [x] Graceful shutdown
 -   [x] `keep-alive` timeout setting
 -   [x] HTTP Etag: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag#etag_value
@@ -16,13 +18,12 @@
 -   [x] Config init tests
 -   [x] Error page
 -   [ ] Logging to file
--   [ ] Docker build file
 -   [ ] Benchs
 -   [ ] Max body size
 
 ### Features
 
--   [ ] Cross platform compile
+-   [x] Cross platform compile
     -   [x] x86_64-unknown-linux-gnu
     -   [x] x86_64-unknown-linux-musl
     -   [x] aarch64-unknown-linux-gnu
@@ -33,7 +34,7 @@
 -   [ ] Proxy
 -   [ ] FastCGI
 -   [ ] SSL
--   [ ] Cli
+-   [x] Cli
     -   [x] Specific custom config location
 -   [ ] HTTP 2
 -   [ ] HTTP 3
