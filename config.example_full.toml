@@ -11,12 +11,12 @@ keep_alive = 15
 [[host.route]]
 # index file name and format
 index = ["index.html"]
-location = "/"
+location = "/www/"
 # static file path
 root = "./html"
 [[host.route]]
 index = ["index.htm"]
-location = "/test/"
+location = "/www/test/"
 root = "./html"
 # custom error page
 [host.route.error_page]

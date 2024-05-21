@@ -106,8 +106,6 @@ pub async fn handle_get(
     use CompressType::*;
     use Error::*;
 
-    dbg!(&path);
-
     let headers = res
         .headers_mut()
         .ok_or(InternalServerError(anyhow!("build response failed")))?;

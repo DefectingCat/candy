@@ -57,21 +57,13 @@ pub fn find_route<'a>(
     // loop the all_stash
     // /public/
     // /public/www/
-    let mut all_stash_index = 0;
-    let (router, assets_index) = loop {
-        if all_stash_index >= all_stash.len() {
-            return Err(Error::NotFound(not_found_err.clone().into()));
+    let mut last_router = None;
+    for index in all_stash {
+        if let Some(router) = route_map.get(&req_path[..*index]) {
+            last_router = Some((router, &req_path[*index..]));
         }
-        let index = all_stash[all_stash_index];
-        match route_map.get(&req_path[..index]) {
-            Some(router) => break (router, index),
-            None => {
-                all_stash_index += 1;
-            }
-        }
-    };
-    // rest path is assets_path /public/test -> test
-    let assets_path = &req_path[assets_index..];
+    }
+    let (router, assets_path) = last_router.ok_or(Error::NotFound(not_found_err.into()))?;
     debug!("router {:?}", &router);
     debug!("assets_path {assets_path}");
     Ok((router, assets_path))
