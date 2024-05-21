@@ -14,11 +14,11 @@
 -   [x] File MIME type
 -   [x] Overrite headers in config
 -   [x] Config init tests
+-   [x] Error page
 -   [ ] Logging to file
 -   [ ] Docker build file
 -   [ ] Benchs
 -   [ ] Max body size
--   [ ] Error page
 
 ### Features
 
