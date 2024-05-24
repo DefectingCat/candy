@@ -1,27 +1,32 @@
-# mime
 default_type = "application/octet-stream"
-# add mime types
 [types]
 wasm = "application/wasm"
+
 [[host]]
 ip = "0.0.0.0"
 port = 4000
-# http keep alive timeout
 keep_alive = 15
+
+[host.headers]
+X-Powered-By = "candy"
+
 [[host.route]]
-# index file name and format
 index = ["index.html"]
-location = "/www/"
-# static file path
+location = "/"
 root = "./html"
-[[host.route]]
-index = ["index.htm"]
-location = "/www/test/"
-root = "./html"
-# custom error page
 [host.route.error_page]
 status = 500
 page = "404.html"
-# overrite headers
-[host.headers]
-X-Powered-By = "candy"
+
+[[host.route]]
+index = ["index.html"]
+location = "/www/"
+root = "./html"
+[host.route.error_page]
+status = 500
+page = "404.html"
+
+[[host.route]]
+index = ["index.html"]
+location = "/www/test/"
+root = "./html"

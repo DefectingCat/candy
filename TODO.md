@@ -2,6 +2,7 @@
 
 -   [ ] Dockerization
 -   [ ] Docs
+-   [ ] Refactor HTTP 1
 -   [x] Graceful shutdown
 -   [x] `keep-alive` timeout setting
 -   [x] HTTP Etag: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag#etag_value
@@ -32,6 +33,7 @@
     -   [x] x86_64-unknown-freebsd
     -   [x] loongarch64-unknown-linux-gnu
 -   [ ] Proxy
+-   [ ] Reverse Proxy
 -   [ ] FastCGI
 -   [ ] SSL
 -   [x] Cli
