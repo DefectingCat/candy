@@ -38,15 +38,13 @@ const config: Config = {
           sidebarPath: './sidebars.ts',
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
-          editUrl:
-            'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
+          editUrl: 'https://github.com/DefectingCat/candy/tree/main/docs',
         },
         blog: {
           showReadingTime: true,
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
-          editUrl:
-            'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
+          editUrl: 'https://github.com/DefectingCat/candy/tree/main/docs',
         },
         theme: {
           customCss: './src/css/custom.css',
@@ -56,6 +54,9 @@ const config: Config = {
   ],
 
   themeConfig: {
+    colorMode: {
+      respectPrefersColorScheme: true,
+    },
     // Replace with your project's social card
     image: 'img/docusaurus-social-card.jpg',
     navbar: {
@@ -73,6 +74,10 @@ const config: Config = {
         },
         { to: '/blog', label: 'Blog', position: 'left' },
         {
+          type: 'localeDropdown',
+          position: 'right',
+        },
+        {
           href: 'https://github.com/DefectingCat',
           label: 'GitHub',
           position: 'right',
@@ -81,7 +86,7 @@ const config: Config = {
     },
     footer: {
       style: 'dark',
-      links: [
+      /* links: [
         {
           title: 'Docs',
           items: [
@@ -117,12 +122,12 @@ const config: Config = {
             },
             {
               label: 'GitHub',
-              href: 'https://github.com/DefectingCat',
+              href: 'https://github.com/DefectingCat/candy',
             },
           ],
         },
-      ],
-      copyright: `Copyright © ${new Date().getFullYear()} My Project, Inc. Built with Docusaurus.`,
+      ], */
+      copyright: `Copyright © ${new Date().getFullYear()} Candy, Inc. Built with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.github,
