@@ -15,15 +15,15 @@ index = ["index.html"]
 location = "/"
 root = "./html"
 [host.route.error_page]
-status = 500
+status = 404
 page = "404.html"
 
 [[host.route]]
 index = ["index.html"]
-location = "/www/"
-root = "./html"
+location = "/candy/"
+root = "./docs/build"
 [host.route.error_page]
-status = 500
+status = 404
 page = "404.html"
 
 [[host.route]]
