@@ -24,7 +24,7 @@ use tokio::{
     io::{AsyncBufRead, BufReader},
 };
 use tokio_util::io::ReaderStream;
-use tracing::{debug, error};
+use tracing::{debug, error, instrument};
 
 pub type CandyBody<T, E = Error> = BoxBody<T, E>;
 
@@ -98,6 +98,7 @@ pub fn internal_server_error() -> Response<CandyBody<Bytes>> {
 // HTTP methods
 /// handle http get method
 /// read static file and check If-None-Match cache
+#[instrument]
 pub async fn handle_get(
     req: &Request<Incoming>,
     mut res: Builder,
