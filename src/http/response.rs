@@ -187,9 +187,12 @@ pub async fn handle_not_found(
 ) -> Result<Response<CandyBody<Bytes>>> {
     let res = if let Some(err_page) = &router.error_page {
         let res = res.status(err_page.status);
-        let path = parse_assets_path(assets_path, &router.root, &err_page.page);
-        // let path = format!("{}/{}", &assets_path, &err_page.page);
-        handle_get(req, res, &path).await?
+        if let Some(root) = &router.root {
+            let path = parse_assets_path(assets_path, root, &err_page.page);
+            handle_get(req, res, &path).await?
+        } else {
+            not_found()
+        }
     } else {
         not_found()
     };
