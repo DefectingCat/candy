@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::{
-    config::SettingHost,
+    config::{SettingHost, SettingRoute},
     consts::{NAME, VERSION},
     error::{Error, Result},
     http::{handle_get, handle_not_found, internal_server_error, not_found, CandyBody},
@@ -17,7 +17,7 @@ use crate::{
 
 use anyhow::anyhow;
 use futures_util::Future;
-use http::{Method, Request, Response};
+use http::{response::Builder, Method, Request, Response};
 use hyper::{
     body::{Bytes, Incoming},
     server::conn::http1,
@@ -131,7 +131,6 @@ pub async fn handle_connection(
     use Error::*;
 
     let req_path = req.uri().path();
-    let req_method = req.method();
 
     // find route path
     let (router, assets_path) = find_route(req_path, &host.route_map)?;
@@ -150,13 +149,49 @@ pub async fn handle_connection(
         }
     }
 
+    // reverse proxy
+    if router.proxy_pass.is_some() {
+        handle_proxy(router, assets_path).await
+    } else {
+        // static file
+        handle_file(router, assets_path, req, res).await
+    }
+}
+
+/// Handle reverse proxy
+///
+/// Only use with the `proxy_pass` field in config
+async fn handle_proxy(
+    router: &SettingRoute,
+    assets_path: &str,
+) -> Result<Response<CandyBody<Bytes>>> {
+    // check on outside
+    let proxy = router.proxy_pass.as_ref().ok_or(Error::Empty)?;
+    dbg!(proxy);
+    todo!()
+}
+
+/// Handle static files,
+/// try find static file from local path
+///
+/// Only use with the `proxy_pass` field not in config
+async fn handle_file(
+    router: &SettingRoute,
+    assets_path: &str,
+    req: &Request<Incoming>,
+    res: Builder,
+) -> Result<Response<CandyBody<Bytes>>> {
+    let req_method = req.method();
+
     // find resource local file path
     let mut path = None;
     for index in router.index.iter() {
-        let p = parse_assets_path(assets_path, &router.root, index);
-        if Path::new(&p).exists() {
-            path = Some(p);
-            break;
+        if let Some(root) = &router.root {
+            let p = parse_assets_path(assets_path, root, index);
+            if Path::new(&p).exists() {
+                path = Some(p);
+                break;
+            }
         }
     }
     let path = match path {

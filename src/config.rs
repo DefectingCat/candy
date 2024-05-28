@@ -20,11 +20,13 @@ pub struct SettingRoute {
     /// The register route
     pub location: String,
     /// The static assets root folder
-    pub root: String,
+    pub root: Option<String>,
     /// Index files format
     #[serde(default = "host_index")]
     pub index: Vec<String>,
     pub error_page: Option<ErrorRoute>,
+    // reverse proxy url
+    pub proxy_pass: Option<String>,
 }
 
 pub type HostRouteMap = BTreeMap<String, SettingRoute>;

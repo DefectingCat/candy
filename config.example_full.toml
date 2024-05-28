@@ -28,5 +28,5 @@ page = "404.html"
 
 [[host.route]]
 index = ["index.html"]
-location = "/www/test/"
-root = "./html"
+location = "/proxy/"
+proxy_pass = "http://localhost:3000/"
