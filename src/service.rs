@@ -15,9 +15,10 @@ use crate::{
     utils::{find_route, parse_assets_path},
 };
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use futures_util::Future;
 use http::{response::Builder, Method, Request, Response};
+use http_body_util::{BodyExt, Empty, StreamBody};
 use hyper::{
     body::{Bytes, Incoming},
     server::conn::http1,
@@ -25,10 +26,12 @@ use hyper::{
 };
 use hyper_util::rt::TokioIo;
 use tokio::{
+    io,
     net::{TcpListener, TcpStream},
     select,
 };
 
+use tokio_util::io::ReaderStream;
 use tracing::{debug, error, info, warn};
 
 impl SettingHost {
@@ -151,7 +154,7 @@ pub async fn handle_connection(
 
     // reverse proxy
     if router.proxy_pass.is_some() {
-        handle_proxy(router, assets_path).await
+        handle_proxy(router, assets_path, req, res).await
     } else {
         // static file
         handle_file(router, assets_path, req, res).await
@@ -164,11 +167,57 @@ pub async fn handle_connection(
 async fn handle_proxy(
     router: &SettingRoute,
     assets_path: &str,
+    req: &Request<Incoming>,
+    res: Builder,
 ) -> Result<Response<CandyBody<Bytes>>> {
     // check on outside
     let proxy = router.proxy_pass.as_ref().ok_or(Error::Empty)?;
-    dbg!(proxy);
-    todo!()
+    let path_query = req.uri().query().unwrap_or(assets_path);
+
+    let uri: hyper::Uri = format!("{}{}", proxy, path_query).parse()?;
+    if uri.scheme_str() != Some("http") {
+        return Err(Error::InternalServerError(anyhow!("")));
+    }
+    dbg!(&uri);
+
+    let host = uri.host().ok_or(Error::InternalServerError(anyhow!("")))?;
+    let port = uri.port_u16().unwrap_or(80);
+    let addr = format!("{}:{}", host, port);
+    let stream = TcpStream::connect(addr).await?;
+    let io = TokioIo::new(stream);
+
+    let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
+        .await
+        .map_err(|err| anyhow!("{err}"))?;
+    tokio::task::spawn(async move {
+        if let Err(err) = conn.await {
+            println!("Connection failed: {:?}", err);
+        }
+    });
+
+    let authority = uri.authority().unwrap().clone();
+
+    let path = uri.path();
+    let req = Request::builder()
+        .uri(path)
+        .header(hyper::header::HOST, authority.as_str())
+        .body(Empty::<Bytes>::new())?;
+
+    let res = sender.send_request(req).await?;
+
+    // let stream_body = StreamBody::new(res);
+
+    // Stream the body, writing each chunk to stdout as we get it
+    // (instead of buffering and printing at the end).
+    // while let Some(next) = res.frame().await {
+    //     let frame = next?;
+    //     if let Some(chunk) = frame.data_ref() {
+    //         dbg!(chunk);
+    //     }
+    // }
+
+    todo!();
+    Ok(res.into())
 }
 
 /// Handle static files,

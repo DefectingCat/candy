@@ -1,6 +1,7 @@
 use std::{borrow::Cow, io, num::TryFromIntError, sync::PoisonError, time::SystemTimeError};
 
 use anyhow::anyhow;
+use http::uri::InvalidUri;
 use hyper::header::{InvalidHeaderValue, ToStrError};
 
 #[allow(clippy::enum_variant_names)]
@@ -19,6 +20,10 @@ pub enum Error {
     TryFromInt(#[from] TryFromIntError),
     #[error("failed to convert str {0}")]
     ToStr(#[from] ToStrError),
+    #[error("failed to convert url {0}")]
+    InvalidUri(#[from] InvalidUri),
+    #[error("hyper {0}")]
+    HyperError(#[from] hyper::Error),
 
     // http
     #[error("route not found {0}")]
