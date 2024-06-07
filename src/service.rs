@@ -15,10 +15,10 @@ use crate::{
     utils::{find_route, parse_assets_path},
 };
 
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 use futures_util::Future;
 use http::{response::Builder, Method, Request, Response};
-use http_body_util::{BodyExt, Empty, StreamBody};
+use http_body_util::{BodyExt, Empty};
 use hyper::{
     body::{Bytes, Incoming},
     server::conn::http1,
@@ -26,12 +26,10 @@ use hyper::{
 };
 use hyper_util::rt::TokioIo;
 use tokio::{
-    io,
     net::{TcpListener, TcpStream},
     select,
 };
 
-use tokio_util::io::ReaderStream;
 use tracing::{debug, error, info, warn};
 
 impl SettingHost {
@@ -164,6 +162,7 @@ pub async fn handle_connection(
 /// Handle reverse proxy
 ///
 /// Only use with the `proxy_pass` field in config
+/// TODO: add x-proxy-server header
 async fn handle_proxy(
     router: &SettingRoute,
     assets_path: &str,
@@ -178,24 +177,30 @@ async fn handle_proxy(
     if uri.scheme_str() != Some("http") {
         return Err(Error::InternalServerError(anyhow!("")));
     }
-    dbg!(&uri);
 
-    let host = uri.host().ok_or(Error::InternalServerError(anyhow!("")))?;
+    let host = uri.host().ok_or(Error::InternalServerError(anyhow!(
+        "proxy pass host incorrect"
+    )))?;
     let port = uri.port_u16().unwrap_or(80);
     let addr = format!("{}:{}", host, port);
-    let stream = TcpStream::connect(addr).await?;
+    let stream = TcpStream::connect(&addr).await?;
     let io = TokioIo::new(stream);
 
     let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
         .await
-        .map_err(|err| anyhow!("{err}"))?;
+        .map_err(|err| {
+            error!("cannot handshake with {}: {}", addr, err);
+            anyhow!("{err}")
+        })?;
     tokio::task::spawn(async move {
         if let Err(err) = conn.await {
             println!("Connection failed: {:?}", err);
         }
     });
 
-    let authority = uri.authority().unwrap().clone();
+    let authority = uri
+        .authority()
+        .ok_or(anyhow!("proxy pass uri authority incorrect"))?;
 
     let path = uri.path();
     let req = Request::builder()
@@ -203,21 +208,10 @@ async fn handle_proxy(
         .header(hyper::header::HOST, authority.as_str())
         .body(Empty::<Bytes>::new())?;
 
-    let res = sender.send_request(req).await?;
-
-    // let stream_body = StreamBody::new(res);
-
-    // Stream the body, writing each chunk to stdout as we get it
-    // (instead of buffering and printing at the end).
-    // while let Some(next) = res.frame().await {
-    //     let frame = next?;
-    //     if let Some(chunk) = frame.data_ref() {
-    //         dbg!(chunk);
-    //     }
-    // }
-
-    todo!();
-    Ok(res.into())
+    let client_res = sender.send_request(req).await?;
+    let client_body = client_res.map_err(Error::HyperError).boxed();
+    let res_body = res.body(client_body)?;
+    Ok(res_body)
 }
 
 /// Handle static files,
