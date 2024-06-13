@@ -174,8 +174,14 @@ async fn handle_proxy(
     let path_query = req.uri().query().unwrap_or(assets_path);
 
     let uri: hyper::Uri = format!("{}{}", proxy, path_query).parse()?;
-    if uri.scheme_str() != Some("http") {
-        return Err(Error::InternalServerError(anyhow!("")));
+    match uri.scheme_str() {
+        Some("http") | Some("https") => {}
+        _ => {
+            return Err(Error::InternalServerError(anyhow!(
+                "proxy uri scheme error: {}",
+                uri
+            )));
+        }
     }
 
     let host = uri.host().ok_or(Error::InternalServerError(anyhow!(
@@ -183,6 +189,7 @@ async fn handle_proxy(
     )))?;
     let port = uri.port_u16().unwrap_or(80);
     let addr = format!("{}:{}", host, port);
+    // TODO: TcpStream timeout
     let stream = TcpStream::connect(&addr).await?;
     let io = TokioIo::new(stream);
 
