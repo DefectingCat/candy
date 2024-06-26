@@ -15,7 +15,7 @@ use crate::{
     utils::{find_route, parse_assets_path},
 };
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use futures_util::Future;
 use http::{response::Builder, Method, Request, Response};
 use http_body_util::{BodyExt, Empty};
@@ -30,7 +30,7 @@ use tokio::{
     select,
 };
 
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 impl SettingHost {
     pub fn mk_server(&'static self) -> impl Future<Output = anyhow::Result<()>> + 'static {
@@ -41,6 +41,7 @@ impl SettingHost {
             loop {
                 let socket = listener.accept().await?;
                 tokio::spawn(async move {
+                    // TODO: http version
                     graceful_shutdown(self, socket).await;
                 });
             }
@@ -73,7 +74,10 @@ pub async fn graceful_shutdown(host: &'static SettingHost, socket: (TcpStream, S
                 warn!("{err}");
                 not_found()
             }
-            _ => internal_server_error(),
+            Err(err) => {
+                error!("{err}");
+                internal_server_error()
+            }
         };
         let end_time = (Instant::now() - start_time).as_micros() as f32;
         let end_time = end_time / 1000_f32;
@@ -164,6 +168,7 @@ pub async fn handle_connection(
 /// Only use with the `proxy_pass` field in config
 /// TODO: add x-proxy-server header
 /// TODO: follow redirect
+#[instrument(level = "debug")]
 async fn handle_proxy(
     router: &SettingRoute,
     assets_path: &str,
@@ -174,7 +179,9 @@ async fn handle_proxy(
     let proxy = router.proxy_pass.as_ref().ok_or(Error::Empty)?;
     let path_query = req.uri().query().unwrap_or(assets_path);
 
-    let uri: hyper::Uri = format!("{}{}", proxy, path_query).parse()?;
+    let uri: hyper::Uri = format!("{}{}", proxy, path_query)
+        .parse()
+        .with_context(|| format!("parse proxy uri failed: {}", proxy))?;
     match uri.scheme_str() {
         Some("http") | Some("https") => {}
         _ => {
@@ -191,7 +198,9 @@ async fn handle_proxy(
     let port = uri.port_u16().unwrap_or(80);
     let addr = format!("{}:{}", host, port);
     // TODO: TcpStream timeout
-    let stream = TcpStream::connect(&addr).await?;
+    let stream = TcpStream::connect(&addr)
+        .await
+        .with_context(|| format!("connect to {} failed", addr))?;
     let io = TokioIo::new(stream);
 
     let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
@@ -216,7 +225,10 @@ async fn handle_proxy(
         .header(hyper::header::HOST, authority.as_str())
         .body(Empty::<Bytes>::new())?;
 
-    let client_res = sender.send_request(req).await?;
+    let client_res = sender
+        .send_request(req)
+        .await
+        .with_context(|| "send request failed")?;
     let client_body = client_res.map_err(Error::HyperError).boxed();
     let res_body = res.body(client_body)?;
     Ok(res_body)

@@ -16,7 +16,7 @@ build-release: clean
 	$(CARGO) build --release
 
 dev:
-	$(CARGO) watch -x run
+	CANDY_LOG=debug $(CARGO) watch -x run
 
 # Run the project
 run:
