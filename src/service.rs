@@ -163,6 +163,7 @@ pub async fn handle_connection(
 ///
 /// Only use with the `proxy_pass` field in config
 /// TODO: add x-proxy-server header
+/// TODO: follow redirect
 async fn handle_proxy(
     router: &SettingRoute,
     assets_path: &str,
