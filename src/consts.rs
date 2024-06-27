@@ -30,10 +30,10 @@ pub fn host_index() -> Vec<String> {
     HOST_INDEX.map(|h| h.to_string()).to_vec()
 }
 
-// default http keep alive timeout
-pub const KEEP_ALIVE_TIMEOUTD_EFAULT: u16 = 75;
-pub fn keep_alive_timeout_default() -> u16 {
-    KEEP_ALIVE_TIMEOUTD_EFAULT
+// default http connection timeout
+pub const TIMEOUT_EFAULT: u16 = 75;
+pub fn timeout_default() -> u16 {
+    TIMEOUT_EFAULT
 }
 
 // default mime type for unknow file

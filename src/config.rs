@@ -1,7 +1,5 @@
 use crate::{
-    consts::{
-        host_index, insert_default_mimes, keep_alive_timeout_default, mime_default, types_default,
-    },
+    consts::{host_index, insert_default_mimes, mime_default, timeout_default, types_default},
     error::Result,
 };
 use std::{borrow::Cow, collections::BTreeMap, fs};
@@ -39,8 +37,8 @@ pub struct SettingHost {
     #[serde(skip_deserializing, skip_serializing)]
     pub route_map: HostRouteMap,
     /// HTTP keep-alive timeout
-    #[serde(default = "keep_alive_timeout_default")]
-    pub keep_alive: u16,
+    #[serde(default = "timeout_default")]
+    pub timeout: u16,
     pub headers: Option<BTreeMap<String, String>>,
 }
 
