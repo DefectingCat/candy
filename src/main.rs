@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 
 use clap::Parser;
+use consts::COMPILER;
 use tokio::task::JoinSet;
 use tracing::{debug, info};
 
@@ -30,7 +31,7 @@ async fn main() -> Result<()> {
     // global config
     let settings = get_settings();
     debug!("settings {:?}", settings);
-    info!("{}/{}", NAME, VERSION);
+    info!("{}/{} {}", NAME, VERSION, COMPILER);
     info!("OS: {} {}", OS, ARCH);
 
     let mut servers = settings

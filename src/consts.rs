@@ -22,6 +22,7 @@ pub const NAME: &str = env!("CARGO_PKG_NAME");
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const OS: &str = env::consts::OS;
 pub const ARCH: &str = env::consts::ARCH;
+pub const COMPILER: &str = env!("RUA_COMPILER");
 
 // config defaults
 pub const HOST_INDEX: [&str; 1] = ["index.html"];
