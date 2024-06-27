@@ -3,6 +3,7 @@
 -   [ ] Dockerization
 -   [ ] Docs
 -   [ ] Refactor HTTP 1
+-   [ ] Build with compile info
 -   [x] Graceful shutdown
 -   [x] `keep-alive` timeout setting
 -   [x] HTTP Etag: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag#etag_value
