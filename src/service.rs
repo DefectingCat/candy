@@ -130,6 +130,7 @@ async fn handle_connection(
 }
 
 /// Connection handler in service_fn
+/// then decide whether to handle proxy or static file based on config
 pub async fn handle_service(
     req: &Request<Incoming>,
     host: &'static SettingHost,

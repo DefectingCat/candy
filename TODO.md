@@ -16,7 +16,7 @@
 ### Configuration
 
 -   [x] File MIME type
--   [x] Overrite headers in config
+-   [x] Overwrite headers in config
 -   [x] Config init tests
 -   [x] Error page
 -   [ ] Logging to file
@@ -41,3 +41,4 @@
     -   [x] Specific custom config location
 -   [ ] HTTP 2
 -   [ ] HTTP 3
+-   [ ] Specify thread numbers
