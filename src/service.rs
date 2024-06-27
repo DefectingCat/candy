@@ -62,7 +62,7 @@ impl SettingHost {
                 _ = graceful.shutdown() => {
                     info!("Gracefully shutdown!");
                 },
-                _ = tokio::time::sleep(Duration::from_secs(self.keep_alive.into())) => {
+                _ = tokio::time::sleep(Duration::from_secs(self.timeout.into())) => {
                     error!("Waited 10 seconds for graceful shutdown, aborting...");
                 }
             }
