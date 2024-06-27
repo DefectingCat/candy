@@ -1,6 +1,4 @@
 use std::{
-    error::Error as StdError,
-    io::ErrorKind::{NotConnected, NotFound},
     net::SocketAddr,
     path::Path,
     pin::pin,
@@ -19,16 +17,12 @@ use anyhow::{anyhow, Context};
 use futures_util::Future;
 use http::{response::Builder, Method, Request, Response};
 use http_body_util::{BodyExt, Empty};
-use hyper::{
-    body::{Bytes, Incoming},
-    server::conn::http1,
-    service::service_fn,
+use hyper::body::{Bytes, Incoming};
+use hyper_util::{
+    rt::{TokioExecutor, TokioIo},
+    server::{self, graceful::GracefulShutdown},
 };
-use hyper_util::rt::TokioIo;
-use tokio::{
-    net::{TcpListener, TcpStream},
-    select,
-};
+use tokio::net::{TcpListener, TcpStream};
 
 use tracing::{debug, error, info, instrument, warn};
 
@@ -38,36 +32,68 @@ impl SettingHost {
         async move {
             let listener = TcpListener::bind(&addr).await?;
             info!("host bind on {}", addr);
+
+            let server = server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
+            let graceful = server::graceful::GracefulShutdown::new();
+            let mut ctrl_c = pin!(tokio::signal::ctrl_c());
+
             loop {
-                let socket = listener.accept().await?;
-                tokio::spawn(async move {
-                    // TODO: http version
-                    graceful_shutdown(self, socket).await;
-                });
+                tokio::select! {
+                    conn = listener.accept() => {
+                        let conn = match conn {
+                            Ok(conn) => conn,
+                            Err(e) => {
+                                error!("accept error: {}", e);
+                                continue;
+                            }
+                        };
+                        handle_connection(conn, self, &server, &graceful).await;
+                    },
+
+                    _ = ctrl_c.as_mut() => {
+                        drop(listener);
+                        info!("Ctrl-C received, starting shutdown");
+                        break;
+                    }
+                }
             }
+
+            tokio::select! {
+                _ = graceful.shutdown() => {
+                    info!("Gracefully shutdown!");
+                },
+                _ = tokio::time::sleep(Duration::from_secs(self.keep_alive.into())) => {
+                    error!("Waited 10 seconds for graceful shutdown, aborting...");
+                }
+            }
+            Ok(())
         }
     }
 }
 
-/// Handle tokio TcpListener socket,
-/// then use hyper and service_fn to handle connection
+/// Handle tcp connection from client
+/// then use hyper service to handle response
 ///
 /// ## Arguments
 ///
-/// `host`: host configuration from config file
-/// `socket`: the socket what tokio TcpListener accepted
-pub async fn graceful_shutdown(host: &'static SettingHost, socket: (TcpStream, SocketAddr)) {
-    let (stream, addr) = socket;
-    let io = TokioIo::new(stream);
+/// `conn`: connection accepted from TcpListener
+/// `host`: SettingHost from config file
+/// `server`: hyper_util server Builder
+/// `graceful`: hyper_util server graceful shutdown
+async fn handle_connection(
+    conn: (TcpStream, SocketAddr),
+    host: &'static SettingHost,
+    server: &server::conn::auto::Builder<TokioExecutor>,
+    graceful: &GracefulShutdown,
+) {
+    let (stream, peer_addr) = conn;
+    debug!("incomming connection accepted: {}", peer_addr);
 
-    // Use keep_alive in config for incoming connections to the server.
-    // use process_timeout in config for processing the final request and graceful shutdown.
-    let connection_timeout = Duration::from_secs(host.keep_alive.into());
+    let stream = TokioIo::new(Box::pin(stream));
 
-    // service_fn
     let service = move |req: Request<Incoming>| async move {
         let start_time = time::Instant::now();
-        let res = handle_connection(&req, host).await;
+        let res = handle_service(&req, host).await;
         let response = match res {
             Ok(res) => res,
             Err(Error::NotFound(err)) => {
@@ -87,49 +113,24 @@ pub async fn graceful_shutdown(host: &'static SettingHost, socket: (TcpStream, S
         let res_status = response.status();
         info!(
             "\"{}\" {} {} {:?} {} {:.3}ms",
-            addr, method, path, version, res_status, end_time
+            peer_addr, method, path, version, res_status, end_time
         );
         anyhow::Ok(response)
     };
 
-    let conn = http1::Builder::new().serve_connection(io, service_fn(service));
-    let mut conn = pin!(conn);
-    // Iterate the timeouts.  Use tokio::select! to wait on the
-    // result of polling the connection itself,
-    // and also on tokio::time::sleep for the current timeout duration.
-    select! {
-        res = conn.as_mut() => {
-            match res {
-                Ok(_) => {
-                    debug!("close connection");
-                }
-                Err(err)
-                    if err.source().is_some()
-                        && err
-                            .source()
-                            .unwrap()
-                            .downcast_ref::<std::io::Error>()
-                            .unwrap_or(&std::io::Error::new(NotFound, &Error::Empty))
-                            .kind()
-                            == NotConnected =>
-                {
-                    // The client closed connection
-                    debug!("client closed connection");
-                }
-                Err(err) => {
-                    error!("handle connection {:?}", err);
-                }
-            }
+    let conn = server.serve_connection_with_upgrades(stream, hyper::service::service_fn(service));
+    let conn = graceful.watch(conn.into_owned());
+
+    tokio::spawn(async move {
+        if let Err(err) = conn.await {
+            error!("connection error: {}", err);
         }
-        _ = tokio::time::sleep(connection_timeout) => {
-            debug!("keep-alive timeout {}s, calling conn.graceful_shutdown", host.keep_alive);
-            conn.as_mut().graceful_shutdown();
-        }
-    }
+        debug!("connection dropped: {}", peer_addr);
+    });
 }
 
 /// Connection handler in service_fn
-pub async fn handle_connection(
+pub async fn handle_service(
     req: &Request<Incoming>,
     host: &'static SettingHost,
 ) -> Result<Response<CandyBody<Bytes>>> {
