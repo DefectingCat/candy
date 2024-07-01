@@ -53,24 +53,26 @@ pub struct Settings {
     pub host: Vec<SettingHost>,
 }
 
-pub fn init_config(path: &str) -> Result<Settings> {
-    let file = fs::read_to_string(path).with_context(|| format!("read {path} failed"))?;
-    let mut settings: Settings = toml::from_str(&file)?;
+impl Settings {
+    pub fn new(path: &str) -> Result<Self> {
+        let file = fs::read_to_string(path).with_context(|| format!("read {path} failed"))?;
+        let mut settings: Settings = toml::from_str(&file)?;
 
-    // convert route map
-    settings.host.iter_mut().for_each(|host| {
-        let routes = &mut host.route;
-        for route in routes.iter_mut() {
-            if route.is_none() {
-                continue;
+        // convert route map
+        settings.host.iter_mut().for_each(|host| {
+            let routes = &mut host.route;
+            for route in routes.iter_mut() {
+                if route.is_none() {
+                    continue;
+                }
+                let route = route.take().unwrap();
+                host.route_map.insert(route.location.to_string(), route);
             }
-            let route = route.take().unwrap();
-            host.route_map.insert(route.location.to_string(), route);
-        }
-    });
+        });
 
-    // combine mime types
-    insert_default_mimes(&mut settings.types);
+        // combine mime types
+        insert_default_mimes(&mut settings.types);
 
-    Ok(settings)
+        Ok(settings)
+    }
 }
