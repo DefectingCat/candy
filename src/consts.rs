@@ -2,13 +2,13 @@ use std::{borrow::Cow, collections::BTreeMap, env, process::exit, sync::OnceLock
 
 use tracing::error;
 
-use crate::config::{init_config, MIMEType, Settings};
+use crate::config::{MIMEType, Settings};
 
 // global settings
 pub static SETTINGS: OnceLock<Settings> = OnceLock::new();
 pub fn get_settings() -> &'static Settings {
     SETTINGS.get_or_init(|| {
-        init_config("")
+        Settings::new("")
             .map_err(|err| {
                 error!("get_or_init config failed: {err}");
                 exit(1);
