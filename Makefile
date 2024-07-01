@@ -50,19 +50,19 @@ lint:
 fix:
 	$(CARGO) fix --allow-dirty --all-features
 
-build-linux-musl:
+build-linux-musl: clean-release
 	$(CROSS) build --release --target x86_64-unknown-linux-musl
 
-build-linux-gnu:
+build-linux-gnu: clean-release
 	$(CROSS) build --release --target x86_64-unknown-linux-gnu
 
-build-windows-gnu:
+build-windows-gnu: clean-release
 	$(CROSS) build --release --target x86_64-pc-windows-gnu
 
-build-freebsd:
+build-freebsd: clean-release
 	$(CROSS) build --release --target x86_64-unknown-freebsd
 
-build-loongarch:
+build-loongarch: clean-release
 	$(CROSS) build --release --target loongarch64-unknown-linux-gnu
 
 # Phony targets to avoid conflicts with file names
