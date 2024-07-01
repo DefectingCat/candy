@@ -22,7 +22,10 @@ use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     server::{self, graceful::GracefulShutdown},
 };
-use tokio::net::{TcpListener, TcpStream};
+use tokio::{
+    net::{TcpListener, TcpStream},
+    select,
+};
 
 use tracing::{debug, error, info, instrument, warn};
 
@@ -58,7 +61,7 @@ impl SettingHost {
                 }
             }
 
-            tokio::select! {
+            select! {
                 _ = graceful.shutdown() => {
                     info!("Gracefully shutdown!");
                 },
@@ -199,10 +202,14 @@ async fn handle_proxy(
     )))?;
     let port = uri.port_u16().unwrap_or(80);
     let addr = format!("{}:{}", host, port);
-    // TODO: TcpStream timeout
-    let stream = TcpStream::connect(&addr)
-        .await
-        .with_context(|| format!("connect to {} failed", addr))?;
+    let stream = select! {
+        stream = TcpStream::connect(&addr) => {
+            stream.with_context(|| format!("connect to {} failed", addr))?
+        }
+        _ = tokio::time::sleep(Duration::from_secs(3)) => {
+            return Err(anyhow!("connect upstream {} timeout", &addr).into());
+        }
+    };
     let io = TokioIo::new(stream);
 
     let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
