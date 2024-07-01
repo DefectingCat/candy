@@ -1,6 +1,7 @@
 # Define the Rust compiler and cargo command
 CARGO = cargo
 RUSTC = rustc
+CROSS = cross
 
 # Targets
 # TARGET = candy
@@ -30,6 +31,10 @@ test:
 clean:
 	$(CARGO) clean
 
+clean-release:
+	rm -rf ./target/release/
+	rm -rf ./target/debug/
+
 # Check the code for warnings and errors
 check:
 	$(CARGO) check
@@ -45,5 +50,20 @@ lint:
 fix:
 	$(CARGO) fix --allow-dirty --all-features
 
+build-linux-musl:
+	$(CROSS) build --release --target x86_64-unknown-linux-musl
+
+build-linux-gnu:
+	$(CROSS) build --release --target x86_64-unknown-linux-gnu
+
+build-windows-gnu:
+	$(CROSS) build --release --target x86_64-pc-windows-gnu
+
+build-freebsd:
+	$(CROSS) build --release --target x86_64-unknown-freebsd
+
+build-loongarch:
+	$(CROSS) build --release --target loongarch64-unknown-linux-gnu
+
 # Phony targets to avoid conflicts with file names
-.PHONY: all build dev run test clean check format lint fix
+.PHONY: all build dev run test clean check format lint fix build-linux-musl build-linux-gnu build-windows-gnu build-freebsd build-loongarch
