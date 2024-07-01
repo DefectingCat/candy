@@ -43,7 +43,7 @@ lint:
 	$(CARGO) clippy
 
 fix:
-	cargo fix --allow-dirty --all-features
+	$(CARGO) fix --allow-dirty --all-features
 
 # Phony targets to avoid conflicts with file names
 .PHONY: all build dev run test clean check format lint fix
