@@ -49,6 +49,7 @@ pub struct CandyHandler<'req> {
     assets_path: &'req str,
 }
 
+pub type CandyBody<T, E = Error> = BoxBody<T, E>;
 type CandyResponse = Result<Response<CandyBody<Bytes>>>;
 impl<'req> CandyHandler<'req> {
     /// Create a new handler with hyper incoming request
@@ -98,7 +99,7 @@ impl<'req> CandyHandler<'req> {
     ///
     /// Only use with the `proxy_pass` field in config
     #[instrument(level = "debug")]
-    pub async fn proxy(self) -> Result<Response<CandyBody<Bytes>>> {
+    pub async fn proxy(self) -> CandyResponse {
         let (router, assets_path) = (self.router, self.assets_path);
         let (req, res) = (self.req, self.res);
 
@@ -170,7 +171,7 @@ impl<'req> CandyHandler<'req> {
     /// try find static file from local path
     ///
     /// Only use with the `proxy_pass` field not in config
-    pub async fn file(self) -> Result<Response<CandyBody<Bytes>>> {
+    pub async fn file(self) -> CandyResponse {
         let (router, assets_path) = (self.router, self.assets_path);
         let (req, res) = (self.req, self.res);
 
@@ -211,8 +212,6 @@ impl<'req> CandyHandler<'req> {
         Ok(res)
     }
 }
-
-pub type CandyBody<T, E = Error> = BoxBody<T, E>;
 
 /// Open local file and check last modified time,
 /// Then determine stream file or use cache file
