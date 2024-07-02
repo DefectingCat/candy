@@ -83,11 +83,11 @@ build:linux-loongarch:
         - if: $CI_COMMIT_TAG
     script:
         - make build-loongarch
-        - "mv target/loongarch64-unknown-linux-gnu/release/$APP_NAME.exe target/loongarch64-unknown-linux-gnu/release/$APP_NAME-loongarch64-unknown-linux-gnu-$CI_COMMIT_TAG.exe"
-        - "mv target/loongarch64-unknown-linux-gnu/release/$APP_NAME-loongarch64-unknown-linux-gnu-$CI_COMMIT_TAG.exe public/"
+        - "mv target/loongarch64-unknown-linux-gnu/release/$APP_NAME target/loongarch64-unknown-linux-gnu/release/$APP_NAME-loongarch64-unknown-linux-gnu-$CI_COMMIT_TAG"
+        - "mv target/loongarch64-unknown-linux-gnu/release/$APP_NAME-loongarch64-unknown-linux-gnu-$CI_COMMIT_TAG public/"
     artifacts:
         paths:
-            - public/$APP_NAME-loongarch64-unknown-linux-gnu-$CI_COMMIT_TAG.exe
+            - public/$APP_NAME-loongarch64-unknown-linux-gnu-$CI_COMMIT_TAG
 
 rustdoc:
     stage: build
