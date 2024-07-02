@@ -1,25 +1,18 @@
 use std::{
     net::SocketAddr,
-    path::Path,
     pin::pin,
     time::{self, Duration, Instant},
 };
 
 use crate::{
-    config::{SettingHost, SettingRoute},
-    consts::{NAME, VERSION},
-    error::{Error, Result},
-    http::{
-        handle_get, handle_not_found, internal_server_error, not_found, CandyBody, CandyHandler,
-    },
-    utils::{find_route, parse_assets_path},
+    config::SettingHost,
+    error::Error,
+    http::{internal_server_error, not_found, CandyHandler},
 };
 
-use anyhow::{anyhow, Context};
 use futures_util::Future;
-use http::{response::Builder, Method, Request, Response};
-use http_body_util::{BodyExt, Empty};
-use hyper::body::{Bytes, Incoming};
+use http::Request;
+use hyper::body::Incoming;
 use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     server::{self, graceful::GracefulShutdown},
@@ -29,7 +22,7 @@ use tokio::{
     select,
 };
 
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, info, warn};
 
 impl SettingHost {
     pub fn mk_server(&'static self) -> impl Future<Output = anyhow::Result<()>> + 'static {
@@ -98,7 +91,11 @@ async fn handle_connection(
 
     let service = move |req: Request<Incoming>| async move {
         let start_time = time::Instant::now();
-        let res = handle_service(&req, host).await;
+        let mut handler = CandyHandler::new(&req, host)?;
+        // Connection handler in service_fn
+        // then decide whether to handle proxy or static file based on config
+        handler.add_headers()?;
+        let res = handler.handle().await;
         let response = match res {
             Ok(res) => res,
             Err(Error::NotFound(err)) => {
@@ -132,15 +129,4 @@ async fn handle_connection(
         }
         debug!("connection dropped: {}", peer_addr);
     });
-}
-
-/// Connection handler in service_fn
-/// then decide whether to handle proxy or static file based on config
-pub async fn handle_service(
-    req: &Request<Incoming>,
-    host: &'static SettingHost,
-) -> Result<Response<CandyBody<Bytes>>> {
-    let mut handler = CandyHandler::new(req, host)?;
-    handler.add_headers()?;
-    handler.handle().await
 }
