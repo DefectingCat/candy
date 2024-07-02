@@ -9,7 +9,9 @@ use crate::{
     config::{SettingHost, SettingRoute},
     consts::{NAME, VERSION},
     error::{Error, Result},
-    http::{handle_get, handle_not_found, internal_server_error, not_found, CandyBody},
+    http::{
+        handle_get, handle_not_found, internal_server_error, not_found, CandyBody, CandyHandler,
+    },
     utils::{find_route, parse_assets_path},
 };
 
@@ -138,154 +140,7 @@ pub async fn handle_service(
     req: &Request<Incoming>,
     host: &'static SettingHost,
 ) -> Result<Response<CandyBody<Bytes>>> {
-    use Error::*;
-
-    let req_path = req.uri().path();
-
-    // find route path
-    let (router, assets_path) = find_route(req_path, &host.route_map)?;
-
-    // build the response for client
-    let mut res = Response::builder();
-    let headers = res
-        .headers_mut()
-        .ok_or(InternalServerError(anyhow!("build response failed")))?;
-    let server = format!("{}/{}", NAME, VERSION);
-    headers.insert("Server", server.parse()?);
-    // config headers overrite
-    if let Some(c_headers) = &host.headers {
-        for (k, v) in c_headers {
-            headers.insert(k.as_str(), v.parse()?);
-        }
-    }
-
-    // reverse proxy
-    if router.proxy_pass.is_some() {
-        handle_proxy(router, assets_path, req, res).await
-    } else {
-        // static file
-        handle_file(router, assets_path, req, res).await
-    }
-}
-
-/// Handle reverse proxy
-///
-/// Only use with the `proxy_pass` field in config
-/// TODO: add x-proxy-server header
-/// TODO: follow redirect
-#[instrument(level = "debug")]
-async fn handle_proxy(
-    router: &SettingRoute,
-    assets_path: &str,
-    req: &Request<Incoming>,
-    res: Builder,
-) -> Result<Response<CandyBody<Bytes>>> {
-    // check on outside
-    let proxy = router.proxy_pass.as_ref().ok_or(Error::Empty)?;
-    let path_query = req.uri().query().unwrap_or(assets_path);
-
-    let uri: hyper::Uri = format!("{}{}", proxy, path_query)
-        .parse()
-        .with_context(|| format!("parse proxy uri failed: {}", proxy))?;
-    match uri.scheme_str() {
-        Some("http") | Some("https") => {}
-        _ => {
-            return Err(Error::InternalServerError(anyhow!(
-                "proxy uri scheme error: {}",
-                uri
-            )));
-        }
-    }
-
-    let host = uri.host().ok_or(Error::InternalServerError(anyhow!(
-        "proxy pass host incorrect"
-    )))?;
-    let port = uri.port_u16().unwrap_or(80);
-    let addr = format!("{}:{}", host, port);
-    let stream = select! {
-        stream = TcpStream::connect(&addr) => {
-            stream.with_context(|| format!("connect to {} failed", addr))?
-        }
-        _ = tokio::time::sleep(Duration::from_secs(3)) => {
-            return Err(anyhow!("connect upstream {} timeout", &addr).into());
-        }
-    };
-    let io = TokioIo::new(stream);
-
-    let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
-        .await
-        .map_err(|err| {
-            error!("cannot handshake with {}: {}", addr, err);
-            anyhow!("{err}")
-        })?;
-    tokio::task::spawn(async move {
-        if let Err(err) = conn.await {
-            println!("Connection failed: {:?}", err);
-        }
-    });
-
-    let authority = uri
-        .authority()
-        .ok_or(anyhow!("proxy pass uri authority incorrect"))?;
-
-    let path = uri.path();
-    let req = Request::builder()
-        .uri(path)
-        .header(hyper::header::HOST, authority.as_str())
-        .body(Empty::<Bytes>::new())?;
-
-    let client_res = sender
-        .send_request(req)
-        .await
-        .with_context(|| "send request failed")?;
-    let client_body = client_res.map_err(Error::HyperError).boxed();
-    let res_body = res.body(client_body)?;
-    Ok(res_body)
-}
-
-/// Handle static files,
-/// try find static file from local path
-///
-/// Only use with the `proxy_pass` field not in config
-async fn handle_file(
-    router: &SettingRoute,
-    assets_path: &str,
-    req: &Request<Incoming>,
-    res: Builder,
-) -> Result<Response<CandyBody<Bytes>>> {
-    let req_method = req.method();
-
-    // find resource local file path
-    let mut path = None;
-    for index in router.index.iter() {
-        if let Some(root) = &router.root {
-            let p = parse_assets_path(assets_path, root, index);
-            if Path::new(&p).exists() {
-                path = Some(p);
-                break;
-            }
-        }
-    }
-    let path = match path {
-        Some(p) => p,
-        None => {
-            return handle_not_found(req, res, router, "").await;
-        }
-    };
-
-    // http method handle
-    let res = match *req_method {
-        Method::GET => handle_get(req, res, &path).await?,
-        Method::POST => handle_get(req, res, &path).await?,
-        // Return the 404 Not Found for other routes.
-        _ => {
-            if let Some(err_page) = &router.error_page {
-                let res = res.status(err_page.status);
-                handle_get(req, res, &err_page.page).await?
-            } else {
-                not_found()
-            }
-        }
-    };
-    Ok(res)
+    let mut handler = CandyHandler::new(req, host)?;
+    handler.add_headers()?;
+    handler.handle().await
 }
