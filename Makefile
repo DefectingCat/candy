@@ -7,7 +7,7 @@ CROSS = cross
 # TARGET = candy
 
 # Default target to build the project
-all: build
+all: build-release
 
 # Build the project
 build:
