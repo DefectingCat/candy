@@ -91,9 +91,10 @@ async fn handle_connection(
 
     let service = move |req: Request<Incoming>| async move {
         let start_time = time::Instant::now();
-        let mut handler = CandyHandler::new(&req, host)?;
+        let mut handler = CandyHandler::new(&req, host);
         // Connection handler in service_fn
         // then decide whether to handle proxy or static file based on config
+        // TODO: error handle
         handler.add_headers()?;
         let res = handler.handle().await;
         let response = match res {
