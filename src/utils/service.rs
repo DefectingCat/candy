@@ -47,22 +47,26 @@ pub fn find_route<'a>(
 ) -> Result<(&'a SettingRoute, &'a str)> {
     let not_found_err = format!("resource {} not found", &req_path);
     // /public/www/test
-    // then find all stash's index
-    let all_stash = &req_path
-        .bytes()
-        .enumerate()
-        .filter(|(_, b)| *b == b'/')
-        .map(|(index, _)| index + 1)
-        .collect::<Vec<_>>();
-    // loop the all_stash
-    // /public/
-    // /public/www/
+    // convert req path to chars
+    let all_chars = req_path.chars().collect::<Vec<_>>();
     let mut last_router = None;
-    for index in all_stash {
-        if let Some(router) = route_map.get(&req_path[..*index]) {
-            last_router = Some((router, &req_path[*index..]));
+    // then loop all req path
+    // until found the route
+    // /public/www/test
+    // /public/www/tes
+    // /public/www/te
+    // /public/www/t
+    // /public/www/
+    for (i, _) in all_chars.iter().enumerate().rev() {
+        let index = i + 1;
+        let path = &all_chars[..index];
+        let path_str = path.iter().collect::<String>();
+        if let Some(router) = route_map.get(&path_str) {
+            last_router = Some((router, &req_path[index..]));
+            break;
         }
     }
+
     let (router, assets_path) = last_router.ok_or(Error::NotFound(not_found_err.into()))?;
     debug!("router {:?}", &router);
     debug!("assets_path {assets_path}");
