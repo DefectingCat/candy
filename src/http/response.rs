@@ -44,28 +44,23 @@ pub struct CandyHandler<'req> {
     /// Config host field
     host: &'static SettingHost,
     /// Router
-    router: &'req SettingRoute,
+    router: Option<&'req SettingRoute>,
     /// Current request's assets path
-    assets_path: &'req str,
+    assets_path: Option<&'req str>,
 }
 
 pub type CandyBody<T, E = Error> = BoxBody<T, E>;
 type CandyResponse = Result<Response<CandyBody<Bytes>>>;
 impl<'req> CandyHandler<'req> {
     /// Create a new handler with hyper incoming request
-    pub fn new(req: &'req Request<Incoming>, host: &'static SettingHost) -> Result<Self> {
-        let req_path = req.uri().path();
-        // find route path
-        let (router, assets_path) = find_route(req_path, &host.route_map)?;
-
-        let candy = Self {
+    pub fn new(req: &'req Request<Incoming>, host: &'static SettingHost) -> Self {
+        Self {
             req,
             res: Response::builder(),
             host,
-            router,
-            assets_path,
-        };
-        Ok(candy)
+            router: None,
+            assets_path: None,
+        }
     }
 
     pub fn add_headers(&mut self) -> Result<()> {
@@ -85,9 +80,15 @@ impl<'req> CandyHandler<'req> {
     }
 
     /// Handle static file or reverse proxy
-    pub async fn handle(self) -> CandyResponse {
+    pub async fn handle(mut self) -> CandyResponse {
+        let req_path = self.req.uri().path();
+        // find route path
+        let (router, assets_path) = find_route(req_path, &self.host.route_map)?;
+        self.router = Some(router);
+        self.assets_path = Some(assets_path);
+
         // reverse proxy
-        if self.router.proxy_pass.is_some() {
+        if router.proxy_pass.is_some() {
             self.proxy().await
         } else {
             // static file
@@ -100,7 +101,12 @@ impl<'req> CandyHandler<'req> {
     /// Only use with the `proxy_pass` field in config
     #[instrument(level = "debug")]
     pub async fn proxy(self) -> CandyResponse {
-        let (router, assets_path) = (self.router, self.assets_path);
+        let (router, assets_path) = (
+            self.router
+                .ok_or(Error::NotFound("handler router is empty".into()))?,
+            self.assets_path
+                .ok_or(Error::NotFound("handler assets_path is empty".into()))?,
+        );
         let (req, res) = (self.req, self.res);
 
         // check on outside
@@ -172,7 +178,12 @@ impl<'req> CandyHandler<'req> {
     ///
     /// Only use with the `proxy_pass` field not in config
     pub async fn file(self) -> CandyResponse {
-        let (router, assets_path) = (self.router, self.assets_path);
+        let (router, assets_path) = (
+            self.router
+                .ok_or(Error::NotFound("handler router is empty".into()))?,
+            self.assets_path
+                .ok_or(Error::NotFound("handler assets_path is empty".into()))?,
+        );
         let (req, res) = (self.req, self.res);
 
         let req_method = req.method();
