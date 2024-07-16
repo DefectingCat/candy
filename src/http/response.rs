@@ -63,6 +63,8 @@ impl<'req> CandyHandler<'req> {
         }
     }
 
+    /// Traverse the headers from config
+    /// add to response
     pub fn add_headers(&mut self) -> Result<()> {
         let headers = self
             .res
@@ -80,6 +82,7 @@ impl<'req> CandyHandler<'req> {
     }
 
     /// Handle static file or reverse proxy
+    #[instrument(level = "debug")]
     pub async fn handle(mut self) -> CandyResponse {
         let req_path = self.req.uri().path();
         // find route path
@@ -150,7 +153,7 @@ impl<'req> CandyHandler<'req> {
                 })?;
         tokio::task::spawn(async move {
             if let Err(err) = conn.await {
-                println!("Connection failed: {:?}", err);
+                error!("connection failed: {:?}", err);
             }
         });
 
@@ -294,7 +297,7 @@ pub fn internal_server_error() -> Response<CandyBody<Bytes>> {
 // HTTP methods
 /// handle http get method
 /// read static file and check If-None-Match cache
-#[instrument]
+#[instrument(level = "debug")]
 pub async fn handle_get(
     req: &Request<Incoming>,
     mut res: Builder,
