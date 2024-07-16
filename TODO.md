@@ -2,8 +2,8 @@
 
 -   [ ] Dockerization
 -   [ ] Docs
--   [ ] Refactor HTTP 1
--   [ ] Build with compile info
+-   [x] Build with compile info
+-   [x] Refactor HTTP 1
 -   [x] Graceful shutdown
 -   [x] `keep-alive` timeout setting
 -   [x] HTTP Etag: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag#etag_value
@@ -34,11 +34,11 @@
     -   [x] x86_64-unknown-freebsd
     -   [x] loongarch64-unknown-linux-gnu
 -   [ ] Proxy
--   [ ] Reverse Proxy
+-   [x] Reverse Proxy
 -   [ ] FastCGI
 -   [ ] SSL
 -   [x] Cli
-    -   [x] Specific custom config location
+-   [x] Specific custom config location
 -   [ ] HTTP 2
 -   [ ] HTTP 3
 -   [ ] Specify thread numbers
