@@ -36,7 +36,7 @@ lint:
 	$(CARGO) clippy
 
 fix:
-	$(CARGO) fix --allow-dirty --all-features
+	$(CARGO) fix --allow-dirty --all-features && $(CARGO) fmt
 
 build-linux-musl: clean-release
 	$(CROSS) build --release --target x86_64-unknown-linux-musl
