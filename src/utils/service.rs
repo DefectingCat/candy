@@ -93,6 +93,7 @@ mod tests {
             index: vec!["index.html".into()],
             error_page: None,
             proxy_pass: None,
+            proxy_timeout: 10,
         };
         let map = BTreeMap::from([("/".to_string(), setting_route)]);
         let (_, assets_path) = find_route("/docs/home", &map).unwrap();
