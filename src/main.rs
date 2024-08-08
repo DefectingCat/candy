@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
         .map_err(|err| anyhow!("init config failed {err:?}"))?;
 
     // global config
-    let settings = get_settings();
+    let settings = get_settings().with_context(|| "get global settings failed")?;
     debug!("settings {:?}", settings);
     info!("{}/{} {}", NAME, VERSION, COMPILER);
     info!("OS: {} {}", OS, ARCH);

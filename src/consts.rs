@@ -1,20 +1,14 @@
-use std::{borrow::Cow, collections::BTreeMap, env, process::exit, sync::OnceLock};
+use std::{borrow::Cow, collections::BTreeMap, env, sync::OnceLock};
 
-use tracing::error;
-
-use crate::config::{MIMEType, Settings};
+use crate::{
+    config::{MIMEType, Settings},
+    error::{Error, Result},
+};
 
 // global settings
 pub static SETTINGS: OnceLock<Settings> = OnceLock::new();
-pub fn get_settings() -> &'static Settings {
-    SETTINGS.get_or_init(|| {
-        Settings::new("")
-            .map_err(|err| {
-                error!("get_or_init config failed: {err}");
-                exit(1);
-            })
-            .unwrap()
-    })
+pub fn get_settings() -> Result<&'static Settings> {
+    SETTINGS.get().ok_or(Error::Empty)
 }
 
 // pre defined

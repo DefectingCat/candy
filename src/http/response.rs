@@ -323,7 +323,7 @@ pub async fn handle_get(
         .extension()
         .ok_or(InternalServerError(anyhow!("read file extension failed")))?;
 
-    let settings = get_settings();
+    let settings = get_settings()?;
     let content_type = settings.types.get(
         extension
             .to_str()
