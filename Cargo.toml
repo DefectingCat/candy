@@ -2,19 +2,20 @@
 name = "candy"
 version = "0.1.1"
 edition = "2021"
+rust-version = "1.80.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 # core
-tokio = { version = "1.38.0", features = ["full"] }
+tokio = { version = "1.39.2", features = ["full"] }
 tokio-util = "0.7.11"
-hyper = { version = "1.4.0", features = ["full"] }
+hyper = { version = "1.4.1", features = ["full"] }
 hyper-util = { version = "0.1.6", features = ["full"] }
 http = "1.1.0"
 http-body-util = "0.1.2"
 futures-util = "0.3.30"
-async-compression = { version = "0.4.11", features = [
+async-compression = { version = "0.4.12", features = [
     "tokio",
     "zstd",
     "gzip",
@@ -22,14 +23,14 @@ async-compression = { version = "0.4.11", features = [
     "brotli",
 ] }
 # tools
-thiserror = "1.0.61"
+thiserror = "1.0.63"
 anyhow = "1.0.86"
-serde = { version = "1.0.203", features = ["derive"] }
-toml = "0.8.14"
+serde = { version = "1.0.204", features = ["derive"] }
+toml = "0.8.19"
 # logging
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-clap = { version = "4.5.8", features = ["derive"] }
+clap = { version = "4.5.13", features = ["derive"] }
 
 [profile.release]
 lto = true

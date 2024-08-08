@@ -27,6 +27,6 @@ status = 404
 page = "404.html"
 
 [[host.route]]
-index = ["index.html"]
 location = "/proxy/"
 proxy_pass = "http://localhost:3000/"
+proxy_timeout = 10
