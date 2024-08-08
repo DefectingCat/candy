@@ -35,7 +35,8 @@
     -   [x] loongarch64-unknown-linux-gnu
 -   [ ] Proxy
 -   [x] Reverse Proxy
-    -   [ ] Connect to upstream timeout setting
+    -   [x] Connect to upstream timeout setting
+    -   [ ] Follow http 301
 -   [ ] FastCGI
 -   [ ] SSL
 -   [x] Cli

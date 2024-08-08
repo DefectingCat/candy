@@ -42,6 +42,12 @@ pub fn mime_default() -> Cow<'static, str> {
     MIME_DEFAULT.into()
 }
 
+// default reverse proxy upstream timeout
+pub const UPSTREAM_TIMEOUT: u16 = 5;
+pub fn upstream_timeout_default() -> u16 {
+    UPSTREAM_TIMEOUT
+}
+
 // default mime types
 pub fn types_default() -> MIMEType {
     BTreeMap::new()

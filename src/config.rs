@@ -1,5 +1,8 @@
 use crate::{
-    consts::{host_index, insert_default_mimes, mime_default, timeout_default, types_default},
+    consts::{
+        host_index, insert_default_mimes, mime_default, timeout_default, types_default,
+        upstream_timeout_default,
+    },
     error::Result,
 };
 use std::{borrow::Cow, collections::BTreeMap, fs};
@@ -25,6 +28,8 @@ pub struct SettingRoute {
     pub error_page: Option<ErrorRoute>,
     // reverse proxy url
     pub proxy_pass: Option<String>,
+    #[serde(default = "upstream_timeout_default")]
+    pub proxy_timeout: u16,
 }
 
 pub type HostRouteMap = BTreeMap<String, SettingRoute>;

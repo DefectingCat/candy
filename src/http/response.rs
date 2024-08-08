@@ -82,7 +82,6 @@ impl<'req> CandyHandler<'req> {
     }
 
     /// Handle static file or reverse proxy
-    #[instrument(level = "debug")]
     pub async fn handle(mut self) -> CandyResponse {
         let req_path = self.req.uri().path();
         // find route path
@@ -102,7 +101,6 @@ impl<'req> CandyHandler<'req> {
     /// Handle reverse proxy
     ///
     /// Only use with the `proxy_pass` field in config
-    #[instrument(level = "debug")]
     pub async fn proxy(self) -> CandyResponse {
         let (router, assets_path) = (
             self.router
@@ -134,11 +132,12 @@ impl<'req> CandyHandler<'req> {
         )))?;
         let port = uri.port_u16().unwrap_or(80);
         let addr = format!("{}:{}", host, port);
+        let timeout = router.proxy_timeout;
         let stream = select! {
             stream = TcpStream::connect(&addr) => {
                 stream.with_context(|| format!("connect to {} failed", addr))?
             }
-            _ = tokio::time::sleep(Duration::from_secs(3)) => {
+            _ = tokio::time::sleep(Duration::from_secs(timeout.into())) => {
                 return Err(anyhow!("connect upstream {} timeout", &addr).into());
             }
         };
@@ -171,6 +170,8 @@ impl<'req> CandyHandler<'req> {
             .send_request(req)
             .await
             .with_context(|| "send request failed")?;
+        debug!("status {}", client_res.status());
+        debug!("test {:?}", client_res.headers());
         let client_body = client_res.map_err(Error::HyperError).boxed();
         let res_body = res.body(client_body)?;
         Ok(res_body)
@@ -397,3 +398,6 @@ pub async fn handle_not_found(
     };
     Ok(res)
 }
+
+/// Follow http status 301
+pub async fn follow_moved() {}
