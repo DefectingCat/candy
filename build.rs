@@ -17,7 +17,6 @@ macro_rules! set_env {
 
 fn main() {
     rustc_info();
-    println!("cargo:info=test");
 }
 
 fn rustc_info() {

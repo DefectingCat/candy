@@ -3,6 +3,7 @@
 logs
 .DS_Store
 config.toml
+!/.cargo/config.toml
 /html
 heaptrack.*.zst
 
