@@ -1,13 +1,13 @@
 CARGO = cargo
 RUSTC = rustc
-CROSS = cross
+CROSS = CROSS_REMOTE=1 cross
 
 all: build
 
 build:
 	$(CARGO) build
 
-release: clean
+release:
 	$(CARGO) build --release
 
 dev:
