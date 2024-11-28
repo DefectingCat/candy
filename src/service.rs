@@ -1,7 +1,7 @@
 use std::{
     net::SocketAddr,
     pin::pin,
-    time::{self, Duration, Instant},
+    time::{self, Duration},
 };
 
 use crate::{
@@ -109,16 +109,19 @@ async fn handle_connection(
                 internal_server_error()
             }
         };
-        let end_time = (Instant::now() - start_time).as_micros() as f32;
-        let end_time = end_time / 1000_f32;
+        let instant_elapsed = start_time.elapsed();
+        let micros = instant_elapsed.as_micros();
+        let millis = instant_elapsed.as_millis();
+        let end_time = if micros > 1000 {
+            format!("{millis:.3}ms")
+        } else {
+            format!("{micros:.3}μs")
+        };
         let method = &req.method();
         let path = &req.uri().path();
         let version = &req.version();
         let res_status = response.status();
-        info!(
-            "\"{}\" {} {} {:?} {} {:.3}ms",
-            peer_addr, method, path, version, res_status, end_time
-        );
+        info!("\"{peer_addr}\" {method} {path} {version:?} {res_status} {end_time}");
         anyhow::Ok(response)
     };
 
