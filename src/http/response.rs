@@ -109,11 +109,22 @@ impl<'req> CandyHandler<'req> {
         );
         let (req, res) = (self.req, self.res);
 
+        let assets_path = if !assets_path.is_empty() {
+            format!("/{assets_path}")
+        } else {
+            "".to_string()
+        };
         // check on outside
         let proxy = router.proxy_pass.as_ref().ok_or(Error::Empty)?;
-        let path_query = req.uri().query().unwrap_or(assets_path);
+        let proxy = proxy.trim_end_matches('/');
+        let path_query = req.uri().query().unwrap_or("");
+        let path_query = if !path_query.is_empty() {
+            format!("?{path_query}")
+        } else {
+            "".to_string()
+        };
 
-        let uri: hyper::Uri = format!("{}{}", proxy, path_query)
+        let uri: hyper::Uri = format!("{proxy}{assets_path}{path_query}")
             .parse()
             .with_context(|| format!("parse proxy uri failed: {}", proxy))?;
 
@@ -121,6 +132,7 @@ impl<'req> CandyHandler<'req> {
             "proxy pass host incorrect"
         )))?;
         let uri = uri.clone();
+        debug!("proxy pass to: {uri}");
         let timeout = router.proxy_timeout;
         let body = select! {
             body = client::get(uri) => {
@@ -355,6 +367,3 @@ pub async fn handle_not_found(
     };
     Ok(res)
 }
-
-/// Follow http status 301
-pub async fn follow_moved() {}
