@@ -1,3 +1,5 @@
+cargo-features = ["profile-rustflags", "trim-paths"]
+
 [package]
 name = "candy"
 version = "0.1.1"
@@ -15,7 +17,7 @@ hyper-util = { version = "0.1.10", features = ["full"] }
 http = "1.1.0"
 http-body-util = "0.1.2"
 futures-util = "0.3.31"
-async-compression = { version = "0.4.17", features = [
+async-compression = { version = "0.4.18", features = [
     "tokio",
     "zstd",
     "gzip",
@@ -28,12 +30,19 @@ anyhow = "1.0.93"
 serde = { version = "1.0.215", features = ["derive"] }
 toml = "0.8.19"
 # logging
-tracing = "0.1.40"
+tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 clap = { version = "4.5.21", features = ["derive"] }
 
+[profile.dev]
+incremental = true          # Compile your binary in smaller steps.
+rustflags = ["-Zthreads=8"] # Better compile performance.
+
 [profile.release]
-lto = true
-panic = "abort"   # Strip expensive panic clean-up logic
-codegen-units = 1 # Compile crates one after another so the compiler can optimize better
-strip = true      # Remove debug symbols
+codegen-units = 1                                                           # Allows LLVM to perform better optimization.
+lto = true                                                                  # Enables link-time-optimizations.
+opt-level = 3                                                               # Prioritizes small binary size. Use `3` if you prefer speed.
+panic = "abort"                                                             # Higher performance by disabling panic handlers.
+strip = true                                                                # Ensures debug symbols are removed.
+trim-paths = "all"                                                          # Removes potentially privileged information from your binaries.
+rustflags = ["-Cdebuginfo=0", "-C", "target-cpu=native", "-Z", "threads=8"]
