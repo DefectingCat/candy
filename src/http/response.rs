@@ -9,6 +9,7 @@ use crate::{
     consts::{NAME, VERSION},
     error::{Error, Result},
     get_settings,
+    http::client,
     utils::{
         compress::{stream_compress, CompressType},
         find_route, parse_assets_path,
@@ -18,17 +19,15 @@ use crate::{
 use anyhow::{anyhow, Context};
 use futures_util::TryStreamExt;
 use http::{response::Builder, Method};
-use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full, StreamBody};
+use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
 use hyper::{
     body::{Bytes, Frame, Incoming},
     Request, Response, StatusCode,
 };
 
-use hyper_util::rt::TokioIo;
 use tokio::{
     fs::File,
     io::{AsyncBufRead, BufReader},
-    net::TcpStream,
     select,
 };
 use tokio_util::io::ReaderStream;
@@ -117,63 +116,21 @@ impl<'req> CandyHandler<'req> {
         let uri: hyper::Uri = format!("{}{}", proxy, path_query)
             .parse()
             .with_context(|| format!("parse proxy uri failed: {}", proxy))?;
-        match uri.scheme_str() {
-            Some("http") | Some("https") => {}
-            _ => {
-                return Err(Error::InternalServerError(anyhow!(
-                    "proxy uri scheme error: {}",
-                    uri
-                )));
-            }
-        }
 
         let host = uri.host().ok_or(Error::InternalServerError(anyhow!(
             "proxy pass host incorrect"
         )))?;
-        let port = uri.port_u16().unwrap_or(80);
-        let addr = format!("{}:{}", host, port);
+        let uri = uri.clone();
         let timeout = router.proxy_timeout;
-        let stream = select! {
-            stream = TcpStream::connect(&addr) => {
-                stream.with_context(|| format!("connect to {} failed", addr))?
+        let body = select! {
+            body = client::get(uri) => {
+                body.with_context(|| "proxy body error")?
             }
             _ = tokio::time::sleep(Duration::from_secs(timeout.into())) => {
-                return Err(anyhow!("connect upstream {} timeout", &addr).into());
+                return Err(anyhow!("connect upstream {host:?} timeout").into());
             }
         };
-        let io = TokioIo::new(stream);
-
-        let (mut sender, conn) =
-            hyper::client::conn::http1::handshake(io)
-                .await
-                .map_err(|err| {
-                    error!("cannot handshake with {}: {}", addr, err);
-                    anyhow!("{err}")
-                })?;
-        tokio::task::spawn(async move {
-            if let Err(err) = conn.await {
-                error!("connection failed: {:?}", err);
-            }
-        });
-
-        let authority = uri
-            .authority()
-            .ok_or(anyhow!("proxy pass uri authority incorrect"))?;
-
-        let path = uri.path();
-        let req = Request::builder()
-            .uri(path)
-            .header(hyper::header::HOST, authority.as_str())
-            .body(Empty::<Bytes>::new())?;
-
-        let client_res = sender
-            .send_request(req)
-            .await
-            .with_context(|| "send request failed")?;
-        debug!("status {}", client_res.status());
-        debug!("test {:?}", client_res.headers());
-        let client_body = client_res.map_err(Error::HyperError).boxed();
-        let res_body = res.body(client_body)?;
+        let res_body = res.body(body)?;
         Ok(res_body)
     }
 
