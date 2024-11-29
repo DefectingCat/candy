@@ -6,3 +6,5 @@ tags: [hello]
 ---
 
 ## Hello World
+
+<!-- truncate -->
