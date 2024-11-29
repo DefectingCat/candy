@@ -7,6 +7,10 @@ const config: Config = {
   tagline: 'Tiny http web server',
   favicon: 'img/favicon.ico',
 
+  future: {
+    experimental_faster: true,
+  },
+
   // Set the production url of your site here
   url: 'https://your-docusaurus-site.example.com',
   // Set the /<baseUrl>/ pathname under which your site is served
@@ -25,7 +29,7 @@ const config: Config = {
   // useful metadata like html lang. For example, if your site is Chinese, you
   // may want to replace "en" with "zh-Hans".
   i18n: {
-    defaultLocale: 'en',
+    defaultLocale: 'zh-Hans',
     locales: ['en', 'zh-Hans'],
   },
 
