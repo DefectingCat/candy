@@ -41,8 +41,17 @@ fix:
 linux-musl: clean-release
 	$(CROSS) build --release --target x86_64-unknown-linux-musl
 
+aarch64-linux-musl: clean-release
+	$(CROSS) build --release --target aarch64-unknown-linux-musl
+
+aarch64-android: clean-release
+	$(CROSS) build --release --target aarch64-linux-android
+
 linux-gnu: clean-release
 	$(CROSS) build --release --target x86_64-unknown-linux-gnu
+
+aarch64-linux-gnu: clean-release
+	$(CROSS) build --release --target aarch64-unknown-linux-gnu
 
 windows-gnu: clean-release
 	$(CROSS) build --release --target x86_64-pc-windows-gnu
