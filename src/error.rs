@@ -34,6 +34,8 @@ pub enum Error {
     InvalidHeader(#[from] InvalidHeaderValue),
     #[error("")]
     Empty,
+    #[error("missing header {0}")]
+    MissingHeader(&'static str),
 }
 
 pub type Result<T, E = Error> = anyhow::Result<T, E>;
