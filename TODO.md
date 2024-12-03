@@ -33,6 +33,8 @@
     - [x] x86_64-pc-windows-gnu
     - [x] x86_64-unknown-freebsd
     - [x] loongarch64-unknown-linux-gnu
+- [ ] Load balance
+    - [ ] Pingora
 - [ ] Proxy
 - [x] Reverse Proxy
     - [x] Connect to upstream timeout setting
