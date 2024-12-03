@@ -91,7 +91,11 @@ async fn handle_connection(
 
     let service = move |req: Request<Incoming>| async move {
         let start_time = time::Instant::now();
-        let mut handler = CandyHandler::new(&req, host);
+        let method = req.method().clone();
+        let uri = req.uri().clone();
+        let path = uri.path();
+        let version = req.version();
+        let mut handler = CandyHandler::new(req, host);
         // Connection handler in service_fn
         // then decide whether to handle proxy or static file based on config
         let _ = handler
@@ -117,9 +121,6 @@ async fn handle_connection(
         } else {
             format!("{micros:.3}μs")
         };
-        let method = &req.method();
-        let path = &req.uri().path();
-        let version = &req.version();
         let res_status = response.status();
         info!("\"{peer_addr}\" {method} {path} {version:?} {res_status} {end_time}");
         anyhow::Ok(response)

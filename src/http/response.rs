@@ -18,7 +18,7 @@ use crate::{
 
 use anyhow::{anyhow, Context};
 use futures_util::TryStreamExt;
-use http::{response::Builder, Method};
+use http::{request, response::Builder, Method};
 use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
 use hyper::{
     body::{Bytes, Frame, Incoming},
@@ -37,7 +37,7 @@ use tracing::{debug, error, instrument};
 #[derive(Debug)]
 pub struct CandyHandler<'req> {
     /// Request from hyper
-    pub req: &'req Request<Incoming>,
+    pub req: Request<Incoming>,
     /// Hyper response
     pub res: Builder,
     /// Config host field
@@ -52,7 +52,7 @@ pub type CandyBody<T, E = Error> = BoxBody<T, E>;
 type CandyResponse = Result<Response<CandyBody<Bytes>>>;
 impl<'req> CandyHandler<'req> {
     /// Create a new handler with hyper incoming request
-    pub fn new(req: &'req Request<Incoming>, host: &'static SettingHost) -> Self {
+    pub fn new(req: Request<Incoming>, host: &'static SettingHost) -> Self {
         Self {
             req,
             res: Response::builder(),
@@ -82,7 +82,8 @@ impl<'req> CandyHandler<'req> {
 
     /// Handle static file or reverse proxy
     pub async fn handle(mut self) -> CandyResponse {
-        let req_path = self.req.uri().path();
+        let uri = self.req.uri().clone();
+        let req_path = uri.path();
         // find route path
         let (router, assets_path) = find_route(req_path, &self.host.route_map)?;
         self.router = Some(router);
@@ -108,6 +109,7 @@ impl<'req> CandyHandler<'req> {
                 .ok_or(Error::NotFound("handler assets_path is empty".into()))?,
         );
         let (req, res) = (self.req, self.res);
+        let (parts, body) = req.into_parts();
 
         let assets_path = if !assets_path.is_empty() {
             format!("/{assets_path}")
@@ -117,7 +119,7 @@ impl<'req> CandyHandler<'req> {
         // check on outside
         let proxy = router.proxy_pass.as_ref().ok_or(Error::Empty)?;
         let proxy = proxy.trim_end_matches('/');
-        let path_query = req.uri().query().unwrap_or("");
+        let path_query = parts.uri.query().unwrap_or("");
         let path_query = if !path_query.is_empty() {
             format!("?{path_query}")
         } else {
@@ -134,8 +136,9 @@ impl<'req> CandyHandler<'req> {
         let uri = uri.clone();
         debug!("proxy pass to: {uri}");
         let timeout = router.proxy_timeout;
+        let body = body.collect().await?.to_bytes();
         let body = select! {
-            body = client::get(uri) => {
+            body = client::get(uri, parts, body) => {
                 body.with_context(|| "proxy body error")?
             }
             _ = tokio::time::sleep(Duration::from_secs(timeout.into())) => {
@@ -269,7 +272,7 @@ pub fn internal_server_error() -> Response<CandyBody<Bytes>> {
 /// read static file and check If-None-Match cache
 #[instrument(level = "debug")]
 pub async fn handle_get(
-    req: &Request<Incoming>,
+    req: Request<Incoming>,
     mut res: Builder,
     path: &str,
 ) -> Result<Response<CandyBody<Bytes>>> {
@@ -349,7 +352,7 @@ pub async fn handle_get(
 }
 
 pub async fn handle_not_found(
-    req: &Request<Incoming>,
+    req: Request<Incoming>,
     res: Builder,
     router: &SettingRoute,
     assets_path: &str,
