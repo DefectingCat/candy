@@ -18,7 +18,7 @@ use crate::{
 
 use anyhow::{anyhow, Context};
 use futures_util::TryStreamExt;
-use http::{request, response::Builder, Method};
+use http::{response::Builder, Method};
 use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
 use hyper::{
     body::{Bytes, Frame, Incoming},
@@ -108,7 +108,7 @@ impl<'req> CandyHandler<'req> {
             self.assets_path
                 .ok_or(Error::NotFound("handler assets_path is empty".into()))?,
         );
-        let (req, res) = (self.req, self.res);
+        let (req, mut res) = (self.req, self.res);
         let (parts, body) = req.into_parts();
 
         let assets_path = if !assets_path.is_empty() {
@@ -145,7 +145,11 @@ impl<'req> CandyHandler<'req> {
                 return Err(anyhow!("connect upstream {host:?} timeout").into());
             }
         };
-        let res_body = res.body(body)?;
+        res.headers_mut()
+            .ok_or(Error::MissingHeader("missing response headers"))
+            .with_context(|| "build response failed")?
+            .extend(body.headers().clone());
+        let res_body = res.body(body.map_err(Error::HyperError).boxed())?;
         Ok(res_body)
     }
 

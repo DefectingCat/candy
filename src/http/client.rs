@@ -1,12 +1,13 @@
 use std::str::FromStr;
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use bytes::Bytes;
-use http::{request::Parts, Request, Response, Uri};
-use http_body_util::{combinators::BoxBody, BodyExt, Full};
+use http::{request::Parts, HeaderValue, Request, Response, Uri};
+use http_body_util::Full;
 use hyper::body::Incoming;
 use hyper_rustls::ConfigBuilderExt;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
+use tracing::debug;
 
 use crate::error::Error;
 
@@ -25,11 +26,7 @@ const MAX_REDIRECTS: usize = 10;
 /// ## Return
 ///
 /// `anyhow::Result<Response<Incoming>>`
-pub async fn get_inner(
-    url: Uri,
-    parts: Parts,
-    body: Bytes,
-) -> anyhow::Result<(Response<Incoming>, Parts, Bytes)> {
+pub async fn get_inner(url: Uri, parts: Parts, body: Bytes) -> anyhow::Result<Response<Incoming>> {
     // let _ = rustls::crypto::ring::default_provider().install_default();
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
@@ -47,21 +44,28 @@ pub async fn get_inner(
         .build();
 
     // Build the hyper client from the HTTPS connector.
-    // let client: Client<_, Empty<Bytes>> = Client::builder(TokioExecutor::new()).build(https);
     let client: Client<_, Full<Bytes>> = Client::builder(TokioExecutor::new()).build(https);
+    let host_url = url.clone();
+    let host = host_url.host().ok_or(Error::InternalServerError(anyhow!(
+        "proxy pass host incorrect"
+    )))?;
     let mut req: Request<Full<Bytes>> = hyper::Request::builder()
         .method(parts.method.clone())
         .uri(url)
-        .body(Full::from(body.clone()))
+        .body(Full::from(body))
         .with_context(|| "request builder")?;
-    req.headers_mut().extend(parts.clone().headers);
+    // Add client request headers to request, and remove host header
+    req.headers_mut().extend(parts.headers);
+    req.headers_mut()
+        .insert("host", HeaderValue::from_str(host)?);
+    debug!("get_inner request headers: {:?}", req.headers());
 
     let res = client.request(req).await?;
-    Ok((res, parts, body))
+    Ok(res)
 }
 
 /// Get http response Body
-/// And follow redirects
+/// And follo redirects
 ///
 /// ## Example
 ///
@@ -74,11 +78,12 @@ pub async fn get_inner(
 /// ## Return
 ///
 /// `anyhow::Result<Bytes>`
-pub async fn get(url: Uri, parts: Parts, body: Bytes) -> anyhow::Result<BoxBody<Bytes, Error>> {
+pub async fn get(url: Uri, parts: Parts, body: Bytes) -> anyhow::Result<Response<Incoming>> {
     let mut redirects = 0;
 
-    let (mut res, mut parts, mut body) = get_inner(url, parts, body).await?;
+    let mut res = get_inner(url, parts.clone(), body.clone()).await?;
     while (res.status() == 301 || res.status() == 302) && redirects < MAX_REDIRECTS {
+        let (parts_inner, body_inner) = (parts.clone(), body.clone());
         redirects += 1;
         let location = res
             .headers()
@@ -89,9 +94,11 @@ pub async fn get(url: Uri, parts: Parts, body: Bytes) -> anyhow::Result<BoxBody<
             .with_context(|| "failed to convert header value to str")?
             .to_string();
         let url = Uri::from_str(&location).with_context(|| "failed to convert str to url")?;
-        (res, parts, body) = get_inner(url, parts, body).await?;
+        debug!("proxy redirect to {url}");
+        res = get_inner(url, parts_inner, body_inner).await?;
     }
 
-    let res = res.map_err(Error::HyperError).boxed();
+    debug!("get_inner response headers: {:?}", res.headers());
+    // let res = res.map_err(Error::HyperError).boxed();
     Ok(res)
 }
