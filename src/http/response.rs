@@ -33,7 +33,10 @@ use tokio::{
 use tokio_util::io::ReaderStream;
 use tracing::{debug, error, instrument};
 
-/// HTTP handler
+/// Candy handler
+///
+/// The lifetime of the handler is the lifetime of the request. the request and response will be
+/// move into the handler. Not the reference.
 #[derive(Debug)]
 pub struct CandyHandler<'req> {
     /// Request from hyper
@@ -50,7 +53,7 @@ pub struct CandyHandler<'req> {
 
 pub type CandyBody<T, E = Error> = BoxBody<T, E>;
 type CandyResponse = Result<Response<CandyBody<Bytes>>>;
-impl<'req> CandyHandler<'req> {
+impl CandyHandler<'_> {
     /// Create a new handler with hyper incoming request
     pub fn new(req: Request<Incoming>, host: &'static SettingHost) -> Self {
         Self {
@@ -62,8 +65,8 @@ impl<'req> CandyHandler<'req> {
         }
     }
 
-    /// Traverse the headers from config
-    /// add to response
+    /// Traverse the headers from config add to response
+    /// these headers will be add before proxy headers and will override by proxy headers
     pub fn add_headers(&mut self) -> Result<()> {
         let headers = self
             .res

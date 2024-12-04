@@ -15,13 +15,11 @@ const MAX_REDIRECTS: usize = 10;
 
 /// Get http response
 ///
-/// ## Example
+/// ## Arguments
 ///
-/// ```rust
-/// use candy::http::client::get_inner;
-///
-/// let res = get_inner("https://www.google.com").await.unwrap();
-/// ```
+/// `url`: http url
+/// `parts`: http request parts
+/// `body`: http request body
 ///
 /// ## Return
 ///
@@ -58,7 +56,6 @@ pub async fn get_inner(url: Uri, parts: Parts, body: Bytes) -> anyhow::Result<Re
     req.headers_mut().extend(parts.headers);
     req.headers_mut()
         .insert("host", HeaderValue::from_str(host)?);
-    debug!("get_inner request headers: {:?}", req.headers());
 
     let res = client.request(req).await?;
     Ok(res)
@@ -67,17 +64,15 @@ pub async fn get_inner(url: Uri, parts: Parts, body: Bytes) -> anyhow::Result<Re
 /// Get http response Body
 /// And follo redirects
 ///
-/// ## Example
+/// ## Arguments
 ///
-/// ```rust
-/// use candy::http::client::get;
-///
-/// let body = get("https://www.google.com").await.unwrap();
-/// ```
+/// `url`: http url
+/// `parts`: http request parts
+/// `body`: http request body
 ///
 /// ## Return
 ///
-/// `anyhow::Result<Bytes>`
+/// `anyhow::Result<Response<Incoming>>`
 pub async fn get(url: Uri, parts: Parts, body: Bytes) -> anyhow::Result<Response<Incoming>> {
     let mut redirects = 0;
 
@@ -99,6 +94,5 @@ pub async fn get(url: Uri, parts: Parts, body: Bytes) -> anyhow::Result<Response
     }
 
     debug!("get_inner response headers: {:?}", res.headers());
-    // let res = res.map_err(Error::HyperError).boxed();
     Ok(res)
 }
