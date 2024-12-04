@@ -1,17 +1,25 @@
+# Default file type for unknow file
 default_type = "application/octet-stream"
+# Custom MIME types
 [types]
 wasm = "application/wasm"
 
+# Virtual host
 [[host]]
 ip = "0.0.0.0"
 port = 4000
+# Connection timeout
 timeout = 15
 
+# Add custom headers to response
 [host.headers]
 X-Powered-By = "candy"
 
+# Routes for virtual host
 [[host.route]]
+# If has index field, it will be used as static file host
 index = ["index.html"]
+# Route location
 location = "/"
 root = "./html"
 [host.route.error_page]
@@ -28,5 +36,7 @@ page = "404.html"
 
 [[host.route]]
 location = "/proxy/"
+# If has root field, it will be used as reverse proxy
 proxy_pass = "http://localhost:3000/"
+# Timeout for connect to upstream
 proxy_timeout = 10
