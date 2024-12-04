@@ -83,14 +83,12 @@ impl Settings {
 
         // convert route map
         settings.host.iter_mut().for_each(|host| {
-            let routes = &mut host.route;
-            for route in routes.iter_mut() {
-                if route.is_none() {
-                    continue;
-                }
-                let route = route.take().unwrap();
-                host.route_map.insert(route.location.to_string(), route);
-            }
+            host.route
+                .iter_mut()
+                .filter_map(Option::take)
+                .for_each(|route| {
+                    host.route_map.insert(route.location.to_string(), route);
+                });
         });
 
         // combine mime types
