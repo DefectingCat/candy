@@ -39,7 +39,7 @@
 - [x] Reverse Proxy
     - [x] Connect to upstream timeout setting
     - [x] Follow http 301
-- [ ] FastCGI
+    - [x] Custom headers
 - [ ] SSL
 - [x] Cli
 - [x] Specific custom config location

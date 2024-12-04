@@ -16,6 +16,8 @@ pub struct ErrorRoute {
     pub page: String,
 }
 
+/// Route in virtual host
+/// Can be a static file or a reverse proxy
 #[derive(Deserialize, Clone, Debug)]
 pub struct SettingRoute {
     /// The register route
@@ -25,36 +27,52 @@ pub struct SettingRoute {
     /// Index files format
     #[serde(default = "host_index")]
     pub index: Vec<String>,
+    /// Custom error page
     pub error_page: Option<ErrorRoute>,
-    // reverse proxy url
+
+    /// Reverse proxy url
     pub proxy_pass: Option<String>,
+    /// Timeout for connect to upstream
     #[serde(default = "upstream_timeout_default")]
     pub proxy_timeout: u16,
 }
 
+/// Host routes
+/// Each host can have multiple routes
 pub type HostRouteMap = BTreeMap<String, SettingRoute>;
 
+/// Virtual host
+/// Each host can listen on one port and one ip
 #[derive(Deserialize, Clone, Debug)]
 pub struct SettingHost {
+    /// Host ip
     pub ip: String,
+    /// Host port
     pub port: u32,
     route: Vec<Option<SettingRoute>>,
+    /// Host route map
     #[serde(skip_deserializing, skip_serializing)]
     pub route_map: HostRouteMap,
     /// HTTP keep-alive timeout
     #[serde(default = "timeout_default")]
     pub timeout: u16,
+    /// HTTP headers
+    /// Used to overwrite headers in config
     pub headers: Option<BTreeMap<String, String>>,
 }
 
 pub type MIMEType = BTreeMap<Cow<'static, str>, Cow<'static, str>>;
 
+/// Whole config settings
 #[derive(Deserialize, Clone, Debug)]
 pub struct Settings {
+    /// Default file type for unknow file
     #[serde(default = "mime_default")]
     pub default_type: Cow<'static, str>,
+    /// MIME types
     #[serde(default = "types_default")]
     pub types: MIMEType,
+    /// Virtual host
     pub host: Vec<SettingHost>,
 }
 
