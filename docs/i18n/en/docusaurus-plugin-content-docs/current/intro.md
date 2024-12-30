@@ -2,17 +2,17 @@
 sidebar_position: 1
 ---
 
-# 介绍
+# Introduction
 
-Candy 是一个轻量级的 HTTP 服务器，旨在快速部署一个高性能的 HTTP 服务器。
+Candy is a lightweight HTTP server, aiming to quickly deploy a high-performance HTTP server.
 
-## 安装
+## Installation
 
 TODO
 
-## 使用
+## Usage
 
-Candy 支持单个可执行文件运行：
+Candy supports single executable file running:
 
 ```bash
 ❯ ./target/release/candy -h

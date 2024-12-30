@@ -6,15 +6,17 @@
     "docusaurus": "docusaurus",
     "start": "docusaurus start",
     "start-zh": "docusaurus start --locale zh-Hans",
-    "build": "docusaurus write-translations && docusaurus write-translations --locale zh-Hans && docusaurus write-heading-ids && docusaurus build",
+    "build": "docusaurus write-translations --locale en && docusaurus write-translations --locale zh-Hans && docusaurus build",
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",
     "clear": "docusaurus clear",
     "serve": "docusaurus serve",
-    "write-translations": "docusaurus write-translations",
-    "write-translations-zh": "docusaurus write-translations --locale zh-Hans",
+    "write-translations": "docusaurus write-translations --locale zh-Hans",
+    "write-translations-en": "docusaurus write-translations --locale en",
     "write-heading-ids": "docusaurus write-heading-ids",
-    "typecheck": "tsc"
+    "pretty": "prettier --cache --write \"./**/*.{js,jsx,ts,tsx,json,md,mdx,css}\" --ignore-unknown --plugin=prettier-plugin-organize-imports",
+    "pretty-check": "prettier --cache \"./**/*.{js,jsx,ts,tsx,json,md,mdx,css}\" --ignore-unknown --check --plugin=prettier-plugin-organize-imports",
+    "tsc": "tsc"
   },
   "dependencies": {
     "@docusaurus/core": "3.6.3",
@@ -30,6 +32,8 @@
     "@docusaurus/module-type-aliases": "3.6.3",
     "@docusaurus/tsconfig": "3.6.3",
     "@docusaurus/types": "3.6.3",
+    "prettier": "^3.4.2",
+    "prettier-plugin-organize-imports": "^4.1.0",
     "typescript": "~5.7.2"
   },
   "browserslist": {

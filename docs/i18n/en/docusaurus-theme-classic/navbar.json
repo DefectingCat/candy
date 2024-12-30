@@ -4,11 +4,11 @@
     "description": "The title in the navbar"
   },
   "logo.alt": {
-    "message": "Candy logo",
+    "message": "My Site Logo",
     "description": "The alt text of navbar logo"
   },
   "item.label.Tutorial": {
-    "message": "文档",
+    "message": "Tutorial",
     "description": "Navbar item with label Tutorial"
   },
   "item.label.Blog": {
