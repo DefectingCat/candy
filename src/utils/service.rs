@@ -21,10 +21,10 @@ pub fn parse_assets_path(assets_path: &str, assets_root: &str, index_file: &str)
             format!("{}/{}", assets_root, assets_path)
         }
         str if !str.starts_with('/') => {
-            format!("{}/{}{}", assets_root, assets_path, index_file)
+            format!("{}/{}/{}", assets_root, assets_path, index_file)
         }
         _ => {
-            format!("{}{}/{}", assets_root, assets_path, index_file)
+            format!("{}/{}/{}", assets_root, assets_path, index_file)
         }
     }
 }
