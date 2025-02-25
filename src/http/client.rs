@@ -25,7 +25,10 @@ const MAX_REDIRECTS: usize = 10;
 ///
 /// `anyhow::Result<Response<Incoming>>`
 pub async fn get_inner(url: Uri, parts: Parts, body: Bytes) -> anyhow::Result<Response<Incoming>> {
-    // let _ = rustls::crypto::ring::default_provider().install_default();
+    // Set a process wide default crypto provider.
+    #[cfg(feature = "ring")]
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    #[cfg(feature = "aws-lc-rs")]
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     // Prepare the TLS client config
