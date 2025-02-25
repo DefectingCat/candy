@@ -1,6 +1,7 @@
 use std::{
     net::SocketAddr,
     pin::pin,
+    sync::Arc,
     time::{self, Duration},
 };
 
@@ -8,6 +9,7 @@ use crate::{
     config::SettingHost,
     error::Error,
     http::{internal_server_error, not_found, CandyHandler},
+    utils::{io_error, load_certs, load_private_key},
 };
 
 use futures_util::Future;
@@ -17,11 +19,13 @@ use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     server::{self, graceful::GracefulShutdown},
 };
+use rustls::ServerConfig;
 use tokio::{
     net::{TcpListener, TcpStream},
     select,
 };
 
+use tokio_rustls::TlsAcceptor;
 use tracing::{debug, error, info, warn};
 
 impl SettingHost {
@@ -34,6 +38,28 @@ impl SettingHost {
             let server = server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
             let graceful = server::graceful::GracefulShutdown::new();
             let mut ctrl_c = pin!(tokio::signal::ctrl_c());
+
+            if self.certificate.is_some() && self.certificate_key.is_some() {
+                // Set a process wide default crypto provider.
+                #[cfg(feature = "ring")]
+                let _ = rustls::crypto::ring::default_provider().install_default();
+                #[cfg(feature = "aws-lc-rs")]
+                let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+                info!("load ssl certificate");
+                // Load public certificate.
+                let certs = load_certs(self.certificate.as_ref().unwrap())?;
+                info!("load ssl private key");
+                // Load private key.
+                let key = load_private_key(self.certificate_key.as_ref().unwrap())?;
+                // Build TLS configuration.
+                let mut server_config = ServerConfig::builder()
+                    .with_no_client_auth()
+                    .with_single_cert(certs, key)
+                    .map_err(|e| io_error(e.to_string()))?;
+                server_config.alpn_protocols =
+                    vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
+                let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
+            }
 
             loop {
                 tokio::select! {

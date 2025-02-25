@@ -38,6 +38,7 @@ bytes = "1.10.0"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 clap = { version = "4.5.31", features = ["derive"] }
+rustls-pemfile = "2.2.0"
 
 [profile.dev]
 incremental = true          # Compile your binary in smaller steps.
