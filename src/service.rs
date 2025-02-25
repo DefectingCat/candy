@@ -39,29 +39,35 @@ impl SettingHost {
             let graceful = server::graceful::GracefulShutdown::new();
             let mut ctrl_c = pin!(tokio::signal::ctrl_c());
 
-            if self.certificate.is_some() && self.certificate_key.is_some() {
-                // Set a process wide default crypto provider.
-                #[cfg(feature = "ring")]
-                let _ = rustls::crypto::ring::default_provider().install_default();
-                #[cfg(feature = "aws-lc-rs")]
-                let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-                info!("load ssl certificate");
-                // Load public certificate.
-                let certs = load_certs(self.certificate.as_ref().unwrap())?;
-                info!("load ssl private key");
-                // Load private key.
-                let key = load_private_key(self.certificate_key.as_ref().unwrap())?;
-                // Build TLS configuration.
-                let mut server_config = ServerConfig::builder()
-                    .with_no_client_auth()
-                    .with_single_cert(certs, key)
-                    .map_err(|e| io_error(e.to_string()))?;
-                server_config.alpn_protocols =
-                    vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
-                let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
-            }
+            // load ssl certificate
+            let tls_acceptor: Option<TlsAcceptor> =
+                if self.certificate.is_some() && self.certificate_key.is_some() {
+                    // Set a process wide default crypto provider.
+                    #[cfg(feature = "ring")]
+                    let _ = rustls::crypto::ring::default_provider().install_default();
+                    #[cfg(feature = "aws-lc-rs")]
+                    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+                    info!("load ssl certificate");
+                    // Load public certificate.
+                    let certs = load_certs(self.certificate.as_ref().unwrap())?;
+                    info!("load ssl private key");
+                    // Load private key.
+                    let key = load_private_key(self.certificate_key.as_ref().unwrap())?;
+                    // Build TLS configuration.
+                    let mut server_config = ServerConfig::builder()
+                        .with_no_client_auth()
+                        .with_single_cert(certs, key)
+                        .map_err(|e| io_error(e.to_string()))?;
+                    server_config.alpn_protocols =
+                        vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
+                    let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
+                    Some(tls_acceptor)
+                } else {
+                    None
+                };
 
             loop {
+                let tls_acceptor = tls_acceptor.clone();
                 tokio::select! {
                     conn = listener.accept() => {
                         let conn = match conn {
@@ -71,7 +77,7 @@ impl SettingHost {
                                 continue;
                             }
                         };
-                        handle_connection(conn, self, &server, &graceful).await;
+                        handle_connection(conn, self, &server, &graceful, tls_acceptor).await;
                     },
                     _ = ctrl_c.as_mut() => {
                         drop(listener);
@@ -108,11 +114,10 @@ async fn handle_connection(
     host: &'static SettingHost,
     server: &server::conn::auto::Builder<TokioExecutor>,
     graceful: &GracefulShutdown,
+    tls_acceptor: Option<TlsAcceptor>,
 ) {
     let (stream, peer_addr) = conn;
     debug!("incomming connection accepted: {}", peer_addr);
-
-    let stream = TokioIo::new(Box::pin(stream));
 
     let service = move |req: Request<Incoming>| async move {
         let start_time = time::Instant::now();
@@ -151,13 +156,36 @@ async fn handle_connection(
         anyhow::Ok(response)
     };
 
-    let conn = server.serve_connection_with_upgrades(stream, hyper::service::service_fn(service));
-    let conn = graceful.watch(conn.into_owned());
-
-    tokio::spawn(async move {
-        if let Err(err) = conn.await {
-            error!("connection error: {}", err);
+    if host.certificate.is_some() && host.certificate_key.is_some() {
+        if let Some(tls_acceptor) = tls_acceptor {
+            let tls_stream = match tls_acceptor.accept(stream).await {
+                Ok(tls_stream) => tls_stream,
+                Err(err) => {
+                    eprintln!("failed to perform tls handshake: {err:#}");
+                    return;
+                }
+            };
+            let stream = TokioIo::new(Box::pin(tls_stream));
+            let conn =
+                server.serve_connection_with_upgrades(stream, hyper::service::service_fn(service));
+            let conn = graceful.watch(conn.into_owned());
+            tokio::spawn(async move {
+                if let Err(err) = conn.await {
+                    error!("connection error: {}", err);
+                }
+                debug!("connection dropped: {}", peer_addr);
+            });
         }
-        debug!("connection dropped: {}", peer_addr);
-    });
+    } else {
+        let stream = TokioIo::new(Box::pin(stream));
+        let conn =
+            server.serve_connection_with_upgrades(stream, hyper::service::service_fn(service));
+        let conn = graceful.watch(conn.into_owned());
+        tokio::spawn(async move {
+            if let Err(err) = conn.await {
+                error!("connection error: {}", err);
+            }
+            debug!("connection dropped: {}", peer_addr);
+        });
+    }
 }
