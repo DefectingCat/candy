@@ -47,7 +47,6 @@ impl SettingHost {
                         };
                         handle_connection(conn, self, &server, &graceful).await;
                     },
-
                     _ = ctrl_c.as_mut() => {
                         drop(listener);
                         info!("Ctrl-C received, starting shutdown");

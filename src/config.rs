@@ -49,6 +49,10 @@ pub struct SettingHost {
     pub ip: String,
     /// Host port
     pub port: u32,
+    /// SSL certificate location
+    pub certificate: Option<String>,
+    /// ssl key location
+    pub certificate_key: Option<String>,
     route: Vec<Option<SettingRoute>>,
     /// Host route map
     #[serde(skip_deserializing, skip_serializing)]
