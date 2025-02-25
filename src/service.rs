@@ -128,9 +128,10 @@ async fn handle_connection(
         let mut handler = CandyHandler::new(req, host);
         // Connection handler in service_fn
         // then decide whether to handle proxy or static file based on config
-        let _ = handler
+        handler
             .add_headers()
-            .map_err(|err| error!("add headers to response failed {}", err));
+            .map_err(|err| error!("add headers to response failed {}", err))
+            .ok();
         let res = handler.handle().await;
         let response = match res {
             Ok(res) => res,
@@ -161,7 +162,7 @@ async fn handle_connection(
             let tls_stream = match tls_acceptor.accept(stream).await {
                 Ok(tls_stream) => tls_stream,
                 Err(err) => {
-                    eprintln!("failed to perform tls handshake: {err:#}");
+                    debug!("failed to perform tls handshake: {err:#}");
                     return;
                 }
             };
