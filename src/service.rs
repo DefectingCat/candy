@@ -116,7 +116,7 @@ async fn handle_connection(
         let instant_elapsed = start_time.elapsed();
         let micros = instant_elapsed.as_micros();
         let millis = instant_elapsed.as_millis();
-        let end_time = if micros > 1000 {
+        let end_time = if micros >= 1000 {
             format!("{millis:.3}ms")
         } else {
             format!("{micros:.3}μs")
