@@ -100,6 +100,30 @@ impl SettingHost {
     }
 }
 
+/// Use to handle connection
+///
+/// ## Arguments
+///
+/// `$stream`: TcpStream or TlsStream
+/// `$server`: hyper_util server Builder
+/// `$service`: hyper service
+/// `$graceful`: hyper_util server graceful shutdown
+/// `$peer_addr`: SocketAddr
+macro_rules! handle_connection {
+    ($stream:expr, $server:expr, $service:expr, $graceful:expr, $peer_addr:expr) => {
+        let stream = TokioIo::new(Box::pin($stream));
+        let conn =
+            $server.serve_connection_with_upgrades(stream, hyper::service::service_fn($service));
+        let conn = $graceful.watch(conn.into_owned());
+        tokio::spawn(async move {
+            if let Err(err) = conn.await {
+                error!("connection error: {}", err);
+            }
+            debug!("connection dropped: {}", $peer_addr);
+        });
+    };
+}
+
 /// Handle tcp connection from client
 /// then use hyper service to handle response
 ///
@@ -158,35 +182,21 @@ async fn handle_connection(
     };
 
     if host.certificate.is_some() && host.certificate_key.is_some() {
-        if let Some(tls_acceptor) = tls_acceptor {
-            let tls_stream = match tls_acceptor.accept(stream).await {
-                Ok(tls_stream) => tls_stream,
-                Err(err) => {
-                    debug!("failed to perform tls handshake: {err:#}");
-                    return;
-                }
-            };
-            let stream = TokioIo::new(Box::pin(tls_stream));
-            let conn =
-                server.serve_connection_with_upgrades(stream, hyper::service::service_fn(service));
-            let conn = graceful.watch(conn.into_owned());
-            tokio::spawn(async move {
-                if let Err(err) = conn.await {
-                    error!("connection error: {}", err);
-                }
-                debug!("connection dropped: {}", peer_addr);
-            });
-        }
-    } else {
-        let stream = TokioIo::new(Box::pin(stream));
-        let conn =
-            server.serve_connection_with_upgrades(stream, hyper::service::service_fn(service));
-        let conn = graceful.watch(conn.into_owned());
-        tokio::spawn(async move {
-            if let Err(err) = conn.await {
-                error!("connection error: {}", err);
+        let tls_acceptor = if let Some(tls_acceptor) = tls_acceptor {
+            tls_acceptor
+        } else {
+            warn!("tls_acceptor is None");
+            return;
+        };
+        let tls_stream = match tls_acceptor.accept(stream).await {
+            Ok(tls_stream) => tls_stream,
+            Err(err) => {
+                debug!("failed to perform tls handshake: {err:#}");
+                return;
             }
-            debug!("connection dropped: {}", peer_addr);
-        });
+        };
+        handle_connection!(tls_stream, server, service, graceful, peer_addr);
+    } else {
+        handle_connection!(stream, server, service, graceful, peer_addr);
     }
 }
