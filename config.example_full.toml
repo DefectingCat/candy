@@ -10,6 +10,11 @@ ip = "0.0.0.0"
 port = 4000
 # Connection timeout
 timeout = 15
+# SSL certificate
+# Self sign a certificate
+# sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ./html/selfsigned.key -out ./html/selfsigned.crt
+certificate = "./html/selfsigned.crt"
+certificate_key = "./html/selfsigned.key"
 
 # Add custom headers to response
 [host.headers]

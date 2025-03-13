@@ -24,6 +24,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
     select,
 };
+use anyhow::anyhow;
 
 use tokio_rustls::TlsAcceptor;
 use tracing::{debug, error, info, warn};
@@ -49,10 +50,10 @@ impl SettingHost {
                     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
                     info!("load ssl certificate");
                     // Load public certificate.
-                    let certs = load_certs(self.certificate.as_ref().unwrap())?;
+                    let certs = load_certs(self.certificate.as_ref().ok_or(anyhow!("cannot read certificate"))?)?;
                     info!("load ssl private key");
                     // Load private key.
-                    let key = load_private_key(self.certificate_key.as_ref().unwrap())?;
+                    let key = load_private_key(self.certificate_key.as_ref().ok_or(anyhow!("cannot read private key"))?)?;
                     // Build TLS configuration.
                     let mut server_config = ServerConfig::builder()
                         .with_no_client_auth()
