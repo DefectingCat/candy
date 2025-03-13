@@ -22,6 +22,7 @@
 - [ ] Logging to file
 - [ ] Benchs
 - [ ] Max body size
+- [ ] HTTP 2
 
 ### Features
 
@@ -40,9 +41,9 @@
     - [x] Connect to upstream timeout setting
     - [x] Follow http 301
     - [x] Custom headers
-- [ ] SSL
+- [x] SSL
 - [x] Cli
 - [x] Specific custom config location
-- [ ] HTTP 2
+- [x] HTTP 2
 - [ ] HTTP 3
 - [ ] Specify thread numbers
