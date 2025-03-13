@@ -12,6 +12,7 @@ use crate::{
     utils::{io_error, load_certs, load_private_key},
 };
 
+use anyhow::anyhow;
 use futures_util::Future;
 use http::Request;
 use hyper::body::Incoming;
@@ -24,7 +25,6 @@ use tokio::{
     net::{TcpListener, TcpStream},
     select,
 };
-use anyhow::anyhow;
 
 use tokio_rustls::TlsAcceptor;
 use tracing::{debug, error, info, warn};
@@ -48,12 +48,20 @@ impl SettingHost {
                     let _ = rustls::crypto::ring::default_provider().install_default();
                     #[cfg(feature = "aws-lc-rs")]
                     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-                    info!("load ssl certificate");
                     // Load public certificate.
-                    let certs = load_certs(self.certificate.as_ref().ok_or(anyhow!("cannot read certificate"))?)?;
-                    info!("load ssl private key");
+                    let certs = load_certs(
+                        self.certificate
+                            .as_ref()
+                            .ok_or(anyhow!("cannot read certificate"))?,
+                    )?;
+                    info!("load ssl certificate success");
                     // Load private key.
-                    let key = load_private_key(self.certificate_key.as_ref().ok_or(anyhow!("cannot read private key"))?)?;
+                    let key = load_private_key(
+                        self.certificate_key
+                            .as_ref()
+                            .ok_or(anyhow!("cannot read private key"))?,
+                    )?;
+                    info!("loading ssl private key success");
                     // Build TLS configuration.
                     let mut server_config = ServerConfig::builder()
                         .with_no_client_auth()
