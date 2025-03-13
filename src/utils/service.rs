@@ -77,7 +77,7 @@ pub fn find_route<'a>(
 }
 
 pub fn io_error(err: String) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, err)
+    io::Error::other(err)
 }
 
 // Load public certificate from file.
