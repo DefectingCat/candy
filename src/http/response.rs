@@ -75,10 +75,11 @@ impl CandyHandler<'_> {
         let server = format!("{}/{}", NAME, VERSION);
         headers.insert("Server", server.parse()?);
         // config headers overrite
-        if let Some(c_headers) = &self.host.headers {
-            for (k, v) in c_headers {
-                headers.insert(k.as_str(), v.parse()?);
-            }
+        let Some(c_headers) = &self.host.headers else {
+            return Ok(());
+        };
+        for (k, v) in c_headers {
+            headers.insert(k.as_str(), v.parse()?);
         }
         Ok(())
     }
@@ -174,12 +175,13 @@ impl CandyHandler<'_> {
         // find resource local file path
         let mut path = None;
         for index in router.index.iter() {
-            if let Some(root) = &router.root {
-                let p = parse_assets_path(assets_path, root, index);
-                if Path::new(&p).exists() {
-                    path = Some(p);
-                    break;
-                }
+            let Some(root) = &router.root else {
+                continue;
+            };
+            let p = parse_assets_path(assets_path, root, index);
+            if Path::new(&p).exists() {
+                path = Some(p);
+                break;
             }
         }
         let path = match path {
@@ -195,12 +197,11 @@ impl CandyHandler<'_> {
             Method::POST => handle_get(req, res, &path).await?,
             // Return the 404 Not Found for other routes.
             _ => {
-                if let Some(err_page) = &router.error_page {
-                    let res = res.status(err_page.status);
-                    handle_get(req, res, &err_page.page).await?
-                } else {
-                    not_found()
-                }
+                let Some(err_page) = &router.error_page else {
+                    return Ok(not_found());
+                };
+                let res = res.status(err_page.status);
+                handle_get(req, res, &err_page.page).await?
             }
         };
         Ok(res)
@@ -364,16 +365,14 @@ pub async fn handle_not_found(
     router: &SettingRoute,
     assets_path: &str,
 ) -> Result<Response<CandyBody<Bytes>>> {
-    let res = if let Some(err_page) = &router.error_page {
-        let res = res.status(err_page.status);
-        if let Some(root) = &router.root {
-            let path = parse_assets_path(assets_path, root, &err_page.page);
-            handle_get(req, res, &path).await?
-        } else {
-            not_found()
-        }
-    } else {
-        not_found()
+    let Some(err_page) = &router.error_page else {
+        return Ok(not_found());
     };
+    let Some(root) = &router.root else {
+        return Ok(not_found());
+    };
+    let res = res.status(err_page.status);
+    let path = parse_assets_path(assets_path, root, &err_page.page);
+    let res = handle_get(req, res, &path).await?;
     Ok(res)
 }
