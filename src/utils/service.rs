@@ -64,10 +64,11 @@ pub fn find_route<'a>(
         let index = i + 1;
         let path = &all_chars[..index];
         let path_str = path.iter().collect::<String>();
-        if let Some(router) = route_map.get(&path_str) {
-            last_router = Some((router, &req_path[index..]));
-            break;
-        }
+        let Some(router) = route_map.get(&path_str) else {
+            continue;
+        };
+        last_router = Some((router, &req_path[index..]));
+        break;
     }
 
     let (router, assets_path) = last_router.ok_or(Error::NotFound(not_found_err.into()))?;

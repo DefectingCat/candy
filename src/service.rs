@@ -191,9 +191,7 @@ async fn handle_connection(
     };
 
     if host.certificate.is_some() && host.certificate_key.is_some() {
-        let tls_acceptor = if let Some(tls_acceptor) = tls_acceptor {
-            tls_acceptor
-        } else {
+        let Some(tls_acceptor) = tls_acceptor else {
             warn!("tls_acceptor is None");
             return;
         };
