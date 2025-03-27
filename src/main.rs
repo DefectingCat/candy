@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 
 use clap::Parser;
 use config::Settings;
-use consts::COMPILER;
+use consts::{COMMIT, COMPILER};
 use tokio::task::JoinSet;
 use tracing::{debug, info};
 
@@ -10,6 +10,11 @@ use crate::{
     consts::{get_settings, ARCH, NAME, OS, SETTINGS, VERSION},
     utils::init_logger,
 };
+
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 mod cli;
 mod config;
@@ -31,7 +36,8 @@ async fn main() -> Result<()> {
     // global config
     let settings = get_settings().with_context(|| "get global settings failed")?;
     debug!("settings {:?}", settings);
-    info!("{}/{} {}", NAME, VERSION, COMPILER);
+    info!("{}/{} {}", NAME, VERSION, COMMIT);
+    info!("{}", COMPILER);
     info!("OS: {} {}", OS, ARCH);
 
     let mut servers = settings
