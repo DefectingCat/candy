@@ -216,13 +216,11 @@ impl CandyHandler<'_> {
 /// `path`: local file path
 pub async fn open_file(path: &str) -> Result<File> {
     // Open file for reading
-    let file = File::open(path).await;
-    let file = match file {
-        Ok(f) => f,
-        Err(err) => {
-            error!("Unable to open file {err}");
-            return Err(Error::NotFound(format!("path not found {}", path).into()));
-        }
+    let file = File::open(path).await.map_err(|err| {
+        error!("Unable to open file {err}");
+    });
+    let Ok(file) = file else {
+        return Err(Error::NotFound(format!("path not found {}", path).into()));
     };
     Ok(file)
 }
