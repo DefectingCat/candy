@@ -21,20 +21,24 @@ impl SettingHost {
             let Some(host_route) = host_route.as_ref() else {
                 continue;
             };
+            // reverse proxy
             if host_route.proxy_pass.is_some() {
-                todo!();
+                continue;
                 // router = router.route(host_route.location.as_ref(), get(hello));
             }
+
+            // static file
             let Some(root) = &host_route.root else {
                 warn!("root field not found");
                 continue;
             };
             router = router.route_service(host_route.location.as_ref(), ServeDir::new(root));
         }
+
         router = router.layer(
             ServiceBuilder::new()
                 .layer(middleware::from_fn(add_version))
-                .layer(TimeoutLayer::new(Duration::from_secs(15))),
+                .layer(TimeoutLayer::new(Duration::from_secs(self.timeout.into()))),
         );
         router = logging_route(router);
 
