@@ -1,15 +1,6 @@
-use std::{borrow::Cow, collections::BTreeMap, env, sync::OnceLock};
+use std::{borrow::Cow, collections::BTreeMap, env};
 
-use crate::{
-    config::{MIMEType, Settings},
-    error::{Error, Result},
-};
-
-// global settings
-pub static SETTINGS: OnceLock<Settings> = OnceLock::new();
-pub fn get_settings() -> Result<&'static Settings> {
-    SETTINGS.get().ok_or(Error::Empty)
-}
+use crate::config::MIMEType;
 
 // pre defined
 pub const NAME: &str = env!("CARGO_PKG_NAME");
