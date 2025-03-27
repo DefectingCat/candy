@@ -1,109 +1,72 @@
-use std::io;
+use tokio::signal;
+use tracing::info;
 
-use tracing::debug;
-
-use crate::error::{Error, Result};
-
-use crate::config::{HostRouteMap, SettingRoute};
-
-/// Parse assets file path
+/// Asynchronously waits for a shutdown signal and executes a callback function when a signal is received.
 ///
-/// ## Arguments
+/// This function listens for shutdown signals in the form of `Ctrl+C` and termination signals. When one of
+/// these signals is received, it invokes the provided callback function `shutdown_cb`.
 ///
-/// `assets_path`: the rest part of client request path
-/// `assets_root`: local directory path from config file
-/// `index_file`: index file format from config file
-#[inline]
-pub fn parse_assets_path(assets_path: &str, assets_root: &str, index_file: &str) -> String {
-    match assets_path {
-        str if str.ends_with('/') => {
-            format!("{}{}{}", assets_root, assets_path, index_file)
-        }
-        str if str.contains('.') && !str.starts_with('/') => {
-            format!("{}/{}", assets_root, assets_path)
-        }
-        str if !str.starts_with('/') => {
-            format!("{}/{}/{}", assets_root, assets_path, index_file)
-        }
-        _ => {
-            format!("{}/{}/{}", assets_root, assets_path, index_file)
-        }
+/// The behavior of the signal handling depends on the operating system:
+///
+/// - On Unix-based systems (e.g., Linux, macOS), it listens for termination signals (such as SIGTERM).
+/// - On non-Unix systems (e.g., Windows), it only listens for `Ctrl+C` and ignores termination signals.
+///
+/// The `shutdown_cb` callback function is executed when either signal is received. This function should
+/// contain the logic needed to gracefully shut down the application or perform any necessary cleanup tasks.
+/// # Parameters
+///
+/// - `shutdown_cb`: A closure or function to call when a shutdown signal is received. The function should
+///   have the signature `Fn()`. This callback is executed without any parameters.
+///
+/// # Errors
+///
+/// - If setting up the signal handlers fails, the function will panic with an error message.
+///
+/// # Panics
+///
+/// - Panics if the setup for `Ctrl+C` or termination signal handlers fails.
+///
+/// # Platform-specific behavior
+///
+/// - On Unix-based systems, termination signals are handled using the `signal` crate for Unix signals.
+/// - On non-Unix systems, only `Ctrl+C` signals are handled, and termination signals are not supported.
+///
+/// # Future
+///
+/// This function returns a future that resolves when either `Ctrl+C` or a termination signal is received
+/// and the callback function has been executed.
+pub async fn shutdown_signal<F>(shutdown_cb: F)
+where
+    F: Fn(),
+{
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            shutdown_cb()
+            // let _ = stop_core().map_err(log_err);
+        },
+        _ = terminate => {
+            shutdown_cb()
+        },
     }
 }
 
-/// Find target route by req path
-///
-/// ## Arguments
-///
-/// `req_path`: client request path
-/// `route_map`: router map from config
-///
-/// ## Return
-///
-/// a result. return none when path not registried
-/// `router`: host from config file
-/// `assets_path`: the rest part of client request path
-pub fn find_route<'a>(
-    req_path: &'a str,
-    route_map: &'a HostRouteMap,
-) -> Result<(&'a SettingRoute, &'a str)> {
-    let not_found_err = format!("resource {} not found", &req_path);
-    // /public/www/test
-    // convert req path to chars
-    let all_chars = req_path.chars().collect::<Vec<_>>();
-    let mut last_router = None;
-    // then loop all req path
-    // until found the route
-    // /public/www/test
-    // /public/www/tes
-    // /public/www/te
-    // /public/www/t
-    // /public/www/
-    for (i, _) in all_chars.iter().enumerate().rev() {
-        let index = i + 1;
-        let path = &all_chars[..index];
-        let path_str = path.iter().collect::<String>();
-        let Some(router) = route_map.get(&path_str) else {
-            continue;
-        };
-        last_router = Some((router, &req_path[index..]));
-        break;
-    }
-
-    let (router, assets_path) = last_router.ok_or(Error::NotFound(not_found_err.into()))?;
-    debug!("router {:?}", &router);
-    debug!("assets_path {assets_path}");
-    Ok((router, assets_path))
-}
-
-pub fn io_error(err: String) -> io::Error {
-    io::Error::other(err)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::BTreeMap;
-
-    use super::*;
-
-    #[test]
-    fn parse_assets_path_works() {
-        let path = parse_assets_path("/docs/", "./public", "index.html");
-        assert_eq!(path, "./public/docs/index.html".to_string())
-    }
-
-    #[test]
-    fn find_route_works() {
-        let setting_route = SettingRoute {
-            location: "/".to_string(),
-            root: Some("./public".to_string()),
-            index: vec!["index.html".into()],
-            error_page: None,
-            proxy_pass: None,
-            proxy_timeout: 10,
-        };
-        let map = BTreeMap::from([("/".to_string(), setting_route)]);
-        let (_, assets_path) = find_route("/docs/home", &map).unwrap();
-        assert_eq!(assets_path, "docs/home")
-    }
+pub fn shutdown() {
+    info!("Server shuting down")
 }

@@ -21,6 +21,7 @@ mod config;
 mod consts;
 mod error;
 mod http;
+mod middlewares;
 mod service;
 mod utils;
 
