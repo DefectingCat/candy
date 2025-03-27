@@ -25,7 +25,7 @@ impl SettingHost {
                 warn!("root field not found");
                 continue;
             };
-            router = router.fallback_service(ServeDir::new(root));
+            router = router.route_service(host_route.location.as_ref(), ServeDir::new(root));
         }
 
         let addr = format!("{}:{}", self.ip, self.port);
