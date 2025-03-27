@@ -1,7 +1,8 @@
 use tracing_subscriber::{
+    EnvFilter,
     fmt::{self},
     prelude::*,
-    registry, EnvFilter,
+    registry,
 };
 
 pub fn init_logger() {
