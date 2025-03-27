@@ -52,7 +52,7 @@ pub struct SettingHost {
     /// ssl key location
     pub certificate_key: Option<String>,
     /// Host routes
-    route: Vec<Option<SettingRoute>>,
+    pub route: Vec<Option<SettingRoute>>,
     /// HTTP keep-alive timeout
     #[serde(default = "timeout_default")]
     pub timeout: u16,
