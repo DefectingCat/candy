@@ -1,8 +1,5 @@
 use crate::{
-    consts::{
-        host_index, insert_default_mimes, mime_default, timeout_default, types_default,
-        upstream_timeout_default,
-    },
+    consts::{host_index, mime_default, timeout_default, types_default, upstream_timeout_default},
     error::Result,
 };
 use std::{borrow::Cow, collections::BTreeMap, fs};
@@ -21,6 +18,7 @@ pub struct ErrorRoute {
 #[derive(Deserialize, Clone, Debug)]
 pub struct SettingRoute {
     /// The register route
+    /// for axum route
     pub location: String,
     /// The static assets root folder
     pub root: Option<String>,
@@ -53,10 +51,8 @@ pub struct SettingHost {
     pub certificate: Option<String>,
     /// ssl key location
     pub certificate_key: Option<String>,
+    /// Host routes
     route: Vec<Option<SettingRoute>>,
-    /// Host route map
-    #[serde(skip_deserializing, skip_serializing)]
-    pub route_map: HostRouteMap,
     /// HTTP keep-alive timeout
     #[serde(default = "timeout_default")]
     pub timeout: u16,
@@ -83,20 +79,7 @@ pub struct Settings {
 impl Settings {
     pub fn new(path: &str) -> Result<Self> {
         let file = fs::read_to_string(path).with_context(|| format!("read {path} failed"))?;
-        let mut settings: Settings = toml::from_str(&file)?;
-
-        // convert route map
-        settings.host.iter_mut().for_each(|host| {
-            host.route
-                .iter_mut()
-                .filter_map(Option::take)
-                .for_each(|route| {
-                    host.route_map.insert(route.location.to_string(), route);
-                });
-        });
-
-        // combine mime types
-        insert_default_mimes(&mut settings.types);
+        let settings: Settings = toml::from_str(&file)?;
 
         Ok(settings)
     }

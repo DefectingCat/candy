@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 
 use clap::Parser;
 use config::Settings;
@@ -7,7 +7,7 @@ use tokio::task::JoinSet;
 use tracing::{debug, info};
 
 use crate::{
-    consts::{get_settings, ARCH, NAME, OS, SETTINGS, VERSION},
+    consts::{ARCH, NAME, OS, VERSION},
     utils::init_logger,
 };
 
@@ -29,12 +29,7 @@ async fn main() -> Result<()> {
     let args = cli::Cli::parse();
     init_logger();
     let settings = Settings::new(&args.config).with_context(|| "init config failed")?;
-    SETTINGS
-        .set(settings)
-        .map_err(|err| anyhow!("init config failed {err:?}"))?;
 
-    // global config
-    let settings = get_settings().with_context(|| "get global settings failed")?;
     debug!("settings {:?}", settings);
     info!("{}/{} {}", NAME, VERSION, COMMIT);
     info!("{}", COMPILER);
@@ -42,7 +37,7 @@ async fn main() -> Result<()> {
 
     let mut servers = settings
         .host
-        .iter()
+        .into_iter()
         .map(|host| host.mk_server())
         .collect::<JoinSet<_>>();
 
