@@ -1,26 +1,29 @@
 use std::time::Duration;
 
-use axum::{Router, middleware};
+use axum::{Router, middleware, routing::get};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
-use tower_http::{services::ServeDir, timeout::TimeoutLayer};
+use tower_http::timeout::TimeoutLayer;
 use tracing::{info, warn};
 
 use crate::{
-    config::SettingHost,
+    config::{HostRouteMap, SettingHost, host_route_map},
     middlewares::{add_version, logging_route},
     utils::{shutdown, shutdown_signal},
 };
 
+pub mod error;
+pub mod serve;
+
 impl SettingHost {
     pub async fn mk_server(self) -> anyhow::Result<()> {
-        let mut router = Router::new();
+        let app_state = AppState {
+            host_route: host_route_map(self.route),
+        };
+        let mut router = Router::new().with_state(app_state);
         // find routes in config
         // convert to axum routes
         for host_route in self.route {
-            let Some(host_route) = host_route.as_ref() else {
-                continue;
-            };
             // reverse proxy
             if host_route.proxy_pass.is_some() {
                 continue;
@@ -32,7 +35,13 @@ impl SettingHost {
                 warn!("root field not found");
                 continue;
             };
-            router = router.route_service(host_route.location.as_ref(), ServeDir::new(root));
+            router = router.route(host_route.location.as_ref(), get(serve::serve));
+            // Nesting at the root is no longer supported. Use fallback_service instead.
+            // if host_route.location == "/" {
+            //     router = router.fallback_service(ServeDir::new(root));
+            // } else {
+            //     router = router.nest_service(host_route.location.as_ref(), ServeDir::new(root));
+            // }
         }
 
         router = router.layer(
@@ -55,4 +64,6 @@ impl SettingHost {
 }
 
 #[derive(Debug, Clone)]
-pub struct AppState {}
+pub struct AppState {
+    host_route: HostRouteMap,
+}

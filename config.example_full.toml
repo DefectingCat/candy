@@ -26,6 +26,7 @@ X-Powered-By = "candy"
 index = ["index.html"]
 # Route location
 location = "/"
+# Static file root
 root = "./html"
 [host.route.error_page]
 status = 404
