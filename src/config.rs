@@ -38,6 +38,12 @@ pub struct SettingRoute {
 /// Host routes
 /// Each host can have multiple routes
 pub type HostRouteMap = BTreeMap<String, SettingRoute>;
+pub fn host_route_map(routes: Vec<SettingRoute>) -> HostRouteMap {
+    routes
+        .into_iter()
+        .map(|route| (route.location.clone(), route))
+        .collect()
+}
 
 /// Virtual host
 /// Each host can listen on one port and one ip
@@ -52,7 +58,7 @@ pub struct SettingHost {
     /// ssl key location
     pub certificate_key: Option<String>,
     /// Host routes
-    pub route: Vec<Option<SettingRoute>>,
+    pub route: Vec<SettingRoute>,
     /// HTTP keep-alive timeout
     #[serde(default = "timeout_default")]
     pub timeout: u16,
@@ -80,7 +86,6 @@ impl Settings {
     pub fn new(path: &str) -> Result<Self> {
         let file = fs::read_to_string(path).with_context(|| format!("read {path} failed"))?;
         let settings: Settings = toml::from_str(&file)?;
-
         Ok(settings)
     }
 }

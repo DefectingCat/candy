@@ -21,8 +21,8 @@ mod config;
 mod consts;
 mod error;
 mod middlewares;
-mod service;
 mod utils;
+mod http;
 
 #[tokio::main]
 async fn main() -> Result<()> {
