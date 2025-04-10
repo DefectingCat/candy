@@ -33,18 +33,19 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
         }
         // resister with location
         // location = "/doc"
-        // route: GET /doc
-        debug!("registing route: {:?}", host_route.location);
-        router = router.route(host_route.location.as_ref(), get(serve::serve));
+        // route: GET /doc/*
         // resister with file path
         // index = ["index.html", "index.txt"]
         // route: GET /doc/index.html
         // route: GET /doc/index.txt
-        for index in &host_route.index {
-            let file_path = format!("{}/{}", host_route.location, index);
-            debug!("registing route: {:?}", file_path);
-            router = router.route(file_path.as_str(), get(serve::serve));
-        }
+        let route_path = format!("{}/{{*path}}", host_route.location);
+        debug!("registing route: {:?}", route_path);
+        router = router.route(route_path.as_ref(), get(serve::serve));
+        // for index in &host_route.index {
+        //     let file_path = format!("{}/{}", host_route.location, index);
+        //     debug!("registing route: {:?}", file_path);
+        //     router = router.route(file_path.as_str(), get(serve::serve));
+        // }
     }
 
     router = router.layer(
