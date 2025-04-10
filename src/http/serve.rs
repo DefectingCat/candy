@@ -2,6 +2,8 @@ use axum::{extract::Path, response::IntoResponse};
 use http::Uri;
 use tracing::debug;
 
+use crate::http::{ROUTE_MAP, error::RouteError};
+
 use super::error::RouteResult;
 
 /// Serve static files
@@ -19,7 +21,14 @@ pub async fn serve(uri: Uri, Path(path): Path<String>) -> RouteResult<impl IntoR
     let uri_path = uri.path();
     let parent_path = uri_path.get(0..uri_path.len() - path.len());
     let parent_path = parent_path.unwrap_or("/");
+    // parent_path is key in route map
+    // which is `host_route.location`
     debug!("request: {:?} uri {}", path, parent_path);
+    let route_map = ROUTE_MAP.read().await;
+    let Some(host_route) = route_map.get(parent_path) else {
+        return Err(RouteError::Any(anyhow::anyhow!("route not found")));
+    };
+    debug!("route: {:?}", host_route);
     // let host_route = app
     //     .host_route
     //     .get(&request.uri().path().to_string())

@@ -1,19 +1,24 @@
-use std::time::Duration;
+use std::{collections::BTreeMap, sync::LazyLock, time::Duration};
 
 use axum::{Router, middleware, routing::get};
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::RwLock};
 use tower::ServiceBuilder;
 use tower_http::timeout::TimeoutLayer;
 use tracing::{debug, info, warn};
 
 use crate::{
-    config::SettingHost,
+    config::{HostRouteMap, SettingHost},
     middlewares::{add_version, logging_route},
     utils::{shutdown, shutdown_signal},
 };
 
 pub mod error;
 pub mod serve;
+
+/// Static route map
+/// Use host_route.location as key
+/// Use host_route as value
+static ROUTE_MAP: LazyLock<RwLock<HostRouteMap>> = LazyLock::new(|| RwLock::new(BTreeMap::new()));
 
 pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     let mut router = Router::new();
@@ -41,11 +46,14 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
         let route_path = format!("{}/{{*path}}", host_route.location);
         debug!("registing route: {:?}", route_path);
         router = router.route(route_path.as_ref(), get(serve::serve));
-        // for index in &host_route.index {
-        //     let file_path = format!("{}/{}", host_route.location, index);
-        //     debug!("registing route: {:?}", file_path);
-        //     router = router.route(file_path.as_str(), get(serve::serve));
-        // }
+        {
+            let path = if host_route.location.ends_with('/') {
+                host_route.location.clone()
+            } else {
+                format!("{}/", host_route.location)
+            };
+            ROUTE_MAP.write().await.insert(path, host_route.clone());
+        }
     }
 
     router = router.layer(
