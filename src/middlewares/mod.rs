@@ -12,7 +12,7 @@ use tower_http::classify::ServerErrorsFailureClass;
 use tower_http::trace::TraceLayer;
 use tracing::{Span, error, info, info_span};
 
-use crate::{consts::{NAME, VERSION}, http::AppState};
+use crate::consts::{NAME, VERSION};
 
 /// Middleware for adding version information to each response's headers.
 ///
