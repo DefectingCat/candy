@@ -70,7 +70,7 @@ pub struct SettingHost {
 pub type MIMEType = BTreeMap<Cow<'static, str>, Cow<'static, str>>;
 
 /// Whole config settings
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug, Default)]
 pub struct Settings {
     /// Default file type for unknow file
     #[serde(default = "mime_default")]
