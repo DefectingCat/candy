@@ -1,27 +1,31 @@
 use std::fmt::Display;
 
 use axum::{
-    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use serde_json::json;
 use serde_repr::*;
 use tracing::error;
 
 #[derive(thiserror::Error, Debug)]
 pub enum RouteError {
+    // Common errors
     #[error("{0}")]
     Any(#[from] anyhow::Error),
     #[error("{0}")]
     Infallible(#[from] std::convert::Infallible),
+
+    // Route errors
+    #[error("route not found")]
+    RouteNotFound(),
 }
 
 #[derive(Serialize_repr, Deserialize_repr, PartialEq, Debug)]
 #[repr(u16)]
 pub enum ErrorCode {
     Normal = 200,
-    InternalError = 1000,
+    InternalError = 500,
+    NotFound = 404,
 }
 
 impl Display for ErrorCode {
@@ -30,7 +34,8 @@ impl Display for ErrorCode {
 
         let res = match self {
             Normal => "",
-            InternalError => "服务器内部错误",
+            InternalError => "Internal Server Error",
+            NotFound => "Resource Not Found",
         };
         f.write_str(res)?;
         Ok(())
@@ -38,15 +43,11 @@ impl Display for ErrorCode {
 }
 
 /// Log and return INTERNAL_SERVER_ERROR
-fn log_internal_error<T: Display>(err: T) -> (StatusCode, ErrorCode, String) {
+fn log_internal_error<T: Display>(err: T) -> (StatusCode, String) {
     use ErrorCode::*;
 
     error!("{err}");
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        InternalError,
-        "internal server error".to_string(),
-    )
+    (StatusCode::INTERNAL_SERVER_ERROR, InternalError.to_string())
 }
 
 // Tell axum how to convert `AppError` into a response.
@@ -54,15 +55,17 @@ impl IntoResponse for RouteError {
     fn into_response(self) -> Response {
         use RouteError::*;
 
-        let (status_code, code, err_message) = match self {
+        let (status_code, err_message) = match self {
             Any(err) => log_internal_error(err),
+            // route errors
+            RouteNotFound() => (StatusCode::NOT_FOUND, ErrorCode::NotFound.to_string()),
         };
-        let body = Json(json!({
-            "code": code,
-            "message": code.to_string(),
-            "error": err_message
-        }));
-        (status_code, body).into_response()
+        // let body = Json(json!({
+        //     "code": code,
+        //     "message": code.to_string(),
+        //     "error": err_message
+        // }));
+        (status_code, err_message).into_response()
     }
 }
 

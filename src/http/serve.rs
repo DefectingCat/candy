@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use axum::{extract::Path, response::IntoResponse};
 use http::Uri;
 use tracing::debug;
@@ -25,10 +27,18 @@ pub async fn serve(uri: Uri, Path(path): Path<String>) -> RouteResult<impl IntoR
     // which is `host_route.location`
     debug!("request: {:?} uri {}", path, parent_path);
     let route_map = ROUTE_MAP.read().await;
+    // [TODO] custom error and not found page
     let Some(host_route) = route_map.get(parent_path) else {
-        return Err(RouteError::Any(anyhow::anyhow!("route not found")));
+        return Err(RouteError::RouteNotFound());
     };
     debug!("route: {:?}", host_route);
+    let path = PathBuf::from(path);
+    let Some(index_name) = path.file_name() else {
+        return Err(RouteError::RouteNotFound());
+    };
+    // after route found
+    debug!("request index file {:?}", index_name);
+    // try find index file first
     // let host_route = app
     //     .host_route
     //     .get(&request.uri().path().to_string())
