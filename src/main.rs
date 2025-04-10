@@ -44,12 +44,10 @@ async fn main() -> Result<()> {
     info!("{}", COMPILER);
     info!("OS: {} {}", OS, ARCH);
 
-    // let hosts = settings.host.clone();
-    let mut servers = settings
-        .host
-        .into_iter()
-        .map(make_server)
-        .collect::<JoinSet<_>>();
+    let hosts = settings.host;
+    let mut servers = hosts.into_iter().map(make_server).collect::<JoinSet<_>>();
+
+    // settings.host = vec![];
 
     info!("server started");
 

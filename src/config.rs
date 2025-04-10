@@ -38,12 +38,6 @@ pub struct SettingRoute {
 /// Host routes
 /// Each host can have multiple routes
 pub type HostRouteMap = BTreeMap<String, SettingRoute>;
-pub fn host_route_map(routes: Vec<SettingRoute>) -> HostRouteMap {
-    routes
-        .into_iter()
-        .map(|route| (route.location.clone(), route))
-        .collect()
-}
 
 /// Virtual host
 /// Each host can listen on one port and one ip
