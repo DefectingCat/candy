@@ -1,15 +1,7 @@
-use axum::{
-    extract::{Request, State},
-    response::IntoResponse,
-};
-use tower::ServiceExt;
-use tower_http::services::ServeDir;
+use axum::{extract::Request, response::IntoResponse};
 use tracing::debug;
 
-use super::{
-    AppState,
-    error::{RouteError, RouteResult},
-};
+use super::error::RouteResult;
 
 #[axum::debug_handler]
 pub async fn serve(request: Request) -> RouteResult<impl IntoResponse> {

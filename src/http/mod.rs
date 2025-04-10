@@ -7,7 +7,7 @@ use tower_http::timeout::TimeoutLayer;
 use tracing::{debug, info, warn};
 
 use crate::{
-    config::{HostRouteMap, SettingHost, host_route_map},
+    config::SettingHost,
     middlewares::{add_version, logging_route},
     utils::{shutdown, shutdown_signal},
 };
