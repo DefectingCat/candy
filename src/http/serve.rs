@@ -1,11 +1,25 @@
-use axum::{extract::Request, response::IntoResponse};
+use axum::{extract::Path, response::IntoResponse};
+use http::Uri;
 use tracing::debug;
 
 use super::error::RouteResult;
 
+/// Serve static files
+/// If the request path matches a static file path, it will serve the file.
 #[axum::debug_handler]
-pub async fn serve(request: Request) -> RouteResult<impl IntoResponse> {
-    debug!("request: {:?}", request);
+pub async fn serve(uri: Uri, Path(path): Path<String>) -> RouteResult<impl IntoResponse> {
+    // find parent path
+    // if request path is /doc/index.html
+    // uri path is /doc/index.html
+    // path is index.html
+    // find parent path by path length
+    // /doc/index.html
+    // /doc/
+    //      index.html
+    let uri_path = uri.path();
+    let parent_path = uri_path.get(0..uri_path.len() - path.len());
+    let parent_path = parent_path.unwrap_or("/");
+    debug!("request: {:?} uri {}", path, parent_path);
     // let host_route = app
     //     .host_route
     //     .get(&request.uri().path().to_string())
