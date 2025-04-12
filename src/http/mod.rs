@@ -43,17 +43,37 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
         // index = ["index.html", "index.txt"]
         // route: GET /doc/index.html
         // route: GET /doc/index.txt
-        let route_path = format!("{}/{{*path}}", host_route.location);
-        debug!("registing route: {:?}", route_path);
-        router = router.route(route_path.as_ref(), get(serve::serve));
+        // register parent path /doc
+        let route_path = if host_route.location.ends_with('/') {
+            // first register path with slash
+            router = router.route(&host_route.location, get(serve::serve));
+            let len = host_route.location.len();
+            let path_without_slash = host_route.location.chars().collect::<Vec<_>>()[0..len - 1]
+                .iter()
+                .collect::<String>();
+            // then register path without slash
+            router = router.route(&path_without_slash, get(serve::serve));
+            host_route.location.clone()
+        } else {
+            // first register path without slash
+            router = router.route(&host_route.location, get(serve::serve));
+            let path = format!("{}/", host_route.location);
+            // then register path with slash
+            router = router.route(&path, get(serve::serve));
+            path
+        };
+        debug!("registing parent route {}", route_path);
+        // save route path to map
         {
-            let path = if host_route.location.ends_with('/') {
-                host_route.location.clone()
-            } else {
-                format!("{}/", host_route.location)
-            };
-            ROUTE_MAP.write().await.insert(path, host_route.clone());
+            ROUTE_MAP
+                .write()
+                .await
+                .insert(route_path.clone(), host_route.clone());
         }
+        let route_path = format!("{}{{*path}}", route_path);
+        debug!("registing route: {:?}", route_path);
+        // register wildcard path /doc/*
+        router = router.route(route_path.as_ref(), get(serve::serve));
     }
 
     router = router.layer(

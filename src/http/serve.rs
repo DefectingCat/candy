@@ -4,15 +4,22 @@ use axum::{extract::Path, response::IntoResponse};
 use http::Uri;
 use tracing::debug;
 
-use crate::http::{ROUTE_MAP, error::RouteError};
+use crate::{
+    consts::HOST_INDEX,
+    http::{ROUTE_MAP, error::RouteError},
+};
 
 use super::error::RouteResult;
 
 /// Serve static files
 /// If the request path matches a static file path, it will serve the file.
 #[axum::debug_handler]
-pub async fn serve(uri: Uri, Path(path): Path<String>) -> RouteResult<impl IntoResponse> {
+pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl IntoResponse> {
     // find parent path
+    // if requested path is /doc
+    // then params path is None
+    // when Path is None, then use uri.path() as path
+
     // if request path is /doc/index.html
     // uri path is /doc/index.html
     // path is index.html
@@ -20,25 +27,64 @@ pub async fn serve(uri: Uri, Path(path): Path<String>) -> RouteResult<impl IntoR
     // /doc/index.html
     // /doc/
     //      index.html
-    let uri_path = uri.path();
-    let parent_path = uri_path.get(0..uri_path.len() - path.len());
-    let parent_path = parent_path.unwrap_or("/");
+
+    let parent_path = match path {
+        Some(ref path) => {
+            let uri_path = uri.path();
+            let parent_path = uri_path.get(0..uri_path.len() - path.len());
+            parent_path.unwrap_or("/").to_string()
+        }
+        None => {
+            let uri_path = uri.path().to_string();
+            if uri_path.ends_with('/') {
+                uri_path
+            } else {
+                format!("{}/", uri_path)
+            }
+        }
+    };
     // parent_path is key in route map
     // which is `host_route.location`
-    debug!("request: {:?} uri {}", path, parent_path);
+    debug!("request: {:?} uri {:?}", path, parent_path);
     let route_map = ROUTE_MAP.read().await;
     // [TODO] custom error and not found page
-    let Some(host_route) = route_map.get(parent_path) else {
+    debug!("route map: {:?}", route_map);
+    let Some(host_route) = route_map.get(&parent_path) else {
         return Err(RouteError::RouteNotFound());
     };
     debug!("route: {:?}", host_route);
-    let path = PathBuf::from(path);
-    let Some(index_name) = path.file_name() else {
+    // after route found
+    let Some(ref root) = host_route.root else {
         return Err(RouteError::RouteNotFound());
     };
-    // after route found
-    debug!("request index file {:?}", index_name);
     // try find index file first
+    // build index filename as vec
+    // ["./html/index.html", "./html/index.txt"]
+    let path_arr = match path {
+        Some(ref path) => {
+            let path = PathBuf::from(path.to_string());
+            let Some(index_name) = path.file_name() else {
+                // [TODO] custom error and not found page
+                return Err(RouteError::RouteNotFound());
+            };
+            vec![format!("{}/{}", root, index_name.to_string_lossy())]
+        }
+        None => {
+            if host_route.index.is_empty() {
+                HOST_INDEX
+                    .iter()
+                    .map(|s| format!("{}/{}", root, s))
+                    .collect::<Vec<_>>()
+            } else {
+                host_route
+                    .index
+                    .iter()
+                    .map(|s| format!("{}/{}", root, s))
+                    .collect::<Vec<_>>()
+            }
+        }
+    };
+    debug!("request index file {:?}", path_arr);
     // let host_route = app
     //     .host_route
     //     .get(&request.uri().path().to_string())
