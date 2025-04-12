@@ -44,7 +44,8 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
         // route: GET /doc/index.html
         // route: GET /doc/index.txt
         // register parent path /doc
-        let route_path = if host_route.location.ends_with('/') {
+        let path_morethan_one = host_route.location.len() > 1;
+        let route_path = if path_morethan_one && host_route.location.ends_with('/') {
             // first register path with slash
             router = router.route(&host_route.location, get(serve::serve));
             debug!("registed route {}", host_route.location);
@@ -56,15 +57,20 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
             router = router.route(&path_without_slash, get(serve::serve));
             debug!("registed route {}", path_without_slash);
             host_route.location.clone()
+        } else if path_morethan_one {
+            // first register path without slash
+            router = router.route(&host_route.location, get(serve::serve));
+            debug!("registed route {}", host_route.location);
+            // then register path with slash
+            let path = format!("{}/", host_route.location);
+            router = router.route(&path, get(serve::serve));
+            debug!("registed route {}", path);
+            path
         } else {
             // first register path without slash
             router = router.route(&host_route.location, get(serve::serve));
             debug!("registed route {}", host_route.location);
-            let path = format!("{}/", host_route.location);
-            // then register path with slash
-            router = router.route(&path, get(serve::serve));
-            debug!("registed route {}", path);
-            path
+            host_route.location.clone()
         };
         // save route path to map
         {
