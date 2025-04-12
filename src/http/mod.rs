@@ -47,22 +47,25 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
         let route_path = if host_route.location.ends_with('/') {
             // first register path with slash
             router = router.route(&host_route.location, get(serve::serve));
+            debug!("registed route {}", host_route.location);
             let len = host_route.location.len();
             let path_without_slash = host_route.location.chars().collect::<Vec<_>>()[0..len - 1]
                 .iter()
                 .collect::<String>();
             // then register path without slash
             router = router.route(&path_without_slash, get(serve::serve));
+            debug!("registed route {}", path_without_slash);
             host_route.location.clone()
         } else {
             // first register path without slash
             router = router.route(&host_route.location, get(serve::serve));
+            debug!("registed route {}", host_route.location);
             let path = format!("{}/", host_route.location);
             // then register path with slash
             router = router.route(&path, get(serve::serve));
+            debug!("registed route {}", path);
             path
         };
-        debug!("registing parent route {}", route_path);
         // save route path to map
         {
             ROUTE_MAP
@@ -71,9 +74,9 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
                 .insert(route_path.clone(), host_route.clone());
         }
         let route_path = format!("{}{{*path}}", route_path);
-        debug!("registing route: {:?}", route_path);
         // register wildcard path /doc/*
         router = router.route(route_path.as_ref(), get(serve::serve));
+        debug!("registed route: {}", route_path);
     }
 
     router = router.layer(
