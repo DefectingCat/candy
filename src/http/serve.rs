@@ -52,30 +52,32 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
     // Resolve the parent path:
     // - If `path` is provided, extract the parent segment from the URI.
     // - If `path` is None, use the URI path directly (ensuring it ends with '/').
-    let parent_path = match path {
-        Some(ref path) => {
-            let uri_path = uri.path();
-            // Slice the URI path to exclude the provided `path` segment.
-            let parent_path = uri_path.get(0..uri_path.len() - path.len());
-            // Fallback to "/" if slicing fails (e.g., invalid bounds).
-            parent_path.unwrap_or("/").to_string()
-        }
-        None => {
-            let uri_path = uri.path().to_string();
-            if uri_path.ends_with('/') {
-                uri_path
-            } else {
-                // Ensure the path ends with '/' for directory resolution.
-                format!("{}/", uri_path)
+    /// Resolves the parent path from the URI and optional path segment.
+    fn resolve_parent_path(uri: &Uri, path: Option<&Path<String>>) -> String {
+        match path {
+            Some(path) => {
+                let uri_path = uri.path();
+                let parent_path = uri_path.get(0..uri_path.len() - path.len());
+                parent_path.unwrap_or("/").to_string()
+            }
+            None => {
+                let uri_path = uri.path().to_string();
+                if uri_path.ends_with('/') {
+                    uri_path
+                } else {
+                    format!("{}/", uri_path)
+                }
             }
         }
-    };
+    }
+
+    let parent_path = resolve_parent_path(&uri, path.as_ref());
     // parent_path is key in route map
     // which is `host_route.location`
-    debug!("request: {:?} uri {:?}", path, parent_path);
+    debug!("Request - path: {:?}, parent_path: {:?}", path, parent_path);
     let route_map = ROUTE_MAP.read().await;
     // [TODO] custom error and not found page
-    debug!("route map: {:?}", route_map);
+    debug!("Route map entries: {:?}", route_map.keys());
     let Some(host_route) = route_map.get(&parent_path) else {
         return Err(RouteError::RouteNotFound());
     };
@@ -90,39 +92,36 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
     // Build the list of candidate file paths to try:
     // - If `path` is provided, use it directly.
     // - If `path` is None, use the default index files (either from `host_route.index` or `HOST_INDEX`).
-    let path_arr = match path {
-        Some(ref path) => {
-            let path = PathBuf::from(path.to_string());
-            let Some(index_name) = path.file_name() else {
-                // TODO: Replace with a custom error for invalid paths.
-                return Err(RouteError::RouteNotFound());
-            };
-            vec![format!("{}/{}", root, index_name.to_string_lossy())]
-        }
-        None => {
-            if host_route.index.is_empty() {
-                HOST_INDEX
-                    .iter()
-                    .map(|s| format!("{}/{}", root, s))
-                    .collect::<Vec<_>>()
-            } else {
-                host_route
-                    .index
-                    .iter()
-                    .map(|s| format!("{}/{}", root, s))
-                    .collect::<Vec<_>>()
-            }
-        }
+    let path_arr = if let Some(path) = path {
+        let path = PathBuf::from(path.to_string());
+        let Some(file_name) = path.file_name() else {
+            debug!("Invalid path: no file name");
+            return Err(RouteError::RouteNotFound());
+        };
+        vec![format!("{}/{}", root, file_name.to_string_lossy())]
+    } else {
+        let indices = if host_route.index.is_empty() {
+            let host_iter = HOST_INDEX
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>();
+            host_iter.into_iter()
+        } else {
+            host_route.index.clone().into_iter()
+        };
+        indices.map(|s| format!("{}/{}", root, s)).collect()
     };
     debug!("request index file {:?}", path_arr);
     // Try each candidate path in order:
     // - Return the first successfully streamed file.
     // - If all fail, return a `RouteNotFound` error.
     for path in path_arr {
-        if let Ok(res) = stream_file(path.into()).await {
-            return Ok(res);
+        match stream_file(path.into()).await {
+            Ok(res) => return Ok(res),
+            Err(e) => debug!("Failed to stream file: {}", e),
         }
     }
+    debug!("No valid file found in path candidates");
     Err(RouteError::RouteNotFound())
 }
 
