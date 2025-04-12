@@ -49,6 +49,7 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
     // /doc/
     //      index.html
 
+    debug!("Request - uri: {:?}, path: {:?}", uri, path);
     // Resolve the parent path:
     // - If `path` is provided, extract the parent segment from the URI.
     // - If `path` is None, use the URI path directly (ensuring it ends with '/').
@@ -74,7 +75,10 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
     let parent_path = resolve_parent_path(&uri, path.as_ref());
     // parent_path is key in route map
     // which is `host_route.location`
-    debug!("Request - path: {:?}, parent_path: {:?}", path, parent_path);
+    debug!(
+        "Request - path: {:?}, parent_path: {:?}, uri: {:?}",
+        path, parent_path, uri
+    );
     let route_map = ROUTE_MAP.read().await;
     // [TODO] custom error and not found page
     debug!("Route map entries: {:?}", route_map.keys());
@@ -93,12 +97,9 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
     // - If `path` is provided, use it directly.
     // - If `path` is None, use the default index files (either from `host_route.index` or `HOST_INDEX`).
     let path_arr = if let Some(path) = path {
-        let path = PathBuf::from(path.to_string());
-        let Some(file_name) = path.file_name() else {
-            debug!("Invalid path: no file name");
-            return Err(RouteError::RouteNotFound());
-        };
-        vec![format!("{}/{}", root, file_name.to_string_lossy())]
+        #[allow(clippy::unnecessary_to_owned)]
+        let path = path.to_string();
+        vec![format!("{}/{}", root, path)]
     } else {
         let indices = if host_route.index.is_empty() {
             let host_iter = HOST_INDEX
