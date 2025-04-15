@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, sync::LazyLock, time::Duration};
 use axum::{Router, middleware, routing::get};
 use tokio::{net::TcpListener, sync::RwLock};
 use tower::ServiceBuilder;
-use tower_http::timeout::TimeoutLayer;
+use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer};
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -88,7 +88,8 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     router = router.layer(
         ServiceBuilder::new()
             .layer(middleware::from_fn(add_version))
-            .layer(TimeoutLayer::new(Duration::from_secs(host.timeout.into()))),
+            .layer(TimeoutLayer::new(Duration::from_secs(host.timeout.into())))
+            .layer(CompressionLayer::new()),
     );
     router = logging_route(router);
 
