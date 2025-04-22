@@ -27,6 +27,8 @@ pub struct SettingRoute {
     pub index: Vec<String>,
     /// Custom error page
     pub error_page: Option<ErrorRoute>,
+    /// Custom 404 page
+    pub not_found_page: Option<ErrorRoute>,
 
     /// Reverse proxy url
     pub proxy_pass: Option<String>,

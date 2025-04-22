@@ -20,6 +20,8 @@ pub enum RouteError {
     // Route errors
     #[error("route not found")]
     RouteNotFound(),
+    #[error("internal error")]
+    InternalError(),
 }
 
 #[derive(Serialize_repr, Deserialize_repr, PartialEq, Debug)]
@@ -77,6 +79,7 @@ impl IntoResponse for RouteError {
             Any(err) => log_internal_error(err),
             // route errors
             RouteNotFound() => (StatusCode::NOT_FOUND, ErrorCode::NotFound.to_string()),
+            InternalError() => (StatusCode::NOT_FOUND, ErrorCode::InternalError.to_string()),
         };
         (status_code, err_message).into_response()
     }

@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use anyhow::Context;
 use axum::{
     extract::Path,
     response::{IntoResponse, Response},
@@ -19,6 +20,37 @@ use crate::{
 };
 
 use super::error::RouteResult;
+
+/// Macro to handle custom "not found" responses for a route.
+///
+/// When a requested file is not found, this macro:
+/// 1. Checks if the `host_route` has a configured `not_found_page`.
+/// 2. Attempts to serve the custom "not found" file (e.g., `404.html`).
+/// 3. Falls back to `RouteNotFound` or `InternalError` if the file is missing or unreadable.
+///
+/// # Arguments
+/// - `$host_route`: The route configuration containing `not_found_page` and `root` paths.
+macro_rules! custom_not_found {
+    ($host_route:expr) => {
+        async {
+            let Some(ref page) = $host_route.not_found_page else {
+                return RouteResult::Err(RouteError::RouteNotFound());
+            };
+            let Some(ref root) = $host_route.root else {
+                return RouteResult::Err(RouteError::InternalError());
+            };
+            let path = format!("{}/{}", root, page.page);
+            debug!("custom not found path: {:?}", path);
+            match stream_file(path.into()).await {
+                Ok(res) => RouteResult::Ok(res),
+                Err(e) => {
+                    println!("Failed to stream file: {:?}", e);
+                    RouteResult::Err(RouteError::InternalError())
+                }
+            }
+        }
+    };
+}
 
 /// Serve static files.
 ///
@@ -80,15 +112,17 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
         path, parent_path, uri
     );
     let route_map = ROUTE_MAP.read().await;
-    // [TODO] custom error and not found page
     debug!("Route map entries: {:?}", route_map.keys());
     let Some(host_route) = route_map.get(&parent_path) else {
         return Err(RouteError::RouteNotFound());
     };
     debug!("route: {:?}", host_route);
     // after route found
+    // check static file root configuration
+    // if root is None, then return InternalError
     let Some(ref root) = host_route.root else {
-        return Err(RouteError::RouteNotFound());
+        // return Err(RouteError::InternalError());
+        return custom_not_found!(host_route).await;
     };
     // try find index file first
     // build index filename as vec
@@ -123,7 +157,7 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
         }
     }
     debug!("No valid file found in path candidates");
-    Err(RouteError::RouteNotFound())
+    custom_not_found!(host_route).await
 }
 
 /// Stream a file as an HTTP response.
@@ -134,17 +168,20 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
 /// # Returns
 /// - `Ok(Response)`: If the file is successfully opened and streamed.
 /// - `Err(anyhow::Error)`: If the file cannot be opened or read.
-async fn stream_file(path: PathBuf) -> anyhow::Result<impl IntoResponse> {
-    let file = File::open(path.clone()).await?;
+async fn stream_file(path: PathBuf) -> RouteResult<impl IntoResponse> {
+    let file = File::open(path.clone())
+        .await
+        .with_context(|| "open file failed")?;
     let stream = ReaderStream::new(file);
     let stream = stream.map(|res| res.map(Frame::data));
     let body = StreamBody::new(stream);
 
     let mime = from_path(path).first_or_octet_stream();
     let mut response = Response::new(body);
-    response
-        .headers_mut()
-        .insert(CONTENT_TYPE, HeaderValue::from_str(mime.as_ref())?);
+    response.headers_mut().insert(
+        CONTENT_TYPE,
+        HeaderValue::from_str(mime.as_ref()).with_context(|| "insert header failed")?,
+    );
 
     Ok(response)
 }

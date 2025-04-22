@@ -29,6 +29,9 @@ location = "/"
 # Static file root
 root = "./html"
 [host.route.error_page]
+status = 500
+page = "500.html"
+[host.route.not_found_page]
 status = 404
 page = "404.html"
 
