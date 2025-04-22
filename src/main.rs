@@ -1,3 +1,5 @@
+#![feature(iterator_try_collect)]
+
 use anyhow::{Context, Result};
 
 use clap::Parser;

@@ -1,5 +1,8 @@
 use crate::{
-    consts::{host_index, mime_default, timeout_default, types_default, upstream_timeout_default},
+    consts::{
+        default_disabled, host_index, mime_default, timeout_default, types_default,
+        upstream_timeout_default,
+    },
     error::Result,
 };
 use std::{borrow::Cow, collections::BTreeMap, fs};
@@ -49,6 +52,9 @@ pub struct SettingHost {
     pub ip: String,
     /// Host port
     pub port: u32,
+    /// SSL enable
+    #[serde(default = "default_disabled")]
+    pub ssl: bool,
     /// SSL certificate location
     pub certificate: Option<String>,
     /// ssl key location
