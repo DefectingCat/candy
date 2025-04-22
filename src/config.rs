@@ -91,3 +91,77 @@ impl Settings {
         Ok(settings)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_settings_new() {
+        // Create a temporary TOML config file
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(
+            file,
+            r#"
+            default_type = "text/plain"
+            types = {{ "txt" = "text/plain", "html" = "text/html" }}
+
+            [[host]]
+            ip = "127.0.0.1"
+            port = 8080
+            ssl = false
+            timeout = 30
+
+            [[host.route]]
+            location = "/"
+            root = "/var/www"
+            index = ["index.html", "index.txt"]
+            proxy_timeout = 10
+            "#,
+        )
+        .unwrap();
+
+        let path = file.path().to_str().unwrap();
+        let settings = Settings::new(path).unwrap();
+
+        // Verify default values
+        assert_eq!(settings.default_type, "text/plain");
+        assert_eq!(settings.types.len(), 2);
+
+        // Verify host settings
+        let host = &settings.host[0];
+        assert_eq!(host.ip, "127.0.0.1");
+        assert_eq!(host.port, 8080);
+        assert_eq!(host.timeout, 30);
+
+        // Verify route settings
+        let route = &host.route[0];
+        assert_eq!(route.location, "/");
+        assert_eq!(route.root, Some("/var/www".to_string()));
+        assert_eq!(route.proxy_timeout, 10);
+    }
+
+    #[test]
+    fn test_settings_missing_file() {
+        let result = Settings::new("nonexistent.toml");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("read nonexistent.toml failed")
+        );
+    }
+
+    #[test]
+    fn test_settings_invalid_toml() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "invalid toml content").unwrap();
+
+        let path = file.path().to_str().unwrap();
+        let result = Settings::new(path);
+        assert!(result.is_err());
+    }
+}
