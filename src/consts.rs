@@ -43,3 +43,8 @@ macro_rules! insert_mime {
         $map.entry($name.into()).or_insert($mime.into());
     };
 }
+
+// default boolean false
+pub fn default_disabled() -> bool {
+    false
+}

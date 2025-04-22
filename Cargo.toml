@@ -11,6 +11,7 @@ edition = "2024"
 # core
 tokio = { version = "1.44.1", features = ["full"] }
 tokio-util = "0.7.14"
+tokio-rustls = "0.26.2"
 hyper = { version = "1.6.0", features = ["full"] }
 hyper-util = { version = "0.1.10", features = ["full"] }
 http = "1.3.1"
