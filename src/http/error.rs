@@ -1,9 +1,11 @@
 use std::fmt::Display;
 
+use crate::consts::{NAME, VERSION};
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use const_format::{concatcp, formatcp};
 use serde_repr::*;
 use tracing::error;
 
@@ -28,14 +30,30 @@ pub enum ErrorCode {
     NotFound = 404,
 }
 
+/// Normal error message
+const SERVER_ERROR_STR: &str = concatcp!(
+    r#"Internal Server Error
+{NAME} v{VERSION}
+Powered by RUA
+"#
+);
+
+/// Not found error message
+const NOT_FOUND_STR: &str = formatcp!(
+    r#"Resource Not Found
+{NAME} v{VERSION}
+Powered by RUA
+"#
+);
+
 impl Display for ErrorCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use ErrorCode::*;
 
         let res = match self {
             Normal => "",
-            InternalError => "Internal Server Error",
-            NotFound => "Resource Not Found",
+            InternalError => SERVER_ERROR_STR,
+            NotFound => NOT_FOUND_STR,
         };
         f.write_str(res)?;
         Ok(())
@@ -60,11 +78,6 @@ impl IntoResponse for RouteError {
             // route errors
             RouteNotFound() => (StatusCode::NOT_FOUND, ErrorCode::NotFound.to_string()),
         };
-        // let body = Json(json!({
-        //     "code": code,
-        //     "message": code.to_string(),
-        //     "error": err_message
-        // }));
         (status_code, err_message).into_response()
     }
 }

@@ -26,6 +26,7 @@ anyhow = "1.0.97"
 serde = { version = "1.0.219", features = ["derive"] }
 toml = "0.8.20"
 bytes = "1.10.1"
+const_format = "0.2.34"
 # logging
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
