@@ -23,5 +23,7 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - uses: actions/checkout@v4
-      - name: Build
-        run: make
+      - name: Clippy check
+        run: make lint
+      - name: Build release
+        run: make release
