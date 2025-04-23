@@ -1,19 +1,4 @@
-## TODO
-
-- [ ] Dockerization
-- [ ] Docs
-- [x] Build with compile info
-- [x] Refactor HTTP 1
-- [x] Graceful shutdown
-- [x] `keep-alive` timeout setting
-- [ ] HTTP Etag: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag#etag_value
-- [x] Content compress
-    - [x] zstd
-    - [x] gzip
-    - [x] deflate
-    - [x] br
-
-### Configuration
+## Configuration
 
 - [ ] File MIME type
 - [x] Overwrite headers in config
@@ -25,7 +10,7 @@
 - [ ] Max body size
 - [x] HTTP 2
 
-### Features
+## Features
 
 - [x] Cross platform compile
     - [x] x86_64-unknown-linux-gnu
@@ -48,3 +33,16 @@
 - [x] HTTP 2
 - [ ] HTTP 3
 - [ ] Specify thread numbers
+- [ ] Dockerization
+- [ ] Docs
+- [x] Build with compile info
+- [x] Refactor HTTP 1
+- [x] Graceful shutdown
+- [x] `keep-alive` timeout setting
+- [ ] HTTP Etag: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag#etag_value
+- [ ] List directory
+- [x] Content compress
+    - [x] zstd
+    - [x] gzip
+    - [x] deflate
+    - [x] br
