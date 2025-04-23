@@ -43,10 +43,12 @@ pub struct SettingRoute {
 /// Host routes
 /// Each host can have multiple routes
 pub type HostRouteMap = BTreeMap<String, SettingRoute>;
+/// headers
+pub type HeaderMap = BTreeMap<String, String>;
 
 /// Virtual host
 /// Each host can listen on one port and one ip
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug, Default)]
 pub struct SettingHost {
     /// Host ip
     pub ip: String,
@@ -66,7 +68,7 @@ pub struct SettingHost {
     pub timeout: u16,
     /// HTTP headers
     /// Used to overwrite headers in config
-    pub headers: Option<BTreeMap<String, String>>,
+    pub headers: Option<HeaderMap>,
 }
 
 pub type MIMEType = BTreeMap<Cow<'static, str>, Cow<'static, str>>;

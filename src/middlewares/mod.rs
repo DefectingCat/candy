@@ -2,17 +2,21 @@ use std::{fmt::Display, time::Duration};
 
 use axum::{
     Router,
-    body::Bytes,
+    body::{Body, Bytes},
     extract::Request,
     http::{HeaderMap, HeaderValue},
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use http::HeaderName;
 use tower_http::classify::ServerErrorsFailureClass;
 use tower_http::trace::TraceLayer;
-use tracing::{Span, error, info, info_span};
+use tracing::{Span, debug, error, info, info_span};
 
-use crate::consts::{NAME, VERSION};
+use crate::{
+    consts::{NAME, VERSION},
+    http::HOST,
+};
 
 /// Middleware for adding version information to each response's headers.
 ///
@@ -21,11 +25,79 @@ use crate::consts::{NAME, VERSION};
 /// obtaining the response. After receiving the response, it appends two headers:
 /// - "Server": The name of the server extracted from the Cargo package name.
 /// - "S-Version": The version of the server extracted from the Cargo package version.
-pub async fn add_version(req: Request<axum::body::Body>, next: Next) -> impl IntoResponse {
+pub async fn add_version(req: Request<Body>, next: Next) -> impl IntoResponse {
     let mut res = next.run(req).await;
     let headers = res.headers_mut();
     headers.append("Server", HeaderValue::from_static(NAME));
     headers.append("RUA-Version", HeaderValue::from_static(VERSION));
+    res
+}
+
+/// Middleware for dynamically adding headers to responses based on the requested host and port.
+///
+/// This middleware:
+/// 1. Extracts the `Host` header from the incoming request.
+/// 2. Parses the host string to determine the port (defaulting to `80` if unspecified).
+/// 3. Looks up the host configuration in the global `HOST` map (shared state) for the resolved port.
+/// 4. Appends any configured headers from the host's `SettingHost` to the response.
+///
+/// # Behavior
+/// - If the `Host` header is missing or malformed, the request proceeds unchanged.
+/// - If the port is invalid or the host configuration is not found, the request proceeds unchanged.
+/// - Headers are appended to the response only if they are explicitly configured for the host.
+///
+/// # Error Handling
+/// - Silently skips header addition for:
+///   - Missing or unparseable `Host` headers.
+///   - Invalid ports (non-numeric or out-of-range).
+///   - Missing host configurations in `HOST`.
+/// - Uses `debug!` for logging the resolved port.
+///
+/// # Example
+/// Given a request to `example.com:8080` and a `HOST` entry for port `8080` with headers:
+/// ```toml
+/// [hosts."8080"]
+/// headers = { "X-Custom" = "value" }
+pub async fn add_headers(req: Request, next: Next) -> impl IntoResponse {
+    let host = req.headers().get("host");
+    let Some(host) = host else {
+        return next.run(req).await;
+    };
+    // localhost:8080
+    // ["localhost", "8080"]
+    // localhost
+    // ["localhost"]
+    let Ok(host_parts) = host.to_str() else {
+        return next.run(req).await;
+    };
+    let host_parts = host_parts.split(':').collect::<Vec<&str>>();
+    let port = if host_parts.len() == 1 {
+        80
+    } else {
+        let Some(port) = host_parts.get(1) else {
+            return next.run(req).await;
+        };
+        let Ok(port) = port.parse::<u32>() else {
+            return next.run(req).await;
+        };
+        port
+    };
+    debug!("port {}", port);
+    let mut res = next.run(req).await;
+    let req_headers = res.headers_mut();
+    let host = HOST.read().await;
+    let Some(host) = host.get(&(port as u32)) else {
+        return res;
+    };
+    let Some(headers) = host.headers.as_ref() else {
+        return res;
+    };
+    for (key, value) in headers {
+        req_headers.append(
+            HeaderName::from_bytes(key.as_bytes()).unwrap(),
+            HeaderValue::from_bytes(value.as_bytes()).unwrap(),
+        );
+    }
     res
 }
 
