@@ -69,28 +69,28 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
         // register parent path /doc
         let path_morethan_one = host_route.location.len() > 1;
         let route_path = if path_morethan_one && host_route.location.ends_with('/') {
-            // first register path with slash
+            // first register path with slash /doc
             router = router.route(&host_route.location, get(serve::serve));
             debug!("registed route {}", host_route.location);
             let len = host_route.location.len();
             let path_without_slash = host_route.location.chars().collect::<Vec<_>>()[0..len - 1]
                 .iter()
                 .collect::<String>();
-            // then register path without slash
+            // then register path without slash /doc/
             router = router.route(&path_without_slash, get(serve::serve));
             debug!("registed route {}", path_without_slash);
             host_route.location.clone()
         } else if path_morethan_one {
-            // first register path without slash
+            // first register path without slash /doc
             router = router.route(&host_route.location, get(serve::serve));
             debug!("registed route {}", host_route.location);
-            // then register path with slash
+            // then register path with slash /doc/
             let path = format!("{}/", host_route.location);
             router = router.route(&path, get(serve::serve));
             debug!("registed route {}", path);
             path
         } else {
-            // first register path without slash
+            // register path  /doc/
             router = router.route(&host_route.location, get(serve::serve));
             debug!("registed route {}", host_route.location);
             host_route.location.clone()
