@@ -15,6 +15,7 @@ use tokio_util::io::ReaderStream;
 use tracing::debug;
 
 use crate::{
+    config::SettingRoute,
     consts::HOST_INDEX,
     http::{ROUTE_MAP, error::RouteError},
 };
@@ -134,23 +135,18 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
     // build index filename as vec
     // ["./html/index.html", "./html/index.txt"]
     // Build the list of candidate file paths to try:
-    // - If `path` is provided, use it directly.
+    // - If `path` is provided, use it and check is file or not.
     // - If `path` is None, use the default index files (either from `host_route.index` or `HOST_INDEX`).
     let path_arr = if let Some(path) = path {
         #[allow(clippy::unnecessary_to_owned)]
         let path = path.to_string();
-        vec![format!("{}/{}", root, path)]
-    } else {
-        let indices = if host_route.index.is_empty() {
-            let host_iter = HOST_INDEX
-                .iter()
-                .map(|s| s.to_string())
-                .collect::<Vec<String>>();
-            host_iter.into_iter()
+        if path.contains('.') {
+            vec![format!("{}/{}", root, path)]
         } else {
-            host_route.index.clone().into_iter()
-        };
-        indices.map(|s| format!("{}/{}", root, s)).collect()
+            generate_default_index(host_route, &format!("{}/{}", root, path))
+        }
+    } else {
+        generate_default_index(host_route, root)
     };
     debug!("request index file {:?}", path_arr);
     // Try each candidate path in order:
@@ -164,6 +160,27 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
     }
     debug!("No valid file found in path candidates");
     custom_not_found!(host_route).await
+}
+
+/// Generate default index files
+/// if request path is not a file
+/// this read config index field
+/// and build with root: ["./html/index.html", "./html/index.txt"]
+///
+/// ## Arguments
+/// - `host_route`: the host route config
+/// - `root`: the root path
+fn generate_default_index(host_route: &SettingRoute, root: &str) -> Vec<String> {
+    let indices = if host_route.index.is_empty() {
+        let host_iter = HOST_INDEX
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>();
+        host_iter.into_iter()
+    } else {
+        host_route.index.clone().into_iter()
+    };
+    indices.map(|s| format!("{}/{}", root, s)).collect()
 }
 
 /// Stream a file as an HTTP response.
