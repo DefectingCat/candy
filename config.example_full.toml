@@ -22,30 +22,25 @@ X-Powered-By = "candy"
 
 # Routes for virtual host
 [[host.route]]
-# If has index field, it will be used as static file host
-index = ["index.html"]
 # Route location
 location = "/"
 # Static file root
+# or proxy_pass
+# or redirect
 root = "./html"
+# Only use for root field
+index = ["index.html"]
+# Custom 500 page
 [host.route.error_page]
 status = 500
 page = "500.html"
+# Custom 404 page
 [host.route.not_found_page]
 status = 404
 page = "404.html"
 
 [[host.route]]
-index = ["index.html"]
-location = "/candy/"
-root = "./docs/build"
-[host.route.error_page]
-status = 404
-page = "404.html"
-
-[[host.route]]
 location = "/proxy/"
-# If has root field, it will be used as reverse proxy
 proxy_pass = "http://localhost:3000/"
 # Timeout for connect to upstream
 proxy_timeout = 10
