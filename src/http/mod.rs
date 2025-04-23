@@ -24,22 +24,29 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     config::{HostRouteMap, SettingHost},
-    middlewares::{add_version, logging_route},
+    middlewares::{add_headers, add_version, logging_route},
     utils::{shutdown, shutdown_signal},
 };
 
 pub mod error;
 pub mod serve;
 
+/// Host configuration
+/// use virtual host port as key
+/// use SettingHost as value
+pub static HOST: LazyLock<RwLock<BTreeMap<u32, SettingHost>>> =
+    LazyLock::new(|| RwLock::new(BTreeMap::new()));
+
 /// Static route map
-/// Use host_route.location as key
-/// Use host_route as value
+/// Use host.route.location as key
+/// Use host.route struct as value
 static ROUTE_MAP: LazyLock<RwLock<HostRouteMap>> = LazyLock::new(|| RwLock::new(BTreeMap::new()));
 
 pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     let mut router = Router::new();
     // find routes in config
     // convert to axum routes
+    // register routes
     for host_route in &host.route {
         // reverse proxy
         if host_route.proxy_pass.is_some() {
@@ -101,12 +108,17 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
         debug!("registed route: {}", route_path);
     }
 
+    // save host to map
+    HOST.write().await.insert(host.port, host.clone());
+
     router = router.layer(
         ServiceBuilder::new()
             .layer(middleware::from_fn(add_version))
+            .layer(middleware::from_fn(add_headers))
             .layer(TimeoutLayer::new(Duration::from_secs(host.timeout.into())))
             .layer(CompressionLayer::new()),
     );
+
     router = logging_route(router);
 
     let addr = format!("{}:{}", host.ip, host.port);
@@ -137,7 +149,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
             // Wait for new tcp connection
             let (cnx, addr) = listener.accept().await.unwrap();
 
-            tokio::spawn(async move {
+            let tls_handler = async move {
                 // Wait for tls handshake to happen
                 let Ok(stream) = tls_acceptor.accept(cnx).await else {
                     error!("error during tls handshake connection from {}", addr);
@@ -167,7 +179,8 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
                 if let Err(err) = ret {
                     warn!("error serving connection from {}: {}", addr, err);
                 }
-            });
+            };
+            tokio::spawn(tls_handler);
         }
     } else {
         axum::serve(listener, router)
@@ -178,6 +191,28 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Creates a Rustls `ServerConfig` for TLS-enabled connections.
+///
+/// # Arguments
+/// - `key`: Path to the PEM-encoded private key file.
+/// - `cert`: Path to the PEM-encoded certificate chain file.
+///
+/// # Returns
+/// - `Ok(Arc<ServerConfig>)`: A configured `ServerConfig` with:
+///   - No client authentication.
+///   - ALPN protocols `h2` and `http/1.1` for HTTP/2 and HTTP/1.1 support.
+///   - The provided certificate and private key.
+/// - `Err(anyhow::Error)`: If the key/cert files are missing, malformed, or invalid.
+///
+/// # Errors
+/// - Fails if:
+///   - The private key or certificate files cannot be read or parsed.
+///   - The key/cert pair is incompatible (e.g., mismatched algorithms).
+///   - The certificate chain is empty or invalid.
+///
+/// # Example
+/// ```rust
+/// let config = rustls_server_config("key.pem", "cert.pem")?;
 fn rustls_server_config(
     key: impl AsRef<Path>,
     cert: impl AsRef<Path>,

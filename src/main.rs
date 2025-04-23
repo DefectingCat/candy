@@ -1,4 +1,5 @@
 #![feature(iterator_try_collect)]
+#![feature(impl_trait_in_fn_trait_return)]
 
 use anyhow::{Context, Result};
 
