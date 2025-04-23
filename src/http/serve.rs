@@ -90,10 +90,16 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
         match path {
             Some(path) => {
                 let uri_path = uri.path();
+                // use path sub to this uri path
+                // to find parent path that store in ROUTE_MAP
+                // uri: /assets/css/styles.07713cb6.css, path: Some(Path("assets/css/styles.07713cb6.css")
                 let parent_path = uri_path.get(0..uri_path.len() - path.len());
                 parent_path.unwrap_or("/").to_string()
             }
             None => {
+                // uri need end with /
+                // because global ROUTE_MAP key is end with /
+                // so we need add / to uri path to get correct Route
                 let uri_path = uri.path().to_string();
                 if uri_path.ends_with('/') {
                     uri_path

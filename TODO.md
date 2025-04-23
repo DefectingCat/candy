@@ -6,7 +6,7 @@
 - [x] Refactor HTTP 1
 - [x] Graceful shutdown
 - [x] `keep-alive` timeout setting
-- [x] HTTP Etag: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag#etag_value
+- [ ] HTTP Etag: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag#etag_value
 - [x] Content compress
     - [x] zstd
     - [x] gzip
@@ -15,14 +15,15 @@
 
 ### Configuration
 
-- [x] File MIME type
+- [ ] File MIME type
 - [x] Overwrite headers in config
 - [x] Config init tests
-- [x] Error page
+- [ ] Error page
+- [ ] Custom error page with stats code
 - [ ] Logging to file
 - [ ] Benchs
 - [ ] Max body size
-- [ ] HTTP 2
+- [x] HTTP 2
 
 ### Features
 
@@ -35,9 +36,8 @@
     - [x] x86_64-unknown-freebsd
     - [x] loongarch64-unknown-linux-gnu
 - [ ] Load balance
-    - [ ] Pingora
 - [ ] Proxy
-- [x] Reverse Proxy
+- [ ] Reverse Proxy
     - [x] Connect to upstream timeout setting
     - [x] Follow http 301
     - [x] Custom headers
