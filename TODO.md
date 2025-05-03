@@ -39,7 +39,8 @@
 - [x] Refactor HTTP 1
 - [x] Graceful shutdown
 - [x] `keep-alive` timeout setting
-- [ ] HTTP Etag: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag#etag_value
+- [x] HTTP Etag: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag#etag_value
+- [x] 304 Not Modified
 - [ ] List directory
 - [x] Content compress
     - [x] zstd
