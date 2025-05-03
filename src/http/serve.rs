@@ -2,20 +2,20 @@ use std::{path::PathBuf, time::UNIX_EPOCH};
 
 use anyhow::Context;
 use axum::{
-    extract::Path,
+    extract::{Path, Request},
     response::{IntoResponse, Response},
 };
 use futures_util::StreamExt;
 use http::{
-    HeaderValue, Uri,
-    header::{CONTENT_TYPE, ETAG},
+    HeaderValue, StatusCode, Uri,
+    header::{CONTENT_TYPE, ETAG, IF_NONE_MATCH},
 };
 use http_body_util::StreamBody;
 use hyper::body::Frame;
 use mime_guess::from_path;
-use tokio::fs::File;
+use tokio::fs::{self, File};
 use tokio_util::io::ReaderStream;
-use tracing::debug;
+use tracing::{debug, error};
 
 use crate::{
     config::SettingRoute,
@@ -35,7 +35,7 @@ use super::error::RouteResult;
 /// # Arguments
 /// - `$host_route`: The route configuration containing `not_found_page` and `root` paths.
 macro_rules! custom_not_found {
-    ($host_route:expr) => {
+    ($host_route:expr, $request:expr) => {
         async {
             let Some(ref page) = $host_route.not_found_page else {
                 return RouteResult::Err(RouteError::RouteNotFound());
@@ -45,7 +45,7 @@ macro_rules! custom_not_found {
             };
             let path = format!("{}/{}", root, page.page);
             debug!("custom not found path: {:?}", path);
-            match stream_file(path.into()).await {
+            match stream_file(path.into(), $request).await {
                 Ok(res) => RouteResult::Ok(res),
                 Err(e) => {
                     println!("Failed to stream file: {:?}", e);
@@ -71,7 +71,11 @@ macro_rules! custom_not_found {
 /// - `Ok(Response)`: If the file is found and successfully streamed.
 /// - `Err(RouteError)`: If the route or file is not found.
 #[axum::debug_handler]
-pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl IntoResponse> {
+pub async fn serve(
+    uri: Uri,
+    path: Option<Path<String>>,
+    request: Request,
+) -> RouteResult<impl IntoResponse> {
     // find parent path
     // if requested path is /doc
     // then params path is None
@@ -85,7 +89,10 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
     // /doc/
     //      index.html
 
-    debug!("Request - uri: {:?}, path: {:?}", uri, path);
+    debug!(
+        "Request - uri: {:?}, path: {:?}, request: {:?}",
+        uri, path, request
+    );
     // Resolve the parent path:
     // - If `path` is provided, extract the parent segment from the URI.
     // - If `path` is None, use the URI path directly (ensuring it ends with '/').
@@ -117,10 +124,6 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
     let parent_path = resolve_parent_path(&uri, path.as_ref());
     // parent_path is key in route map
     // which is `host_route.location`
-    debug!(
-        "Request - path: {:?}, parent_path: {:?}, uri: {:?}",
-        path, parent_path, uri
-    );
     let route_map = ROUTE_MAP.read().await;
     debug!("Route map entries: {:?}", route_map.keys());
     let Some(host_route) = route_map.get(&parent_path) else {
@@ -132,7 +135,7 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
     // if root is None, then return InternalError
     let Some(ref root) = host_route.root else {
         // return Err(RouteError::InternalError());
-        return custom_not_found!(host_route).await;
+        return custom_not_found!(host_route, request).await;
     };
     // try find index file first
     // build index filename as vec
@@ -155,14 +158,25 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
     // Try each candidate path in order:
     // - Return the first successfully streamed file.
     // - If all fail, return a `RouteNotFound` error.
+    let mut path_exists = None;
     for path in path_arr {
-        match stream_file(path.into()).await {
-            Ok(res) => return Ok(res),
-            Err(e) => debug!("Failed to stream file: {}", e),
+        if fs::metadata(path.clone()).await.is_ok() {
+            path_exists = Some(path);
+            break;
         }
     }
-    debug!("No valid file found in path candidates");
-    custom_not_found!(host_route).await
+    let Some(path_exists) = path_exists else {
+        debug!("No valid file found in path candidates");
+        // return Err(RouteError::InternalError());
+        return custom_not_found!(host_route, request).await;
+    };
+    match stream_file(path_exists.into(), request).await {
+        Ok(res) => Ok(res),
+        Err(e) => {
+            error!("Failed to stream file: {}", e);
+            Err(RouteError::InternalError())
+        }
+    }
 }
 
 /// Generate default index files
@@ -194,7 +208,7 @@ fn generate_default_index(host_route: &SettingRoute, root: &str) -> Vec<String> 
 /// # Returns
 /// - `Ok(Response)`: If the file is successfully opened and streamed.
 /// - `Err(anyhow::Error)`: If the file cannot be opened or read.
-async fn stream_file(path: PathBuf) -> RouteResult<impl IntoResponse> {
+async fn stream_file(path: PathBuf, request: Request) -> RouteResult<impl IntoResponse> {
     let file = File::open(path.clone())
         .await
         .with_context(|| "open file failed")?;
@@ -224,23 +238,50 @@ async fn stream_file(path: PathBuf) -> RouteResult<impl IntoResponse> {
         modified_timestamp,
         metadata.len()
     );
-    let etag = format!("W\"{:?}\"", md5::compute(etag));
+    let etag = format!("W/\"{:?}\"", md5::compute(etag));
     debug!("file {:?} etag: {:?}", path, etag);
 
-    let stream = ReaderStream::new(file);
+    let mut response = Response::builder();
+    let mut not_modified = false;
+    // check request if-none-match
+    if let Some(if_none_match) = request.headers().get(IF_NONE_MATCH) {
+        if if_none_match
+            .to_str()
+            .with_context(|| "parse if-none-match failed")?
+            == etag
+        {
+            // let empty_stream = stream::empty::<u8>();
+            // let body = Some(StreamBody::new(empty_stream));
+            response = response.status(StatusCode::NOT_MODIFIED);
+            not_modified = true;
+        }
+    };
+
+    let stream = if not_modified {
+        let empty = File::open(PathBuf::from("/dev/null"))
+            .await
+            .with_context(|| "open /dev/null failed")?;
+        ReaderStream::new(empty)
+    } else {
+        ReaderStream::new(file)
+    };
     let stream = stream.map(|res| res.map(Frame::data));
     let body = StreamBody::new(stream);
 
     let mime = from_path(path).first_or_octet_stream();
-    let mut response = Response::new(body);
-    response.headers_mut().insert(
-        CONTENT_TYPE,
-        HeaderValue::from_str(mime.as_ref()).with_context(|| "insert header failed")?,
-    );
-    response.headers_mut().insert(
-        ETAG,
-        HeaderValue::from_str(&etag).with_context(|| "insert header failed")?,
-    );
-
-    Ok(response)
+    response
+        .headers_mut()
+        .with_context(|| "insert header failed")?
+        .insert(
+            CONTENT_TYPE,
+            HeaderValue::from_str(mime.as_ref()).with_context(|| "insert header failed")?,
+        );
+    response
+        .headers_mut()
+        .with_context(|| "insert header failed")?
+        .insert(
+            ETAG,
+            HeaderValue::from_str(&etag).with_context(|| "insert header failed")?,
+        );
+    Ok(response.body(body).unwrap())
 }
