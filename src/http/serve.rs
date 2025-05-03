@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::UNIX_EPOCH};
 
 use anyhow::Context;
 use axum::{
@@ -6,7 +6,10 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use futures_util::StreamExt;
-use http::{HeaderValue, Uri, header::CONTENT_TYPE};
+use http::{
+    HeaderValue, Uri,
+    header::{CONTENT_TYPE, ETAG},
+};
 use http_body_util::StreamBody;
 use hyper::body::Frame;
 use mime_guess::from_path;
@@ -105,7 +108,7 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
                 if uri_path.ends_with('/') {
                     uri_path
                 } else {
-                    format!("{}/", uri_path)
+                    format!("{uri_path}/")
                 }
             }
         }
@@ -143,7 +146,7 @@ pub async fn serve(uri: Uri, path: Option<Path<String>>) -> RouteResult<impl Int
         if path.contains('.') {
             vec![format!("{}/{}", root, path)]
         } else {
-            generate_default_index(host_route, &format!("{}/{}", root, path))
+            generate_default_index(host_route, &format!("{root}/{path}"))
         }
     } else {
         generate_default_index(host_route, root)
@@ -180,7 +183,7 @@ fn generate_default_index(host_route: &SettingRoute, root: &str) -> Vec<String> 
     } else {
         host_route.index.clone().into_iter()
     };
-    indices.map(|s| format!("{}/{}", root, s)).collect()
+    indices.map(|s| format!("{root}/{s}")).collect()
 }
 
 /// Stream a file as an HTTP response.
@@ -195,6 +198,35 @@ async fn stream_file(path: PathBuf) -> RouteResult<impl IntoResponse> {
     let file = File::open(path.clone())
         .await
         .with_context(|| "open file failed")?;
+
+    // calculate file metadata as etag
+    let metadata = file
+        .metadata()
+        .await
+        .with_context(|| "get file metadata failed")?;
+    let created_timestamp = metadata
+        .created()
+        .with_context(|| "get file created failed")?
+        .duration_since(UNIX_EPOCH)
+        .with_context(|| "calculate unix timestamp failed")?
+        .as_secs();
+    let modified_timestamp = metadata
+        .modified()
+        .with_context(|| "get file created failed")?
+        .duration_since(UNIX_EPOCH)
+        .with_context(|| "calculate unix timestamp failed")?
+        .as_secs();
+    // file path - created - modified - len
+    let etag = format!(
+        "{}-{}-{}-{}",
+        path.display(),
+        created_timestamp,
+        modified_timestamp,
+        metadata.len()
+    );
+    let etag = format!("W\"{:?}\"", md5::compute(etag));
+    debug!("file {:?} etag: {:?}", path, etag);
+
     let stream = ReaderStream::new(file);
     let stream = stream.map(|res| res.map(Frame::data));
     let body = StreamBody::new(stream);
@@ -204,6 +236,10 @@ async fn stream_file(path: PathBuf) -> RouteResult<impl IntoResponse> {
     response.headers_mut().insert(
         CONTENT_TYPE,
         HeaderValue::from_str(mime.as_ref()).with_context(|| "insert header failed")?,
+    );
+    response.headers_mut().insert(
+        ETAG,
+        HeaderValue::from_str(&etag).with_context(|| "insert header failed")?,
     );
 
     Ok(response)
