@@ -1,6 +1,6 @@
 use std::{path::PathBuf, time::UNIX_EPOCH};
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use axum::{
     extract::{Path, Request},
     response::{IntoResponse, Response},
@@ -213,7 +213,7 @@ async fn stream_file(path: PathBuf, request: Request) -> RouteResult<impl IntoRe
         .await
         .with_context(|| "open file failed")?;
 
-    let path_str=  path.to_str().ok_or(anyhow!(""))?;
+    let path_str = path.to_str().ok_or(anyhow!(""))?;
     let etag = calculate_etag(&file, path_str).await?;
 
     let mut response = Response::builder();
