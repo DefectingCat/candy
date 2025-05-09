@@ -102,7 +102,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
                 .await
                 .insert(route_path.clone(), host_route.clone());
         }
-        let route_path = format!("{}{{*path}}", route_path);
+        let route_path = format!("{route_path}{{*path}}");
         // register wildcard path /doc/*
         router = router.route(route_path.as_ref(), get(serve::serve));
         debug!("registed route: {}", route_path);
