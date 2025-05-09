@@ -93,9 +93,17 @@ pub async fn add_headers(req: Request, next: Next) -> impl IntoResponse {
         return res;
     };
     for (key, value) in headers {
+        let Ok(header_name) = HeaderName::from_bytes(key.as_bytes()) else {
+            error!("Invalid header name: {key}");
+            break;
+        };
+        let Ok(header_value) = HeaderValue::from_bytes(value.as_bytes()) else {
+            error!("Invalid header value: {value}");
+            break;
+        };
         req_headers.append(
-            HeaderName::from_bytes(key.as_bytes()).unwrap(),
-            HeaderValue::from_bytes(value.as_bytes()).unwrap(),
+            header_name,
+            header_value
         );
     }
     res
