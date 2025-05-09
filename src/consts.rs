@@ -38,11 +38,11 @@ pub fn upstream_timeout_default() -> u16 {
 pub fn types_default() -> MIMEType {
     BTreeMap::new()
 }
-macro_rules! insert_mime {
-    ($name:literal, $mime:ident, $map:ident) => {
-        $map.entry($name.into()).or_insert($mime.into());
-    };
-}
+// macro_rules! insert_mime {
+//     ($name:literal, $mime:ident, $map:ident) => {
+//         $map.entry($name.into()).or_insert($mime.into());
+//     };
+// }
 
 // default boolean false
 pub fn default_disabled() -> bool {

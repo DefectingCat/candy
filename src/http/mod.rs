@@ -146,8 +146,15 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
         loop {
             let tower_service = router.clone();
             let tls_acceptor = tls_acceptor.clone();
-            // Wait for new tcp connection
-            let (cnx, addr) = listener.accept().await.unwrap();
+
+            // Wait for new tcp connecttion
+            let (cnx, addr) = match listener.accept().await {
+                Ok((cnx, addr)) => (cnx, addr),
+                Err(err) => {
+                    error!("TCP connection accept error: {:?}", err);
+                    continue;
+                }
+            };
 
             let tls_handler = async move {
                 // Wait for tls handshake to happen

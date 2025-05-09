@@ -1,6 +1,6 @@
 use std::{path::PathBuf, time::UNIX_EPOCH};
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use axum::{
     extract::{Path, Request},
     response::{IntoResponse, Response},
@@ -213,33 +213,8 @@ async fn stream_file(path: PathBuf, request: Request) -> RouteResult<impl IntoRe
         .await
         .with_context(|| "open file failed")?;
 
-    // calculate file metadata as etag
-    let metadata = file
-        .metadata()
-        .await
-        .with_context(|| "get file metadata failed")?;
-    let created_timestamp = metadata
-        .created()
-        .with_context(|| "get file created failed")?
-        .duration_since(UNIX_EPOCH)
-        .with_context(|| "calculate unix timestamp failed")?
-        .as_secs();
-    let modified_timestamp = metadata
-        .modified()
-        .with_context(|| "get file created failed")?
-        .duration_since(UNIX_EPOCH)
-        .with_context(|| "calculate unix timestamp failed")?
-        .as_secs();
-    // file path - created - modified - len
-    let etag = format!(
-        "{}-{}-{}-{}",
-        path.display(),
-        created_timestamp,
-        modified_timestamp,
-        metadata.len()
-    );
-    let etag = format!("W/\"{:?}\"", md5::compute(etag));
-    debug!("file {:?} etag: {:?}", path, etag);
+    let path_str=  path.to_str().ok_or(anyhow!(""))?;
+    let etag = calculate_etag(&file, path_str).await?;
 
     let mut response = Response::builder();
     let mut not_modified = false;
@@ -283,5 +258,37 @@ async fn stream_file(path: PathBuf, request: Request) -> RouteResult<impl IntoRe
             ETAG,
             HeaderValue::from_str(&etag).with_context(|| "insert header failed")?,
         );
-    Ok(response.body(body).unwrap())
+    let response = response.body(body).with_context(|| "")?;
+    Ok(response)
+}
+
+async fn calculate_etag(file: &File, path: &str) -> anyhow::Result<String> {
+    // calculate file metadata as etag
+    let metadata = file
+        .metadata()
+        .await
+        .with_context(|| "get file metadata failed")?;
+    let created_timestamp = metadata
+        .created()
+        .with_context(|| "get file created failed")?
+        .duration_since(UNIX_EPOCH)
+        .with_context(|| "calculate unix timestamp failed")?
+        .as_secs();
+    let modified_timestamp = metadata
+        .modified()
+        .with_context(|| "get file created failed")?
+        .duration_since(UNIX_EPOCH)
+        .with_context(|| "calculate unix timestamp failed")?
+        .as_secs();
+    // file path - created - modified - len
+    let etag = format!(
+        "{}-{}-{}-{}",
+        path,
+        created_timestamp,
+        modified_timestamp,
+        metadata.len()
+    );
+    let etag = format!("W/\"{:?}\"", md5::compute(etag));
+    debug!("file {:?} etag: {:?}", path, etag);
+    Ok(etag)
 }
