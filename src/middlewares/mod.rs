@@ -142,8 +142,8 @@ fn format_latency(latency: Duration, status: impl Display) -> String {
     let micros = latency.as_micros();
     let millis = latency.as_millis();
     if micros >= 1000 {
-        format!("{} {}ms", status, millis)
+        format!("{status} {millis}ms")
     } else {
-        format!("{} {}μs", status, micros)
+        format!("{status} {micros}μs")
     }
 }
