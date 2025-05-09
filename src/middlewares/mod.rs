@@ -101,10 +101,7 @@ pub async fn add_headers(req: Request, next: Next) -> impl IntoResponse {
             error!("Invalid header value: {value}");
             break;
         };
-        req_headers.append(
-            header_name,
-            header_value
-        );
+        req_headers.append(header_name, header_value);
     }
     res
 }

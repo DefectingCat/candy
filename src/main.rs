@@ -1,7 +1,7 @@
 #![feature(iterator_try_collect)]
-#![feature(impl_trait_in_fn_trait_return)]
 
 use anyhow::{Context, Result};
+use tracing::error;
 
 use clap::Parser;
 use config::Settings;
@@ -35,12 +35,6 @@ async fn main() -> Result<()> {
     let args = cli::Cli::parse();
     init_logger();
 
-    // {
-    //     let mut settings = SETTINGS.write().await;
-    //     *settings = Settings::new(&args.config).with_context(|| "init config failed")?;
-    // }
-    // let settings = SETTINGS.read().await;
-
     let settings = Settings::new(&args.config).with_context(|| "init config failed")?;
     debug!("settings {:?}", settings);
     info!("{}/{} {}", NAME, VERSION, COMMIT);
@@ -50,12 +44,13 @@ async fn main() -> Result<()> {
     let hosts = settings.host;
     let mut servers = hosts.into_iter().map(make_server).collect::<JoinSet<_>>();
 
-    // settings.host = vec![];
-
     info!("server started");
 
     while let Some(res) = servers.join_next().await {
-        res??;
+        if let Err(err) = res {
+            error!("server error: {}", err);
+            continue;
+        }
     }
 
     Ok(())
