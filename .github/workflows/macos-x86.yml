@@ -1,4 +1,4 @@
-name: Candy macOS arm
+name: Candy macOS x86
 
 # on:
 #   push:
@@ -11,7 +11,7 @@ env:
 
 jobs:
   check:
-    runs-on: ["self-hosted", "macos-arm"]
+    runs-on: ["self-hosted", "macos-x86"]
     steps:
       - uses: actions/cache@v4
         with:
@@ -27,7 +27,7 @@ jobs:
         run: make lint
 
   test:
-    runs-on: ["self-hosted", "macos-arm"]
+    runs-on: ["self-hosted", "macos-x86"]
     steps:
       - uses: actions/cache@v4
         with:
@@ -43,7 +43,7 @@ jobs:
         run: make test
 
   build:
-    runs-on: ["self-hosted", "macos-arm"]
+    runs-on: ["self-hosted", "macos-x86"]
     steps:
       - uses: actions/cache@v4
         with:
