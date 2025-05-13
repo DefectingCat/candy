@@ -8,6 +8,7 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use axum_extra::extract::Host;
 use http::HeaderName;
 use tower_http::classify::ServerErrorsFailureClass;
 use tower_http::trace::TraceLayer;
@@ -15,7 +16,8 @@ use tracing::{Span, debug, error, info, info_span};
 
 use crate::{
     consts::{NAME, VERSION},
-    http::HOST,
+    http::HOSTS,
+    utils::parse_port_from_host,
 };
 
 /// Middleware for adding version information to each response's headers.
@@ -58,34 +60,40 @@ pub async fn add_version(req: Request<Body>, next: Next) -> impl IntoResponse {
 /// ```toml
 /// [hosts."8080"]
 /// headers = { "X-Custom" = "value" }
-pub async fn add_headers(req: Request, next: Next) -> impl IntoResponse {
-    let host = req.headers().get("host");
-    let Some(host) = host else {
+pub async fn add_headers(Host(host): Host, req: Request, next: Next) -> impl IntoResponse {
+    // let host = req.headers().get("host");
+    // let Some(host) = host else {
+    //     return next.run(req).await;
+    // };
+    // // localhost:8080
+    // // ["localhost", "8080"]
+    // // localhost
+    // // ["localhost"]
+    // let Ok(host_parts) = host.to_str() else {
+    //     return next.run(req).await;
+    // };
+    // let host_parts = host_parts.split(':').collect::<Vec<&str>>();
+    // let port = if host_parts.len() == 1 {
+    //     80
+    // } else {
+    //     let Some(port) = host_parts.get(1) else {
+    //         return next.run(req).await;
+    //     };
+    //     let Ok(port) = port.parse::<u32>() else {
+    //         return next.run(req).await;
+    //     };
+    //     port
+    // };
+    let Some(scheme) = req.uri().scheme_str() else {
         return next.run(req).await;
     };
-    // localhost:8080
-    // ["localhost", "8080"]
-    // localhost
-    // ["localhost"]
-    let Ok(host_parts) = host.to_str() else {
+    let Some(port) = parse_port_from_host(&host, scheme) else {
         return next.run(req).await;
     };
-    let host_parts = host_parts.split(':').collect::<Vec<&str>>();
-    let port = if host_parts.len() == 1 {
-        80
-    } else {
-        let Some(port) = host_parts.get(1) else {
-            return next.run(req).await;
-        };
-        let Ok(port) = port.parse::<u32>() else {
-            return next.run(req).await;
-        };
-        port
-    };
-    debug!("port {}", port);
+    debug!("port {:?}", port);
     let mut res = next.run(req).await;
     let req_headers = res.headers_mut();
-    let host = HOST.read().await;
+    let host = HOSTS.read().await;
     let Some(host) = host.get(&(port as u32)) else {
         return res;
     };

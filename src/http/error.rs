@@ -22,6 +22,8 @@ pub enum RouteError {
     RouteNotFound(),
     #[error("internal error")]
     InternalError(),
+    #[error("bad request")]
+    BadRequest(),
 }
 
 #[derive(Serialize_repr, Deserialize_repr, PartialEq, Debug)]
@@ -30,6 +32,7 @@ pub enum ErrorCode {
     Normal = 200,
     InternalError = 500,
     NotFound = 404,
+    BadRequest = 400,
 }
 
 /// Normal error message
@@ -48,6 +51,13 @@ Powered by RUA
 "#
 );
 
+const BAD_REQUEST_STR: &str = formatcp!(
+    r#"Bad Request
+{NAME} v{VERSION}
+Powered by RUA
+"#
+);
+
 impl Display for ErrorCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use ErrorCode::*;
@@ -56,6 +66,7 @@ impl Display for ErrorCode {
             Normal => "",
             InternalError => SERVER_ERROR_STR,
             NotFound => NOT_FOUND_STR,
+            BadRequest => BAD_REQUEST_STR,
         };
         f.write_str(res)?;
         Ok(())
@@ -77,9 +88,10 @@ impl IntoResponse for RouteError {
 
         let (status_code, err_message) = match self {
             Any(err) => log_internal_error(err),
-            // route errors
             RouteNotFound() => (StatusCode::NOT_FOUND, ErrorCode::NotFound.to_string()),
             InternalError() => (StatusCode::NOT_FOUND, ErrorCode::InternalError.to_string()),
+            // Infallible(infallible) => todo!(),
+            BadRequest() => (StatusCode::NOT_FOUND, ErrorCode::BadRequest.to_string()),
         };
         (status_code, err_message).into_response()
     }

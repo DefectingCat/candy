@@ -5,6 +5,7 @@ use axum::{
     extract::{Path, Request},
     response::{IntoResponse, Response},
 };
+use axum_extra::extract::Host;
 use futures_util::StreamExt;
 use http::{
     HeaderValue, StatusCode, Uri,
@@ -74,6 +75,7 @@ macro_rules! custom_not_found {
 pub async fn serve(
     uri: Uri,
     path: Option<Path<String>>,
+    Host(host): Host,
     request: Request,
 ) -> RouteResult<impl IntoResponse> {
     // find parent path
