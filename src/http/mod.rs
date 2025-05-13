@@ -34,12 +34,18 @@ pub mod serve;
 /// Host configuration
 /// use virtual host port as key
 /// use SettingHost as value
-pub static HOST: LazyLock<RwLock<BTreeMap<u32, SettingHost>>> =
+pub static HOSTS: LazyLock<RwLock<BTreeMap<u32, SettingHost>>> =
     LazyLock::new(|| RwLock::new(BTreeMap::new()));
 
 /// Static route map
+/// Use port as parent part
 /// Use host.route.location as key
 /// Use host.route struct as value
+/// {
+///     80: {
+///         "/doc": <SettingRoute>
+///     }
+/// }
 static ROUTE_MAP: LazyLock<RwLock<HostRouteMap>> = LazyLock::new(|| RwLock::new(BTreeMap::new()));
 
 pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
@@ -109,7 +115,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     }
 
     // save host to map
-    HOST.write().await.insert(host.port, host.clone());
+    HOSTS.write().await.insert(host.port, host.clone());
 
     router = router.layer(
         ServiceBuilder::new()
