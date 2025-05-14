@@ -87,6 +87,7 @@ pub async fn add_headers(Host(host): Host, req: Request, next: Next) -> impl Int
     let Some(scheme) = req.uri().scheme_str() else {
         return next.run(req).await;
     };
+    debug!("scheme {:?}", scheme);
     let Some(port) = parse_port_from_host(&host, scheme) else {
         return next.run(req).await;
     };
@@ -94,7 +95,7 @@ pub async fn add_headers(Host(host): Host, req: Request, next: Next) -> impl Int
     let mut res = next.run(req).await;
     let req_headers = res.headers_mut();
     let host = HOSTS.read().await;
-    let Some(host) = host.get(&(port as u32)) else {
+    let Some(host) = host.get(&port) else {
         return res;
     };
     let Some(headers) = host.headers.as_ref() else {

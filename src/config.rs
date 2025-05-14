@@ -53,7 +53,7 @@ pub struct SettingHost {
     /// Host ip
     pub ip: String,
     /// Host port
-    pub port: u32,
+    pub port: u16,
     /// SSL enable
     #[serde(default = "default_disabled")]
     pub ssl: bool,
@@ -61,8 +61,14 @@ pub struct SettingHost {
     pub certificate: Option<String>,
     /// ssl key location
     pub certificate_key: Option<String>,
-    /// Host routes
+    /// Routes in config file
     pub route: Vec<SettingRoute>,
+    /// Host routes convert from Vec<SettingRoute> to BTreeMap<String, SettingRoute>
+    /// {
+    ///     "/doc": <SettingRoute>
+    /// }
+    #[serde(skip)]
+    pub route_map: BTreeMap<String, SettingRoute>,
     /// HTTP keep-alive timeout
     #[serde(default = "timeout_default")]
     pub timeout: u16,

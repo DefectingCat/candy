@@ -23,7 +23,7 @@ use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer};
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    config::{HostRouteMap, SettingHost},
+    config::SettingHost,
     middlewares::{add_headers, add_version, logging_route},
     utils::{shutdown, shutdown_signal},
 };
@@ -34,10 +34,6 @@ pub mod serve;
 /// Host configuration
 /// use virtual host port as key
 /// use SettingHost as value
-pub static HOSTS: LazyLock<RwLock<BTreeMap<u32, SettingHost>>> =
-    LazyLock::new(|| RwLock::new(BTreeMap::new()));
-
-/// Static route map
 /// Use port as parent part
 /// Use host.route.location as key
 /// Use host.route struct as value
@@ -46,10 +42,14 @@ pub static HOSTS: LazyLock<RwLock<BTreeMap<u32, SettingHost>>> =
 ///         "/doc": <SettingRoute>
 ///     }
 /// }
-static ROUTE_MAP: LazyLock<RwLock<HostRouteMap>> = LazyLock::new(|| RwLock::new(BTreeMap::new()));
+pub static HOSTS: LazyLock<RwLock<BTreeMap<u16, SettingHost>>> =
+    LazyLock::new(|| RwLock::new(BTreeMap::new()));
+
+// static ROUTE_MAP: LazyLock<RwLock<HostRouteMap>> = LazyLock::new(|| RwLock::new(BTreeMap::new()));
 
 pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     let mut router = Router::new();
+    let mut host_to_save = host.clone();
     // find routes in config
     // convert to axum routes
     // register routes
@@ -103,9 +103,8 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
         };
         // save route path to map
         {
-            ROUTE_MAP
-                .write()
-                .await
+            host_to_save
+                .route_map
                 .insert(route_path.clone(), host_route.clone());
         }
         let route_path = format!("{route_path}{{*path}}");
@@ -115,7 +114,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     }
 
     // save host to map
-    HOSTS.write().await.insert(host.port, host.clone());
+    HOSTS.write().await.insert(host.port, host_to_save);
 
     router = router.layer(
         ServiceBuilder::new()

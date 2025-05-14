@@ -21,7 +21,8 @@ use tracing::{debug, error};
 use crate::{
     config::SettingRoute,
     consts::HOST_INDEX,
-    http::{ROUTE_MAP, error::RouteError},
+    http::{HOSTS, error::RouteError},
+    utils::parse_port_from_host,
 };
 
 use super::error::RouteResult;
@@ -126,11 +127,14 @@ pub async fn serve(
     let parent_path = resolve_parent_path(&uri, path.as_ref());
     // parent_path is key in route map
     // which is `host_route.location`
-    let route_map = ROUTE_MAP.read().await;
+    let scheme = request.uri().scheme_str().unwrap_or("http");
+    let port = parse_port_from_host(&host, scheme).ok_or(RouteError::BadRequest())?;
+    let hosts = &HOSTS.read().await;
+    let route_map = &hosts.get(&port).ok_or(RouteError::BadRequest())?.route_map;
     debug!("Route map entries: {:?}", route_map.keys());
-    let Some(host_route) = route_map.get(&parent_path) else {
-        return Err(RouteError::RouteNotFound());
-    };
+    let host_route = route_map
+        .get(&parent_path)
+        .ok_or(RouteError::RouteNotFound())?;
     debug!("route: {:?}", host_route);
     // after route found
     // check static file root configuration

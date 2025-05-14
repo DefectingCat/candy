@@ -28,8 +28,6 @@ mod http;
 mod middlewares;
 mod utils;
 
-// static SETTINGS: LazyLock<RwLock<Settings>> = LazyLock::new(|| RwLock::new(Settings::default()));
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = cli::Cli::parse();
