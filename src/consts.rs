@@ -1,4 +1,6 @@
-use std::{borrow::Cow, collections::BTreeMap, env};
+use std::{borrow::Cow, env};
+
+use dashmap::DashMap;
 
 use crate::config::MIMEType;
 
@@ -36,7 +38,7 @@ pub fn upstream_timeout_default() -> u16 {
 
 // default mime types
 pub fn types_default() -> MIMEType {
-    BTreeMap::new()
+    DashMap::new()
 }
 // macro_rules! insert_mime {
 //     ($name:literal, $mime:ident, $map:ident) => {

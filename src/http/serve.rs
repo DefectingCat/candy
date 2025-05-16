@@ -6,6 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_extra::extract::Host;
+use dashmap::mapref::one::Ref;
 use futures_util::StreamExt;
 use http::{
     HeaderValue, StatusCode, Uri,
@@ -129,9 +130,8 @@ pub async fn serve(
     // which is `host_route.location`
     let scheme = request.uri().scheme_str().unwrap_or("http");
     let port = parse_port_from_host(&host, scheme).ok_or(RouteError::BadRequest())?;
-    let hosts = &HOSTS.read().await;
-    let route_map = &hosts.get(&port).ok_or(RouteError::BadRequest())?.route_map;
-    debug!("Route map entries: {:?}", route_map.keys());
+    let route_map = &HOSTS.get(&port).ok_or(RouteError::BadRequest())?.route_map;
+    debug!("Route map entries: {:?}", route_map);
     let host_route = route_map
         .get(&parent_path)
         .ok_or(RouteError::RouteNotFound())?;
@@ -155,10 +155,10 @@ pub async fn serve(
         if path.contains('.') {
             vec![format!("{}/{}", root, path)]
         } else {
-            generate_default_index(host_route, &format!("{root}/{path}"))
+            generate_default_index(&host_route, &format!("{root}/{path}"))
         }
     } else {
-        generate_default_index(host_route, root)
+        generate_default_index(&host_route, root)
     };
     debug!("request index file {:?}", path_arr);
     // Try each candidate path in order:
@@ -193,7 +193,7 @@ pub async fn serve(
 /// ## Arguments
 /// - `host_route`: the host route config
 /// - `root`: the root path
-fn generate_default_index(host_route: &SettingRoute, root: &str) -> Vec<String> {
+fn generate_default_index(host_route: &Ref<'_, String, SettingRoute>, root: &str) -> Vec<String> {
     let indices = if host_route.index.is_empty() {
         let host_iter = HOST_INDEX
             .iter()

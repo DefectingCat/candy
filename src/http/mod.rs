@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeMap,
     path::Path,
     sync::{Arc, LazyLock},
     time::Duration,
@@ -7,10 +6,11 @@ use std::{
 
 use anyhow::anyhow;
 use axum::{Router, extract::Request, middleware, routing::get};
+use dashmap::DashMap;
 use futures_util::pin_mut;
 use hyper::body::Incoming;
 use hyper_util::rt::{TokioExecutor, TokioIo};
-use tokio::{net::TcpListener, sync::RwLock};
+use tokio::net::TcpListener;
 use tokio_rustls::{
     TlsAcceptor,
     rustls::{
@@ -42,14 +42,13 @@ pub mod serve;
 ///         "/doc": <SettingRoute>
 ///     }
 /// }
-pub static HOSTS: LazyLock<RwLock<BTreeMap<u16, SettingHost>>> =
-    LazyLock::new(|| RwLock::new(BTreeMap::new()));
+pub static HOSTS: LazyLock<DashMap<u16, SettingHost>> = LazyLock::new(DashMap::new);
 
 // static ROUTE_MAP: LazyLock<RwLock<HostRouteMap>> = LazyLock::new(|| RwLock::new(BTreeMap::new()));
 
 pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     let mut router = Router::new();
-    let mut host_to_save = host.clone();
+    let host_to_save = host.clone();
     // find routes in config
     // convert to axum routes
     // register routes
@@ -114,7 +113,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     }
 
     // save host to map
-    HOSTS.write().await.insert(host.port, host_to_save);
+    HOSTS.insert(host.port, host_to_save);
 
     router = router.layer(
         ServiceBuilder::new()

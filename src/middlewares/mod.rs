@@ -94,24 +94,25 @@ pub async fn add_headers(Host(host): Host, req: Request, next: Next) -> impl Int
     debug!("port {:?}", port);
     let mut res = next.run(req).await;
     let req_headers = res.headers_mut();
-    let host = HOSTS.read().await;
-    let Some(host) = host.get(&port) else {
+    // let host = HOSTS.read().await;
+    let Some(host) = HOSTS.get(&port) else {
         return res;
     };
     let Some(headers) = host.headers.as_ref() else {
         return res;
     };
-    for (key, value) in headers {
+    headers.iter().for_each(|entery| {
+        let (key, value) = (entery.key(), entery.value());
         let Ok(header_name) = HeaderName::from_bytes(key.as_bytes()) else {
             error!("Invalid header name: {key}");
-            break;
+            return;
         };
         let Ok(header_value) = HeaderValue::from_bytes(value.as_bytes()) else {
             error!("Invalid header value: {value}");
-            break;
+            return;
         };
         req_headers.append(header_name, header_value);
-    }
+    });
     res
 }
 

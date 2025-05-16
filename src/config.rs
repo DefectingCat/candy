@@ -5,9 +5,10 @@ use crate::{
     },
     error::Result,
 };
-use std::{borrow::Cow, collections::BTreeMap, fs};
+use std::{borrow::Cow, fs};
 
 use anyhow::Context;
+use dashmap::DashMap;
 use serde::Deserialize;
 
 #[derive(Deserialize, Clone, Debug)]
@@ -42,9 +43,9 @@ pub struct SettingRoute {
 
 /// Host routes
 /// Each host can have multiple routes
-pub type HostRouteMap = BTreeMap<String, SettingRoute>;
+pub type HostRouteMap = DashMap<String, SettingRoute>;
 /// headers
-pub type HeaderMap = BTreeMap<String, String>;
+pub type HeaderMap = DashMap<String, String>;
 
 /// Virtual host
 /// Each host can listen on one port and one ip
@@ -63,12 +64,12 @@ pub struct SettingHost {
     pub certificate_key: Option<String>,
     /// Routes in config file
     pub route: Vec<SettingRoute>,
-    /// Host routes convert from Vec<SettingRoute> to BTreeMap<String, SettingRoute>
+    /// Host routes convert from Vec<SettingRoute> to DashMap<String, SettingRoute>
     /// {
     ///     "/doc": <SettingRoute>
     /// }
     #[serde(skip)]
-    pub route_map: BTreeMap<String, SettingRoute>,
+    pub route_map: DashMap<String, SettingRoute>,
     /// HTTP keep-alive timeout
     #[serde(default = "timeout_default")]
     pub timeout: u16,
@@ -77,7 +78,7 @@ pub struct SettingHost {
     pub headers: Option<HeaderMap>,
 }
 
-pub type MIMEType = BTreeMap<Cow<'static, str>, Cow<'static, str>>;
+pub type MIMEType = DashMap<Cow<'static, str>, Cow<'static, str>>;
 
 /// Whole config settings
 #[derive(Deserialize, Clone, Debug, Default)]
