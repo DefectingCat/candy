@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::UNIX_EPOCH};
+use std::{path::PathBuf, str::FromStr, time::UNIX_EPOCH};
 
 use anyhow::{Context, anyhow};
 use axum::{
@@ -40,15 +40,19 @@ use super::error::RouteResult;
 macro_rules! custom_not_found {
     ($host_route:expr, $request:expr) => {
         async {
-            let Some(ref page) = $host_route.not_found_page else {
-                return RouteResult::Err(RouteError::RouteNotFound());
-            };
-            let Some(ref root) = $host_route.root else {
-                return RouteResult::Err(RouteError::InternalError());
-            };
+            let page = $host_route
+                .not_found_page
+                .as_ref()
+                .ok_or(RouteError::RouteNotFound())?;
+            let root = $host_route
+                .root
+                .as_ref()
+                .ok_or(RouteError::InternalError())?;
             let path = format!("{}/{}", root, page.page);
+            let status = StatusCode::from_str(page.status.to_string().as_ref())
+                .map_err(|_| RouteError::BadRequest())?;
             debug!("custom not found path: {:?}", path);
-            match stream_file(path.into(), $request).await {
+            match stream_file(path.into(), $request, Some(status)).await {
                 Ok(res) => RouteResult::Ok(res),
                 Err(e) => {
                     println!("Failed to stream file: {:?}", e);
@@ -176,7 +180,7 @@ pub async fn serve(
         // return Err(RouteError::InternalError());
         return custom_not_found!(host_route, request).await;
     };
-    match stream_file(path_exists.into(), request).await {
+    match stream_file(path_exists.into(), request, None).await {
         Ok(res) => Ok(res),
         Err(e) => {
             error!("Failed to stream file: {}", e);
@@ -214,7 +218,11 @@ fn generate_default_index(host_route: &Ref<'_, String, SettingRoute>, root: &str
 /// # Returns
 /// - `Ok(Response)`: If the file is successfully opened and streamed.
 /// - `Err(anyhow::Error)`: If the file cannot be opened or read.
-async fn stream_file(path: PathBuf, request: Request) -> RouteResult<impl IntoResponse> {
+async fn stream_file(
+    path: PathBuf,
+    request: Request,
+    status: Option<StatusCode>,
+) -> RouteResult<impl IntoResponse> {
     let file = File::open(path.clone())
         .await
         .with_context(|| "open file failed")?;
@@ -264,6 +272,9 @@ async fn stream_file(path: PathBuf, request: Request) -> RouteResult<impl IntoRe
             ETAG,
             HeaderValue::from_str(&etag).with_context(|| "insert header failed")?,
         );
+    if let Some(status) = status {
+        response = response.status(status);
+    }
     let response = response.body(body).with_context(|| "")?;
     Ok(response)
 }

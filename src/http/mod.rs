@@ -44,8 +44,6 @@ pub mod serve;
 /// }
 pub static HOSTS: LazyLock<DashMap<u16, SettingHost>> = LazyLock::new(DashMap::new);
 
-// static ROUTE_MAP: LazyLock<RwLock<HostRouteMap>> = LazyLock::new(|| RwLock::new(BTreeMap::new()));
-
 pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     let mut router = Router::new();
     let host_to_save = host.clone();
