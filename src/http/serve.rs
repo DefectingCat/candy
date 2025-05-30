@@ -233,17 +233,16 @@ async fn stream_file(
     let mut response = Response::builder();
     let mut not_modified = false;
     // check request if-none-match
-    if let Some(if_none_match) = request.headers().get(IF_NONE_MATCH) {
-        if if_none_match
+    if let Some(if_none_match) = request.headers().get(IF_NONE_MATCH)
+        && if_none_match
             .to_str()
             .with_context(|| "parse if-none-match failed")?
             == etag
-        {
-            // let empty_stream = stream::empty::<u8>();
-            // let body = Some(StreamBody::new(empty_stream));
-            response = response.status(StatusCode::NOT_MODIFIED);
-            not_modified = true;
-        }
+    {
+        // let empty_stream = stream::empty::<u8>();
+        // let body = Some(StreamBody::new(empty_stream));
+        response = response.status(StatusCode::NOT_MODIFIED);
+        not_modified = true;
     };
 
     let stream = if not_modified {

@@ -61,29 +61,6 @@ pub async fn add_version(req: Request<Body>, next: Next) -> impl IntoResponse {
 /// [hosts."8080"]
 /// headers = { "X-Custom" = "value" }
 pub async fn add_headers(Host(host): Host, req: Request, next: Next) -> impl IntoResponse {
-    // let host = req.headers().get("host");
-    // let Some(host) = host else {
-    //     return next.run(req).await;
-    // };
-    // // localhost:8080
-    // // ["localhost", "8080"]
-    // // localhost
-    // // ["localhost"]
-    // let Ok(host_parts) = host.to_str() else {
-    //     return next.run(req).await;
-    // };
-    // let host_parts = host_parts.split(':').collect::<Vec<&str>>();
-    // let port = if host_parts.len() == 1 {
-    //     80
-    // } else {
-    //     let Some(port) = host_parts.get(1) else {
-    //         return next.run(req).await;
-    //     };
-    //     let Ok(port) = port.parse::<u32>() else {
-    //         return next.run(req).await;
-    //     };
-    //     port
-    // };
     let Some(scheme) = req.uri().scheme_str() else {
         return next.run(req).await;
     };
