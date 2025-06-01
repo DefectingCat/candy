@@ -45,10 +45,11 @@ async fn main() -> Result<()> {
     info!("server started");
 
     while let Some(res) = servers.join_next().await {
-        if let Err(err) = res {
-            error!("server error: {}", err);
-            continue;
-        }
+        error!("server error: {:?}", res);
+        // if let Err(err) = res {
+        //     error!("server error: {}", err);
+        //     continue;
+        // }
     }
 
     Ok(())

@@ -59,12 +59,13 @@ where
     tokio::select! {
         _ = ctrl_c => {
             shutdown_cb()
-            // let _ = stop_core().map_err(log_err);
         },
         _ = terminate => {
             shutdown_cb()
         },
     }
+
+    tracing::info!("Received termination signal shutting down");
 }
 
 pub fn shutdown() {
