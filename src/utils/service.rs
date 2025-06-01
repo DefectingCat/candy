@@ -1,3 +1,5 @@
+use std::process::exit;
+
 use tokio::signal;
 use tracing::{debug, info};
 
@@ -58,18 +60,18 @@ where
 
     tokio::select! {
         _ = ctrl_c => {
-            shutdown_cb()
         },
         _ = terminate => {
-            shutdown_cb()
         },
     }
 
     tracing::info!("Received termination signal shutting down");
+    shutdown_cb()
 }
 
 pub fn shutdown() {
-    info!("Server shuting down")
+    info!("Server shuting down");
+    exit(0);
 }
 
 /// Parse port from host
