@@ -9,7 +9,7 @@ edition = "2024"
 
 [dependencies]
 # core
-tokio = { version = "1.44.2", features = ["full"] }
+tokio = { version = "1.45.1", features = ["full"] }
 tokio-util = "0.7.15"
 tokio-rustls = "0.26.2"
 hyper = { version = "1.6.0", features = ["full"] }
@@ -20,6 +20,7 @@ futures-util = "0.3.31"
 mimalloc = "0.1.46"
 axum = { version = "0.8.4", features = ["macros"] }
 axum-extra = { version = "0.10.1", features = ["typed-header"] }
+axum-server = { version = "0.7.2", features = ["tls-rustls"] }
 tower = { version = "0.5.2", features = ["full"] }
 tower-http = { version = "0.6.4", features = ["full"] }
 # tools

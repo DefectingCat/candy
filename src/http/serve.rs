@@ -144,7 +144,6 @@ pub async fn serve(
     // check static file root configuration
     // if root is None, then return InternalError
     let Some(ref root) = host_route.root else {
-        // return Err(RouteError::InternalError());
         return custom_not_found!(host_route, request).await;
     };
     // try find index file first
