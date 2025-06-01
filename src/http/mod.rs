@@ -44,6 +44,9 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
         // reverse proxy
         if host_route.proxy_pass.is_some() {
             router = router.route(host_route.location.as_ref(), get(reverse_proxy::serve));
+            // register wildcard path /doc/*
+            let route_path = format!("{}{{*path}}", host_route.location);
+            router = router.route(route_path.as_ref(), get(reverse_proxy::serve));
             // save route path to map
             {
                 host_to_save
