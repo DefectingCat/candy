@@ -45,11 +45,14 @@ async fn main() -> Result<()> {
     info!("server started");
 
     while let Some(res) = servers.join_next().await {
-        error!("server error: {:?}", res);
-        // if let Err(err) = res {
-        //     error!("server error: {}", err);
-        //     continue;
-        // }
+        match res {
+            Ok(err) => {
+                err.map_err(|err| error!("server error: {}", err)).ok();
+            }
+            Err(err) => {
+                error!("server error: {}", err);
+            }
+        }
     }
 
     Ok(())
