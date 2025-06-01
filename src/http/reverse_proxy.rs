@@ -4,7 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_extra::extract::Host;
-use http::Uri;
+use http::{HeaderName, Uri};
 use reqwest::Client;
 
 use crate::utils::parse_port_from_host;
@@ -76,17 +76,57 @@ pub async fn serve(
     *req.uri_mut() = Uri::try_from(uri.clone()).map_err(|_| RouteError::InternalError())?;
 
     let client = Client::new();
-    let reqwest_response = client.get(uri).send().await.map_err(|e| {
+    let mut forward_req = client.request(req.method().clone(), uri);
+    // let reqwest_response = client.get(uri).send().await.map_err(|e| {
+    //     tracing::error!("Failed to proxy request: {}", e);
+    //     RouteError::BadRequest()
+    // })?;
+    for (name, value) in req.headers().iter() {
+        if !is_exclude_header(name) {
+            forward_req = forward_req.header(name.clone(), value.clone());
+        }
+    }
+
+    let reqwest_response = forward_req.send().await.map_err(|e| {
         tracing::error!("Failed to proxy request: {}", e);
         RouteError::BadRequest()
     })?;
 
     let mut response_builder = Response::builder().status(reqwest_response.status());
-    *response_builder.headers_mut().unwrap() = reqwest_response.headers().clone();
+    copy_headers(
+        reqwest_response.headers(),
+        response_builder
+            .headers_mut()
+            .ok_or(RouteError::InternalError())?,
+    );
     let res = response_builder
         .body(Body::from_stream(reqwest_response.bytes_stream()))
-        // This unwrap is fine because the body is empty here
-        .unwrap();
+        .map_err(|e| {
+            tracing::error!("Failed to proxy request: {}", e);
+            RouteError::BadRequest()
+        })?;
 
     Ok(res)
+}
+
+fn is_exclude_header(name: &HeaderName) -> bool {
+    matches!(
+        name.as_str(),
+        "host"
+            | "connection"
+            | "proxy-authenticate"
+            | "upgrade"
+            | "proxy-authorization"
+            | "keep-alive"
+            | "transfer-encoding"
+            | "te"
+    )
+}
+
+fn copy_headers(from: &http::HeaderMap, to: &mut http::HeaderMap) {
+    for (name, value) in from.iter() {
+        if !is_exclude_header(name) {
+            to.append(name.clone(), value.clone());
+        }
+    }
 }
