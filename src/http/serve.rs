@@ -101,33 +101,6 @@ pub async fn serve(
         "Request - uri: {:?}, path: {:?}, request: {:?}",
         uri, path, request
     );
-    // Resolve the parent path:
-    // - If `path` is provided, extract the parent segment from the URI.
-    // - If `path` is None, use the URI path directly (ensuring it ends with '/').
-    /// Resolves the parent path from the URI and optional path segment.
-    fn resolve_parent_path(uri: &Uri, path: Option<&Path<String>>) -> String {
-        match path {
-            Some(path) => {
-                let uri_path = uri.path();
-                // use path sub to this uri path
-                // to find parent path that store in ROUTE_MAP
-                // uri: /assets/css/styles.07713cb6.css, path: Some(Path("assets/css/styles.07713cb6.css")
-                let parent_path = uri_path.get(0..uri_path.len() - path.len());
-                parent_path.unwrap_or("/").to_string()
-            }
-            None => {
-                // uri need end with /
-                // because global ROUTE_MAP key is end with /
-                // so we need add / to uri path to get correct Route
-                let uri_path = uri.path().to_string();
-                if uri_path.ends_with('/') {
-                    uri_path
-                } else {
-                    format!("{uri_path}/")
-                }
-            }
-        }
-    }
 
     let parent_path = resolve_parent_path(&uri, path.as_ref());
     // parent_path is key in route map
@@ -306,4 +279,32 @@ async fn calculate_etag(file: &File, path: &str) -> anyhow::Result<String> {
     let etag = format!("W/\"{:?}\"", md5::compute(etag));
     debug!("file {:?} etag: {:?}", path, etag);
     Ok(etag)
+}
+
+// Resolve the parent path:
+// - If `path` is provided, extract the parent segment from the URI.
+// - If `path` is None, use the URI path directly (ensuring it ends with '/').
+/// Resolves the parent path from the URI and optional path segment.
+pub fn resolve_parent_path(uri: &Uri, path: Option<&Path<String>>) -> String {
+    match path {
+        Some(path) => {
+            let uri_path = uri.path();
+            // use path sub to this uri path
+            // to find parent path that store in ROUTE_MAP
+            // uri: /assets/css/styles.07713cb6.css, path: Some(Path("assets/css/styles.07713cb6.css")
+            let parent_path = uri_path.get(0..uri_path.len() - path.len());
+            parent_path.unwrap_or("/").to_string()
+        }
+        None => {
+            // uri need end with /
+            // because global ROUTE_MAP key is end with /
+            // so we need add / to uri path to get correct Route
+            let uri_path = uri.path().to_string();
+            if uri_path.ends_with('/') {
+                uri_path
+            } else {
+                format!("{uri_path}/")
+            }
+        }
+    }
 }

@@ -7,7 +7,7 @@ use axum_extra::extract::Host;
 use http::{HeaderName, Uri};
 use reqwest::Client;
 
-use crate::utils::parse_port_from_host;
+use crate::{http::serve::resolve_parent_path, utils::parse_port_from_host};
 
 use super::{
     HOSTS,
@@ -28,34 +28,6 @@ pub async fn serve(
         .map(|v| v.as_str())
         .unwrap_or(req_path);
 
-    // Resolve the parent path:
-    // - If `path` is provided, extract the parent segment from the URI.
-    // - If `path` is None, use the URI path directly (ensuring it ends with '/').
-    /// Resolves the parent path from the URI and optional path segment.
-    fn resolve_parent_path(uri: &Uri, path: Option<&Path<String>>) -> String {
-        match path {
-            Some(path) => {
-                let uri_path = uri.path();
-                // use path sub to this uri path
-                // to find parent path that store in ROUTE_MAP
-                // uri: /assets/css/styles.07713cb6.css, path: Some(Path("assets/css/styles.07713cb6.css")
-                let parent_path = uri_path.get(0..uri_path.len() - path.len());
-                parent_path.unwrap_or("/").to_string()
-            }
-            None => {
-                // uri need end with /
-                // because global ROUTE_MAP key is end with /
-                // so we need add / to uri path to get correct Route
-                let uri_path = uri.path().to_string();
-                if uri_path.ends_with('/') {
-                    uri_path
-                } else {
-                    format!("{uri_path}/")
-                }
-            }
-        }
-    }
-
     let scheme = req.uri().scheme_str().unwrap_or("http");
     let port = parse_port_from_host(&host, scheme).ok_or(RouteError::BadRequest())?;
     let route_map = &HOSTS.get(&port).ok_or(RouteError::BadRequest())?.route_map;
@@ -75,12 +47,9 @@ pub async fn serve(
     tracing::debug!("reverse proxy uri: {:?}", &uri);
     *req.uri_mut() = Uri::try_from(uri.clone()).map_err(|_| RouteError::InternalError())?;
 
+    // forward request headers
     let client = Client::new();
     let mut forward_req = client.request(req.method().clone(), uri);
-    // let reqwest_response = client.get(uri).send().await.map_err(|e| {
-    //     tracing::error!("Failed to proxy request: {}", e);
-    //     RouteError::BadRequest()
-    // })?;
     for (name, value) in req.headers().iter() {
         if !is_exclude_header(name) {
             forward_req = forward_req.header(name.clone(), value.clone());
