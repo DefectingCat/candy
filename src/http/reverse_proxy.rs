@@ -19,7 +19,7 @@ pub async fn serve(
     req_uri: Uri,
     path: Option<Path<String>>,
     Host(host): Host,
-    mut req: Request,
+    mut req: Request<Body>,
 ) -> RouteResult<impl IntoResponse> {
     let req_path = req.uri().path();
     let path_query = req
@@ -56,11 +56,26 @@ pub async fn serve(
         }
     }
 
+    // forward request body
+    let body = req.into_body();
+    // TODO: set body size limit
+    let bytes = axum::body::to_bytes(body, 2048).await.map_err(|err| {
+        tracing::error!("Failed to proxy request: {}", err);
+        RouteError::InternalError()
+    })?;
+    let body_str = String::from_utf8(bytes.to_vec()).map_err(|err| {
+        tracing::error!("Failed to proxy request: {}", err);
+        RouteError::InternalError()
+    })?;
+    forward_req = forward_req.body(body_str);
+
+    // send reverse proxy request
     let reqwest_response = forward_req.send().await.map_err(|e| {
         tracing::error!("Failed to proxy request: {}", e);
         RouteError::BadRequest()
     })?;
 
+    // response from reverse proxy server
     let mut response_builder = Response::builder().status(reqwest_response.status());
     copy_headers(
         reqwest_response.headers(),
