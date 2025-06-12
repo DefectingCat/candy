@@ -1,3 +1,12 @@
+# Changelog
+
+## 0.2.0
+
+Features:
+
+- Reverse proxy
+- Refactor with axum
+
 ## 0.1.1
 
 Features:
@@ -24,11 +33,11 @@ Features:
 
 - Graceful shutdown
 - `keep-alive` timeout setting
-- HTTP Etag: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag#etag_value
+- HTTP Etag: <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag#etag_value>
 - Content compress
-    - zstd
-    - gzip
-    - deflate
-    - br
+  - zstd
+  - gzip
+  - deflate
+  - br
 - Stream file
 - Stream content compress
