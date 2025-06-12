@@ -2,9 +2,8 @@ use std::{net::SocketAddr, sync::LazyLock, time::Duration};
 
 use anyhow::anyhow;
 use axum::{Router, middleware, routing::get};
-use axum_server::tls_rustls::RustlsConfig;
+use axum_server::{Handle, tls_rustls::RustlsConfig};
 use dashmap::DashMap;
-use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer};
 use tracing::{debug, info, warn};
@@ -12,7 +11,7 @@ use tracing::{debug, info, warn};
 use crate::{
     config::SettingHost,
     middlewares::{add_headers, add_version, logging_route},
-    utils::{shutdown, shutdown_signal},
+    utils::graceful_shutdown,
 };
 
 pub mod error;
@@ -123,6 +122,11 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     router = logging_route(router);
 
     let addr = format!("{}:{}", host.ip, host.port);
+    let addr: SocketAddr = addr.parse()?;
+
+    let handle = Handle::new();
+    // Spawn a task to gracefully shutdown server.
+    tokio::spawn(graceful_shutdown(handle.clone()));
 
     // check ssl eanbled or not
     // if ssl enabled
@@ -140,16 +144,15 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
         debug!("certificate {} certificate_key {}", cert, key);
 
         let rustls_config = RustlsConfig::from_pem_file(cert, key).await?;
-        let addr: SocketAddr = addr.parse()?;
         info!("listening on https://{}", addr);
         axum_server::bind_rustls(addr, rustls_config)
+            .handle(handle)
             .serve(router.into_make_service())
             .await?;
     } else {
-        let listener = TcpListener::bind(&addr).await?;
-        info!("listening on http://{}", addr);
-        axum::serve(listener, router)
-            .with_graceful_shutdown(shutdown_signal(shutdown))
+        axum_server::bind(addr)
+            .handle(handle)
+            .serve(router.into_make_service())
             .await?;
     }
 
