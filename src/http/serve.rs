@@ -63,6 +63,32 @@ macro_rules! custom_not_found {
     };
 }
 
+macro_rules! custom_error_page {
+    ($host_route:expr, $request:expr) => {
+        async {
+            let page = $host_route
+                .error_page
+                .as_ref()
+                .ok_or(RouteError::InternalError())?;
+            let root = $host_route
+                .root
+                .as_ref()
+                .ok_or(RouteError::InternalError())?;
+            let path = format!("{}/{}", root, page.page);
+            let status = StatusCode::from_str(page.status.to_string().as_ref())
+                .map_err(|_| RouteError::BadRequest())?;
+            debug!("custom not found path: {:?}", path);
+            match stream_file(path.into(), $request, Some(status)).await {
+                Ok(res) => RouteResult::Ok(res),
+                Err(e) => {
+                    println!("Failed to stream file: {:?}", e);
+                    RouteResult::Err(RouteError::InternalError())
+                }
+            }
+        }
+    };
+}
+
 /// Serve static files.
 ///
 /// This function handles requests for static files by:
@@ -149,8 +175,7 @@ pub async fn serve(
     }
     let Some(path_exists) = path_exists else {
         debug!("No valid file found in path candidates");
-        // return Err(RouteError::InternalError());
-        return custom_not_found!(host_route, request).await;
+        return custom_error_page!(host_route, request).await;
     };
     match stream_file(path_exists.into(), request, None).await {
         Ok(res) => Ok(res),
@@ -296,7 +321,7 @@ pub fn resolve_parent_path(uri: &Uri, path: Option<&Path<String>>) -> String {
             parent_path.unwrap_or("/").to_string()
         }
         None => {
-            // uri need end with /
+            // uri needs end with /
             // because global ROUTE_MAP key is end with /
             // so we need add / to uri path to get correct Route
             let uri_path = uri.path().to_string();
