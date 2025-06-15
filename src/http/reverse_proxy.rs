@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::{
     body::Body,
     extract::{Path, Request},
@@ -35,11 +37,11 @@ pub async fn serve(
 
     let parent_path = resolve_parent_path(&req_uri, path.as_ref());
     tracing::debug!("parent path: {:?}", parent_path);
-    let proxy_pass = route_map
+    let proxy_config = route_map
         .get(&parent_path)
         .ok_or(RouteError::RouteNotFound())?;
-    tracing::debug!("proxy pass: {:?}", proxy_pass);
-    let Some(ref proxy_pass) = proxy_pass.proxy_pass else {
+    tracing::debug!("proxy pass: {:?}", proxy_config);
+    let Some(ref proxy_pass) = proxy_config.proxy_pass else {
         // return custom_not_found!(host_route, request).await;
         return Err(RouteError::RouteNotFound());
     };
@@ -47,9 +49,13 @@ pub async fn serve(
     tracing::debug!("reverse proxy uri: {:?}", &uri);
     *req.uri_mut() = Uri::try_from(uri.clone()).map_err(|_| RouteError::InternalError())?;
 
+    let timeout = proxy_config.proxy_timeout;
+
     // forward request headers
     let client = Client::new();
-    let mut forward_req = client.request(req.method().clone(), uri);
+    let mut forward_req = client
+        .request(req.method().clone(), uri)
+        .timeout(Duration::from_secs(timeout.into()));
     for (name, value) in req.headers().iter() {
         if !is_exclude_header(name) {
             forward_req = forward_req.header(name.clone(), value.clone());
