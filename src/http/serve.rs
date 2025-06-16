@@ -63,6 +63,16 @@ macro_rules! custom_not_found {
     };
 }
 
+/// Macro to handle custom "error" responses for a route.
+///
+/// When an internal server error occurs, this macro:
+/// 1. Checks if the `host_route` has a configured `error_page`.
+/// 2. Attempts to serve the custom "error" file (e.g., `500.html`).
+/// 3. Falls back to `InternalError` if the file is missing or unreadable.
+///
+/// # Arguments
+/// - `$host_route`: The route configuration containing `error_page` and `root` paths.
+/// - `$request`: The HTTP request object.
 macro_rules! custom_error_page {
     ($host_route:expr, $request:expr) => {
         async {
@@ -77,7 +87,7 @@ macro_rules! custom_error_page {
             let path = format!("{}/{}", root, page.page);
             let status = StatusCode::from_str(page.status.to_string().as_ref())
                 .map_err(|_| RouteError::BadRequest())?;
-            debug!("custom not found path: {:?}", path);
+            debug!("custom error path: {:?}", path);
             match stream_file(path.into(), $request, Some(status)).await {
                 Ok(res) => RouteResult::Ok(res),
                 Err(e) => {
@@ -175,7 +185,7 @@ pub async fn serve(
     }
     let Some(path_exists) = path_exists else {
         debug!("No valid file found in path candidates");
-        return custom_error_page!(host_route, request).await;
+        return custom_not_found!(host_route, request).await;
     };
     match stream_file(path_exists.into(), request, None).await {
         Ok(res) => Ok(res),
