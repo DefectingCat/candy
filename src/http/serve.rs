@@ -2,18 +2,16 @@ use std::{path::PathBuf, str::FromStr, time::UNIX_EPOCH};
 
 use anyhow::{Context, anyhow};
 use axum::{
+    body::Body,
     extract::{Path, Request},
     response::{IntoResponse, Response},
 };
 use axum_extra::extract::Host;
 use dashmap::mapref::one::Ref;
-use futures_util::StreamExt;
 use http::{
     HeaderValue, StatusCode, Uri,
     header::{CONTENT_TYPE, ETAG, IF_NONE_MATCH},
 };
-use http_body_util::StreamBody;
-use hyper::body::Frame;
 use mime_guess::from_path;
 use tokio::fs::{self, File};
 use tokio_util::io::ReaderStream;
@@ -51,7 +49,7 @@ macro_rules! custom_not_found {
             let path = format!("{}/{}", root, page.page);
             let status = StatusCode::from_str(page.status.to_string().as_ref())
                 .map_err(|_| RouteError::BadRequest())?;
-            debug!("custom not found path: {:?}", path);
+            tracing::debug!("custom not found path: {:?}", path);
             match stream_file(path.into(), $request, Some(status)).await {
                 Ok(res) => RouteResult::Ok(res),
                 Err(e) => {
@@ -234,7 +232,7 @@ async fn stream_file(
         .await
         .with_context(|| "open file failed")?;
 
-    let path_str = path.to_str().ok_or(anyhow!(""))?;
+    let path_str = path.to_str().ok_or(anyhow!("convert path to str failed"))?;
     let etag = calculate_etag(&file, path_str).await?;
 
     let mut response = Response::builder();
@@ -260,8 +258,9 @@ async fn stream_file(
     } else {
         ReaderStream::new(file)
     };
-    let stream = stream.map(|res| res.map(Frame::data));
-    let body = StreamBody::new(stream);
+    // let stream = stream.map(|res| res.map(Frame::data));
+    // let body = StreamBody::new(stream);
+    let body = Body::from_stream(stream);
 
     let mime = from_path(path).first_or_octet_stream();
     response
@@ -281,11 +280,13 @@ async fn stream_file(
     if let Some(status) = status {
         response = response.status(status);
     }
-    let response = response.body(body).with_context(|| "")?;
+    let response = response
+        .body(body)
+        .with_context(|| "Failed to build HTTP response with body")?;
     Ok(response)
 }
 
-async fn calculate_etag(file: &File, path: &str) -> anyhow::Result<String> {
+pub async fn calculate_etag(file: &File, path: &str) -> anyhow::Result<String> {
     // calculate file metadata as etag
     let metadata = file
         .metadata()
