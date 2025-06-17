@@ -1,9 +1,15 @@
 [[host]]
 ip = "0.0.0.0"
-port = 4000
-
+port = 80
 [[host.route]]
 # route path: GET /
 location = "/"
 # static file path
 root = "./html"
+
+[[host]]
+ip = "0.0.0.0"
+port = 8080
+[[host.route]]
+location = "/"
+proxy_pass = "https://www.google.com/"

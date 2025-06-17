@@ -6,12 +6,13 @@ Features:
 
 - Reverse proxy
 - Refactor with axum
+- SSL support
 
 ## 0.1.1
 
 Features:
 
-- Gitlab CI integration
+- GitLab CI integration
 - FreeBSD support
 - Reverse proxy
 - Connection timeout
