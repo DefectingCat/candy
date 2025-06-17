@@ -1,11 +1,8 @@
 use crate::{
-    consts::{
-        default_disabled, host_index, mime_default, timeout_default, types_default,
-        upstream_timeout_default,
-    },
+    consts::{default_disabled, host_index, timeout_default, upstream_timeout_default},
     error::Result,
 };
-use std::{borrow::Cow, fs};
+use std::fs;
 
 use anyhow::Context;
 use dashmap::DashMap;
@@ -69,7 +66,7 @@ pub struct SettingHost {
     ///     "/doc": <SettingRoute>
     /// }
     #[serde(skip)]
-    pub route_map: DashMap<String, SettingRoute>,
+    pub route_map: HostRouteMap,
     /// HTTP keep-alive timeout
     #[serde(default = "timeout_default")]
     pub timeout: u16,
@@ -78,17 +75,9 @@ pub struct SettingHost {
     pub headers: Option<HeaderMap>,
 }
 
-pub type MIMEType = DashMap<Cow<'static, str>, Cow<'static, str>>;
-
 /// Whole config settings
 #[derive(Deserialize, Clone, Debug, Default)]
 pub struct Settings {
-    /// Default file type for unknow file
-    #[serde(default = "mime_default")]
-    pub default_type: Cow<'static, str>,
-    /// MIME types
-    #[serde(default = "types_default")]
-    pub types: MIMEType,
     /// Virtual host
     pub host: Vec<SettingHost>,
 }

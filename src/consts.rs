@@ -1,8 +1,4 @@
-use std::{borrow::Cow, env};
-
-use dashmap::DashMap;
-
-use crate::config::MIMEType;
+use std::env;
 
 // pre defined
 pub const NAME: &str = env!("CARGO_PKG_NAME");
@@ -24,27 +20,11 @@ pub fn timeout_default() -> u16 {
     TIMEOUT_EFAULT
 }
 
-// default mime type for unknow file
-pub const MIME_DEFAULT: &str = "application/octet-stream";
-pub fn mime_default() -> Cow<'static, str> {
-    MIME_DEFAULT.into()
-}
-
 // default reverse proxy upstream timeout
 pub const UPSTREAM_TIMEOUT: u16 = 5;
 pub fn upstream_timeout_default() -> u16 {
     UPSTREAM_TIMEOUT
 }
-
-// default mime types
-pub fn types_default() -> MIMEType {
-    DashMap::new()
-}
-// macro_rules! insert_mime {
-//     ($name:literal, $mime:ident, $map:ident) => {
-//         $map.entry($name.into()).or_insert($mime.into());
-//     };
-// }
 
 // default boolean false
 pub fn default_disabled() -> bool {

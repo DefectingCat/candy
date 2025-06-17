@@ -150,6 +150,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
             .serve(router.into_make_service())
             .await?;
     } else {
+        info!("listening on http://{}", addr);
         axum_server::bind(addr)
             .handle(handle)
             .serve(router.into_make_service())
