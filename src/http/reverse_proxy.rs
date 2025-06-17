@@ -27,11 +27,18 @@ use super::{
 };
 
 macro_rules! custom_not_found {
-    ($host_config:expr, $request:expr) => {{
-        let page = $host_config
-            .not_found_page
-            .as_ref()
-            .ok_or(RouteError::RouteNotFound())?;
+    ($host_config:expr, $request:expr, $is_error_page:expr) => {{
+        let page = if $is_error_page {
+            $host_config
+                .error_page
+                .as_ref()
+                .ok_or(RouteError::RouteNotFound())?
+        } else {
+            $host_config
+                .not_found_page
+                .as_ref()
+                .ok_or(RouteError::RouteNotFound())?
+        };
         let root = $host_config
             .root
             .as_ref()
@@ -65,7 +72,6 @@ macro_rules! custom_not_found {
         } else {
             ReaderStream::new(file)
         };
-
         let body = Body::from_stream(stream);
 
         let mime = from_path(path).first_or_octet_stream();
@@ -132,7 +138,7 @@ pub async fn serve(
         .ok_or(RouteError::RouteNotFound())?;
     tracing::debug!("proxy pass: {:?}", proxy_config);
     let Some(ref proxy_pass) = proxy_config.proxy_pass else {
-        return custom_not_found!(proxy_config, req);
+        return custom_not_found!(proxy_config, req, true);
     };
     let uri = format!("{proxy_pass}{path_query}");
     tracing::debug!("reverse proxy uri: {:?}", &uri);

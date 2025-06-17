@@ -36,12 +36,19 @@ use super::error::RouteResult;
 /// # Arguments
 /// - `$host_route`: The route configuration containing `not_found_page` and `root` paths.
 macro_rules! custom_not_found {
-    ($host_route:expr, $request:expr) => {
+    ($host_route:expr, $request:expr, $is_error_page:expr) => {
         async {
-            let page = $host_route
-                .not_found_page
-                .as_ref()
-                .ok_or(RouteError::RouteNotFound())?;
+            let page = if $is_error_page {
+                $host_route
+                    .error_page
+                    .as_ref()
+                    .ok_or(RouteError::RouteNotFound())?
+            } else {
+                $host_route
+                    .not_found_page
+                    .as_ref()
+                    .ok_or(RouteError::RouteNotFound())?
+            };
             let root = $host_route
                 .root
                 .as_ref()
@@ -50,42 +57,6 @@ macro_rules! custom_not_found {
             let status = StatusCode::from_str(page.status.to_string().as_ref())
                 .map_err(|_| RouteError::BadRequest())?;
             tracing::debug!("custom not found path: {:?}", path);
-            match stream_file(path.into(), $request, Some(status)).await {
-                Ok(res) => RouteResult::Ok(res),
-                Err(e) => {
-                    println!("Failed to stream file: {:?}", e);
-                    RouteResult::Err(RouteError::InternalError())
-                }
-            }
-        }
-    };
-}
-
-/// Macro to handle custom "error" responses for a route.
-///
-/// When an internal server error occurs, this macro:
-/// 1. Checks if the `host_route` has a configured `error_page`.
-/// 2. Attempts to serve the custom "error" file (e.g., `500.html`).
-/// 3. Falls back to `InternalError` if the file is missing or unreadable.
-///
-/// # Arguments
-/// - `$host_route`: The route configuration containing `error_page` and `root` paths.
-/// - `$request`: The HTTP request object.
-macro_rules! custom_error_page {
-    ($host_route:expr, $request:expr) => {
-        async {
-            let page = $host_route
-                .error_page
-                .as_ref()
-                .ok_or(RouteError::InternalError())?;
-            let root = $host_route
-                .root
-                .as_ref()
-                .ok_or(RouteError::InternalError())?;
-            let path = format!("{}/{}", root, page.page);
-            let status = StatusCode::from_str(page.status.to_string().as_ref())
-                .map_err(|_| RouteError::BadRequest())?;
-            debug!("custom error path: {:?}", path);
             match stream_file(path.into(), $request, Some(status)).await {
                 Ok(res) => RouteResult::Ok(res),
                 Err(e) => {
@@ -151,7 +122,7 @@ pub async fn serve(
     // check static file root configuration
     // if root is None, then return InternalError
     let Some(ref root) = host_route.root else {
-        return custom_not_found!(host_route, request).await;
+        return custom_not_found!(host_route, request, true).await;
     };
     // try find index file first
     // build index filename as vec
@@ -183,7 +154,7 @@ pub async fn serve(
     }
     let Some(path_exists) = path_exists else {
         debug!("No valid file found in path candidates");
-        return custom_not_found!(host_route, request).await;
+        return custom_not_found!(host_route, request, false).await;
     };
     match stream_file(path_exists.into(), request, None).await {
         Ok(res) => Ok(res),
