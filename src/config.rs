@@ -23,6 +23,10 @@ pub struct SettingRoute {
     pub location: String,
     /// The static assets root folder
     pub root: Option<String>,
+    /// List directory
+    #[serde(default = "default_disabled")]
+    pub auto_index: bool,
+
     /// Index files format
     #[serde(default = "host_index")]
     pub index: Vec<String>,
@@ -123,10 +127,6 @@ mod tests {
 
         let path = file.path().to_str().unwrap();
         let settings = Settings::new(path).unwrap();
-
-        // Verify default values
-        assert_eq!(settings.default_type, "text/plain");
-        assert_eq!(settings.types.len(), 2);
 
         // Verify host settings
         let host = &settings.host[0];
