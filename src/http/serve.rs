@@ -1,4 +1,8 @@
-use std::{path::PathBuf, str::FromStr, time::UNIX_EPOCH};
+use std::{
+    path::PathBuf,
+    str::FromStr,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::{Context, anyhow};
 use axum::{
@@ -152,10 +156,24 @@ pub async fn serve(
             break;
         }
     }
-    let Some(path_exists) = path_exists else {
-        debug!("No valid file found in path candidates");
-        return custom_not_found!(host_route, request, false).await;
+    let path_exists = match path_exists {
+        Some(path_exists) => path_exists,
+        None => {
+            if host_route.auto_index {
+                let root_path = PathBuf::from(root);
+                let list = list_dir(&root_path).await?;
+                debug!("list: {:?}", list);
+                todo!()
+            } else {
+                debug!("No valid file found in path candidates");
+                return custom_not_found!(host_route, request, false).await;
+            }
+        }
     };
+    // let Some(path_exists) = path_exists else {
+    //     debug!("No valid file found in path candidates");
+    //     return custom_not_found!(host_route, request, false).await;
+    // };
     match stream_file(path_exists.into(), request, None).await {
         Ok(res) => Ok(res),
         Err(e) => {
@@ -229,8 +247,6 @@ async fn stream_file(
     } else {
         ReaderStream::new(file)
     };
-    // let stream = stream.map(|res| res.map(Frame::data));
-    // let body = StreamBody::new(stream);
     let body = Body::from_stream(stream);
 
     let mime = from_path(path).first_or_octet_stream();
@@ -314,4 +330,53 @@ pub fn resolve_parent_path(uri: &Uri, path: Option<&Path<String>>) -> String {
             }
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct DirList {
+    pub name: String,
+    pub path: PathBuf,
+    pub is_dir: bool,
+    pub size: u64,
+    pub last_modified: SystemTime,
+}
+
+async fn list_dir(path: &PathBuf) -> anyhow::Result<Vec<DirList>> {
+    let mut list = vec![];
+    let mut entries = fs::read_dir(path)
+        .await
+        .with_context(|| format!("无法读取目录: {}", path.display()))?;
+
+    let mut tasks = vec![];
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .with_context(|| format!("读取目录条目失败: {}", path.display()))?
+    {
+        let task = tokio::task::spawn(async move {
+            let metadata = entry
+                .metadata()
+                .await
+                .with_context(|| "get file metadata failed")?;
+            let last_modified = metadata
+                .modified()
+                .with_context(|| "get file modified failed")?;
+            let size = metadata.len();
+            let is_dir = metadata.is_dir();
+            let name = entry.file_name().to_string_lossy().to_string();
+            let dir = DirList {
+                name,
+                path: entry.path(),
+                is_dir,
+                size,
+                last_modified,
+            };
+            anyhow::Ok(dir)
+        });
+        tasks.push(task);
+    }
+    for task in tasks {
+        list.push(task.await??);
+    }
+    Ok(list)
 }

@@ -26,6 +26,9 @@ location = "/"
 root = "./html"
 # Only use for root field
 index = ["index.html"]
+# List directory
+auto_index = true
+
 # Custom 500 page
 [host.route.error_page]
 status = 500
