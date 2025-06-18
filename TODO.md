@@ -2,13 +2,12 @@
 
 ## Configuration
 
-- [ ] File MIME type
 - [x] Overwrite headers in config
 - [x] Config init tests
-- [ ] Error page
-- [ ] Custom error page with stats code
+- [x] Error page
+- [x] Custom error page with stats code
 - [ ] Logging to file
-- [ ] Benchs
+- [ ] Benches
 - [ ] Max body size
 - [x] HTTP 2
 
@@ -25,7 +24,7 @@
 - [ ] HTTP redirect
 - [ ] Load balance
 - [ ] Proxy
-- [ ] Reverse Proxy
+- [x] Reverse Proxy
   - [x] Connect to upstream timeout setting
   - [x] Follow http 301
   - [x] Custom headers
