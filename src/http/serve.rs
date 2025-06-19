@@ -1,8 +1,4 @@
-use std::{
-    path::PathBuf,
-    str::FromStr,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{path::PathBuf, str::FromStr, time::UNIX_EPOCH};
 
 use anyhow::{Context, anyhow};
 use axum::{
@@ -13,7 +9,7 @@ use axum::{
 use axum_extra::extract::Host;
 use dashmap::mapref::one::Ref;
 use http::{
-    HeaderValue, StatusCode, Uri,
+    HeaderMap, HeaderValue, StatusCode, Uri,
     header::{CONTENT_TYPE, ETAG, IF_NONE_MATCH},
 };
 use mime_guess::from_path;
@@ -162,8 +158,10 @@ pub async fn serve(
             if host_route.auto_index {
                 let root_path = PathBuf::from(root);
                 let list = list_dir(&root_path).await?;
-                debug!("list: {:?}", list);
-                todo!()
+                let list_html = render_list_html(list);
+                let mut headers = HeaderMap::new();
+                headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/html"));
+                return Ok((headers, list_html).into_response());
             } else {
                 debug!("No valid file found in path candidates");
                 return custom_not_found!(host_route, request, false).await;
@@ -216,7 +214,7 @@ async fn stream_file(
     path: PathBuf,
     request: Request,
     status: Option<StatusCode>,
-) -> RouteResult<impl IntoResponse> {
+) -> RouteResult<Response<Body>> {
     let file = File::open(path.clone())
         .await
         .with_context(|| "open file failed")?;
@@ -233,8 +231,6 @@ async fn stream_file(
             .with_context(|| "parse if-none-match failed")?
             == etag
     {
-        // let empty_stream = stream::empty::<u8>();
-        // let body = Some(StreamBody::new(empty_stream));
         response = response.status(StatusCode::NOT_MODIFIED);
         not_modified = true;
     };
@@ -332,16 +328,107 @@ pub fn resolve_parent_path(uri: &Uri, path: Option<&Path<String>>) -> String {
     }
 }
 
+fn render_list_html(list: Vec<DirList>) -> String {
+    let body_rows = list
+        .iter()
+        .map(|dist| {
+            format!(
+                r#"<tr><td><a href="{}">{}</a></td><td>{}</td><td>{}</td></tr>"#,
+                dist.path.display(),
+                dist.name,
+                dist.size,
+                dist.last_modified,
+                // dist.is_dir
+            )
+        })
+        .collect::<Vec<String>>()
+        .join("");
+
+    let list_html = format!(
+        r#"
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Index of /</title>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #ffffff;
+            color: #000000;
+        }}
+        h1 {{
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            text-align: left;
+        }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid #dddddd;
+        }}
+        th, td {{
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid #dddddd;
+        }}
+        th {{
+            background-color: #f0f0f0;
+            font-weight: bold;
+        }}
+        tr:nth-child(even) {{
+            background-color: #f9f9f9;
+        }}
+        tr:hover {{
+            background-color: #f0f0f0;
+        }}
+        .dir {{
+            color: #0066cc;
+            font-weight: bold;
+        }}
+        .file {{
+            color: #000000;
+        }}
+        a {{
+            text-decoration: none;
+            color: inherit;
+        }}
+        a:hover {{
+            text-decoration: underline;
+        }}
+    </style>
+</head>
+<body>
+    <h1>Index of /</h1>
+    <table>
+        <tr>
+            <th>Name</th>
+            <th>Last Modified</th>
+            <th>Size</th>
+        </tr>
+        <tbody id="directory-content">
+            {body_rows}
+        </tbody>
+    </table>
+</body>
+</html>
+    "#
+    );
+    list_html
+}
+
 #[derive(Debug, Clone)]
 pub struct DirList {
     pub name: String,
     pub path: PathBuf,
     pub is_dir: bool,
     pub size: u64,
-    pub last_modified: SystemTime,
+    pub last_modified: String,
 }
 
 async fn list_dir(path: &PathBuf) -> anyhow::Result<Vec<DirList>> {
+    use chrono::{Local, TimeZone};
+
     let mut list = vec![];
     let mut entries = fs::read_dir(path)
         .await
@@ -358,9 +445,23 @@ async fn list_dir(path: &PathBuf) -> anyhow::Result<Vec<DirList>> {
                 .metadata()
                 .await
                 .with_context(|| "get file metadata failed")?;
+            // convert last modified to string
             let last_modified = metadata
                 .modified()
                 .with_context(|| "get file modified failed")?;
+            let last_modified = last_modified
+                .duration_since(UNIX_EPOCH)
+                .with_context(|| "calculate unix timestamp failed")?;
+            let datetime = match Local
+                .timestamp_opt(last_modified.as_secs() as i64, last_modified.subsec_nanos())
+            {
+                chrono::LocalResult::Ambiguous(earlier, later) => {
+                    tracing::warn!("发现歧义时间: {} 和 {}", earlier, later);
+                    earlier // 选择较早的时间
+                }
+                _ => Local::now(),
+            };
+            let last_modified = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
             let size = metadata.len();
             let is_dir = metadata.is_dir();
             let name = entry.file_name().to_string_lossy().to_string();
