@@ -225,15 +225,23 @@ async fn stream_file(
     let mut response = Response::builder();
     let mut not_modified = false;
     // check request if-none-match
-    if let Some(if_none_match) = request.headers().get(IF_NONE_MATCH)
-        && if_none_match
-            .to_str()
-            .with_context(|| "parse if-none-match failed")?
-            == etag
-    {
-        response = response.status(StatusCode::NOT_MODIFIED);
-        not_modified = true;
-    };
+    if let Some(if_none_match) = request.headers().get(IF_NONE_MATCH) {
+        if let Ok(if_none_match_str) = if_none_match.to_str() {
+            if if_none_match_str == etag {
+                response = response.status(StatusCode::NOT_MODIFIED);
+                not_modified = true;
+            }
+        }
+    }
+    // if let Some(if_none_match) = request.headers().get(IF_NONE_MATCH)
+    //     && if_none_match
+    //         .to_str()
+    //         .with_context(|| "parse if-none-match failed")?
+    //         == etag
+    // {
+    //     response = response.status(StatusCode::NOT_MODIFIED);
+    //     not_modified = true;
+    // };
 
     let stream = if not_modified {
         let empty = File::open(PathBuf::from("/dev/null"))
