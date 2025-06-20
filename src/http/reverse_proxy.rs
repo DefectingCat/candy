@@ -7,6 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_extra::extract::Host;
+use dashmap::mapref::one::Ref;
 use http::{
     HeaderName, HeaderValue, StatusCode, Uri,
     header::{CONTENT_TYPE, ETAG, IF_NONE_MATCH},
@@ -17,6 +18,7 @@ use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
 use crate::{
+    config::SettingRoute,
     http::serve::{calculate_etag, resolve_parent_path},
     utils::parse_port_from_host,
 };
@@ -26,83 +28,102 @@ use super::{
     error::{RouteError, RouteResult},
 };
 
-macro_rules! custom_not_found {
-    ($host_config:expr, $request:expr, $is_error_page:expr) => {{
-        let page = if $is_error_page {
-            $host_config
-                .error_page
-                .as_ref()
-                .ok_or(RouteError::RouteNotFound())?
-        } else {
-            $host_config
-                .not_found_page
-                .as_ref()
-                .ok_or(RouteError::RouteNotFound())?
-        };
-        let root = $host_config
-            .root
+/// 处理自定义错误页面（如404、500等）的请求
+///
+/// 该函数根据配置信息加载自定义错误页面文件，并根据HTTP缓存机制
+/// 决定是返回完整内容还是304 Not Modified状态码。
+///
+/// # 参数
+/// - `host_config`: 主机路由配置，包含错误页面路径和根目录信息
+/// - `request`: 原始HTTP请求
+/// - `is_error_page`: 是否为错误页面（true: 错误页，false: 404页）
+///
+/// # 返回
+/// - `Ok(Response)`: 成功时返回HTTP响应
+/// - `Err(RouteError)`: 失败时返回路由错误
+pub async fn handle_custom_page(
+    host_config: Ref<'_, String, SettingRoute>,
+    request: Request<Body>,
+    is_error_page: bool,
+) -> RouteResult<Response<Body>> {
+    // 根据请求类型选择相应的页面配置
+    let page = if is_error_page {
+        host_config
+            .error_page
             .as_ref()
-            .ok_or(RouteError::InternalError())?;
-        let path = format!("{}/{}", root, page.page);
-        tracing::debug!("custom not found path: {:?}", path);
+            .ok_or(RouteError::RouteNotFound())?
+    } else {
+        host_config
+            .not_found_page
+            .as_ref()
+            .ok_or(RouteError::RouteNotFound())?
+    };
 
-        let file = File::open(path.clone())
-            .await
-            .with_context(|| "open file failed")?;
+    // 获取站点根目录配置
+    let root = host_config
+        .root
+        .as_ref()
+        .ok_or(RouteError::InternalError())?;
 
-        let etag = calculate_etag(&file, path.as_str()).await?;
-        let mut response = Response::builder();
-        let mut not_modified = false;
+    // 构建完整文件路径
+    let path = format!("{}/{}", root, page.page);
+    tracing::debug!("custom not found path: {:?}", path);
 
-        // if let Some(if_none_match) = $request.headers().get(IF_NONE_MATCH)
-        //     && if_none_match
-        //         .to_str()
-        //         .with_context(|| "parse if-none-match failed")?
-        //         == etag
-        // {
-        //     response = response.status(StatusCode::NOT_MODIFIED);
-        //     not_modified = true;
-        // };
-        if let Some(if_none_match) = $request.headers().get(IF_NONE_MATCH) {
-            if let Ok(if_none_match_str) = if_none_match.to_str() {
-                if if_none_match_str == etag {
-                    response = response.status(StatusCode::NOT_MODIFIED);
-                    not_modified = true;
-                }
+    // 打开文件并计算ETag用于缓存验证
+    let file = File::open(path.clone())
+        .await
+        .with_context(|| "open file failed")?;
+
+    let etag = calculate_etag(&file, path.as_str()).await?;
+    let mut response = Response::builder();
+    let mut not_modified = false;
+
+    // 检查客户端缓存验证头（If-None-Match）
+    if let Some(if_none_match) = request.headers().get(IF_NONE_MATCH) {
+        if let Ok(if_none_match_str) = if_none_match.to_str() {
+            if if_none_match_str == etag {
+                // 资源未修改，返回304状态码
+                response = response.status(StatusCode::NOT_MODIFIED);
+                not_modified = true;
             }
         }
+    }
 
-        let stream = if not_modified {
-            let empty = File::open(PathBuf::from("/dev/null"))
-                .await
-                .with_context(|| "open /dev/null failed")?;
-            ReaderStream::new(empty)
-        } else {
-            ReaderStream::new(file)
-        };
-        let body = Body::from_stream(stream);
+    // 准备响应主体
+    let stream = if not_modified {
+        // 304响应返回空内容
+        let empty = File::open(PathBuf::from("/dev/null"))
+            .await
+            .with_context(|| "open /dev/null failed")?;
+        ReaderStream::new(empty)
+    } else {
+        // 正常响应返回文件内容
+        ReaderStream::new(file)
+    };
+    let body = Body::from_stream(stream);
 
-        let mime = from_path(path).first_or_octet_stream();
-        response
-            .headers_mut()
-            .with_context(|| "insert header failed")?
-            .insert(
-                CONTENT_TYPE,
-                HeaderValue::from_str(mime.as_ref()).with_context(|| "insert header failed")?,
-            );
-        response
-            .headers_mut()
-            .with_context(|| "insert header failed")?
-            .insert(
-                ETAG,
-                HeaderValue::from_str(&etag).with_context(|| "insert header failed")?,
-            );
+    // 设置响应头：内容类型和ETag
+    let mime = from_path(path).first_or_octet_stream();
+    response
+        .headers_mut()
+        .with_context(|| "insert header failed")?
+        .insert(
+            CONTENT_TYPE,
+            HeaderValue::from_str(mime.as_ref()).with_context(|| "insert header failed")?,
+        );
+    response
+        .headers_mut()
+        .with_context(|| "insert header failed")?
+        .insert(
+            ETAG,
+            HeaderValue::from_str(&etag).with_context(|| "insert header failed")?,
+        );
 
-        let response = response
-            .body(body)
-            .with_context(|| "Failed to build HTTP response with body")?;
-        Ok(response)
-    }};
+    // 构建最终响应
+    let response = response
+        .body(body)
+        .with_context(|| "Failed to build HTTP response with body")?;
+    Ok(response)
 }
 
 /// Handles the reverse proxy logic for incoming requests.
@@ -146,7 +167,7 @@ pub async fn serve(
         .ok_or(RouteError::RouteNotFound())?;
     tracing::debug!("proxy pass: {:?}", proxy_config);
     let Some(ref proxy_pass) = proxy_config.proxy_pass else {
-        return custom_not_found!(proxy_config, req, true);
+        return handle_custom_page(proxy_config, req, true).await;
     };
     let uri = format!("{proxy_pass}{path_query}");
     tracing::debug!("reverse proxy uri: {:?}", &uri);
