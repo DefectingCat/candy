@@ -26,46 +26,54 @@ use crate::{
 
 use super::error::RouteResult;
 
-/// Macro to handle custom "not found" responses for a route.
+/// 处理自定义页面请求（如404错误页或自定义错误页面）
 ///
-/// When a requested file is not found, this macro:
-/// 1. Checks if the `host_route` has a configured `not_found_page`.
-/// 2. Attempts to serve the custom "not found" file (e.g., `404.html`).
-/// 3. Falls back to `RouteNotFound` or `InternalError` if the file is missing or unreadable.
+/// 此函数根据请求类型（错误页或404页）加载相应的自定义页面，
+/// 构建完整文件路径并尝试流式传输文件内容作为HTTP响应。
 ///
-/// # Arguments
-/// - `$host_route`: The route configuration containing `not_found_page` and `root` paths.
-macro_rules! custom_not_found {
-    ($host_route:expr, $request:expr, $is_error_page:expr) => {
-        async {
-            let page = if $is_error_page {
-                $host_route
-                    .error_page
-                    .as_ref()
-                    .ok_or(RouteError::RouteNotFound())?
-            } else {
-                $host_route
-                    .not_found_page
-                    .as_ref()
-                    .ok_or(RouteError::RouteNotFound())?
-            };
-            let root = $host_route
-                .root
-                .as_ref()
-                .ok_or(RouteError::InternalError())?;
-            let path = format!("{}/{}", root, page.page);
-            let status = StatusCode::from_str(page.status.to_string().as_ref())
-                .map_err(|_| RouteError::BadRequest())?;
-            tracing::debug!("custom not found path: {:?}", path);
-            match stream_file(path.into(), $request, Some(status)).await {
-                Ok(res) => RouteResult::Ok(res),
-                Err(e) => {
-                    println!("Failed to stream file: {:?}", e);
-                    RouteResult::Err(RouteError::InternalError())
-                }
-            }
-        }
+/// # 参数
+/// - `host_route`: 主机路由配置引用，包含页面位置和根目录信息
+/// - `request`: 原始HTTP请求
+/// - `is_error_page`: 是否为错误页面（true: 错误页，false: 404页）
+///
+/// # 返回
+/// - `RouteResult<Response>`: 成功时返回HTTP响应，失败时返回路由错误
+async fn custom_page(
+    host_route: Ref<'_, String, SettingRoute>,
+    request: Request<Body>,
+    is_error_page: bool,
+) -> RouteResult<Response<Body>> {
+    let page = if is_error_page {
+        host_route
+            .error_page
+            .as_ref()
+            .ok_or(RouteError::RouteNotFound())?
+    } else {
+        host_route
+            .not_found_page
+            .as_ref()
+            .ok_or(RouteError::RouteNotFound())?
     };
+
+    let root = host_route
+        .root
+        .as_ref()
+        .ok_or(RouteError::InternalError())?;
+
+    let path = format!("{}/{}", root, page.page);
+
+    let status = StatusCode::from_str(page.status.to_string().as_ref())
+        .map_err(|_| RouteError::BadRequest())?;
+
+    tracing::debug!("custom not found path: {:?}", path);
+
+    match stream_file(path.into(), request, Some(status)).await {
+        Ok(res) => RouteResult::Ok(res),
+        Err(e) => {
+            println!("Failed to stream file: {:?}", e);
+            RouteResult::Err(RouteError::InternalError())
+        }
+    }
 }
 
 /// Serve static files.
@@ -122,7 +130,7 @@ pub async fn serve(
     // check static file root configuration
     // if root is None, then return InternalError
     let Some(ref root) = host_route.root else {
-        return custom_not_found!(host_route, request, true).await;
+        return custom_page(host_route, request, true).await;
     };
     // try find index file first
     // build index filename as vec
@@ -164,7 +172,7 @@ pub async fn serve(
                 return Ok((headers, list_html).into_response());
             } else {
                 debug!("No valid file found in path candidates");
-                return custom_not_found!(host_route, request, false).await;
+                return custom_page(host_route, request, false).await;
             }
         }
     };
