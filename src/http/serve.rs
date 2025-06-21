@@ -241,15 +241,6 @@ async fn stream_file(
             }
         }
     }
-    // if let Some(if_none_match) = request.headers().get(IF_NONE_MATCH)
-    //     && if_none_match
-    //         .to_str()
-    //         .with_context(|| "parse if-none-match failed")?
-    //         == etag
-    // {
-    //     response = response.status(StatusCode::NOT_MODIFIED);
-    //     not_modified = true;
-    // };
 
     let stream = if not_modified {
         let empty = File::open(PathBuf::from("/dev/null"))
@@ -352,8 +343,8 @@ fn render_list_html(list: Vec<DirList>) -> String {
                 r#"<tr><td><a href="{}">{}</a></td><td>{}</td><td>{}</td></tr>"#,
                 dist.path.display(),
                 dist.name,
-                dist.size,
                 dist.last_modified,
+                dist.size,
                 // dist.is_dir
             )
         })
