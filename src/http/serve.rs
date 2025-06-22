@@ -170,7 +170,16 @@ pub async fn serve(
             // 生成自动目录索引
             if host_route.auto_index {
                 let list = list_dir(&req_path).await?;
-                let list_html = render_list_html(list);
+                // HTML 中的标题路径，需要移除掉配置文件中的 root = "./html" 字段
+                let host_root = if let Some(root) = &host_route.root {
+                    root
+                } else {
+                    return custom_page(host_route, request, false).await;
+                };
+                let req_path_str = req_path.to_string_lossy();
+                debug!("req_path_str: {:?}", req_path_str);
+                let host_root = &req_path_str.strip_prefix(host_root).unwrap_or(host_root);
+                let list_html = render_list_html(host_root, list);
                 let mut headers = HeaderMap::new();
                 headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/html"));
                 return Ok((headers, list_html).into_response());
@@ -346,7 +355,40 @@ pub fn resolve_parent_path(uri: &Uri, path: Option<&Path<String>>) -> String {
     }
 }
 
-fn render_list_html(list: Vec<DirList>) -> String {
+/// 生成一个 HTML 目录列表页面，展示指定目录中的文件和子目录。
+///
+/// 该函数将一个 `DirList` 结构体的向量转换为 HTML 表格格式，
+/// 每个条目包含名称（带链接）、最后修改时间和大小信息。
+///
+/// # 参数
+/// * `root_path` - 目录路径 显示在 HTML 中的根目录
+/// * `list` - 包含目录项信息的 `DirList` 结构体向量
+///
+/// # 返回值
+/// 格式化后的 HTML 字符串，可直接作为 HTTP 响应返回
+///
+/// # 示例
+/// ```rust
+/// let dir_entries = vec![
+///     DirList {
+///         path: PathBuf::from("/home/user/docs"),
+///         name: "documents".to_string(),
+///         last_modified: "2023-05-15 14:30".to_string(),
+///         size: "4.2K".to_string(),
+///         is_dir: true
+///     },
+///     // 更多条目...
+/// ];
+///
+/// let html_output = render_list_html(dir_entries);
+/// println!("{}", html_output);
+/// ```
+fn render_list_html(root_path: &str, list: Vec<DirList>) -> String {
+    debug!(
+        "render list html list: {:?} root_path: {:?}",
+        list, root_path
+    );
+    // 先生成目标目录下所有文件的行
     let body_rows = list
         .iter()
         .map(|dist| {
@@ -367,7 +409,7 @@ fn render_list_html(list: Vec<DirList>) -> String {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Index of /</title>
+    <title>Index of {root_path}</title>
     <style>
         body {{
             font-family: Arial, sans-serif;
@@ -417,7 +459,7 @@ fn render_list_html(list: Vec<DirList>) -> String {
     </style>
 </head>
 <body>
-    <h1>Index of /</h1>
+    <h1>Index of {root_path}</h1>
     <table>
         <tr>
             <th>Name</th>
@@ -430,24 +472,36 @@ fn render_list_html(list: Vec<DirList>) -> String {
     </table>
 </body>
 </html>
-    "#
+    "#,
     );
     list_html
 }
 
 #[derive(Debug, Clone)]
 pub struct DirList {
-    pub name: String,
-    pub path: PathBuf,
-    pub is_dir: bool,
-    pub size: u64,
-    pub last_modified: String,
+    pub name: String,          // 文件或目录名称
+    pub path: PathBuf,         // 文件或目录的完整路径
+    pub is_dir: bool,          // 是否为目录
+    pub size: u64,             // 文件大小（字节）
+    pub last_modified: String, // 最后修改时间的字符串表示
 }
 
+/// 异步列出指定目录下的所有文件和子目录信息
+///
+/// # 参数
+/// * `path` - 要列出内容的目录路径
+///
+/// # 返回
+/// 成功时返回包含 `DirList` 结构的向量，失败时返回错误
+///
+/// # 错误
+/// 可能返回与文件系统操作相关的错误，如目录不存在、权限不足等
 async fn list_dir(path: &PathBuf) -> anyhow::Result<Vec<DirList>> {
     use chrono::{Local, TimeZone};
+    use std::time::UNIX_EPOCH;
 
     let mut list = vec![];
+    // 异步读取目录条目
     let mut entries = fs::read_dir(path)
         .await
         .with_context(|| format!("无法读取目录: {}", path.display()))?;
@@ -455,36 +509,48 @@ async fn list_dir(path: &PathBuf) -> anyhow::Result<Vec<DirList>> {
     debug!("list dir path: {:?}", path);
 
     let mut tasks = vec![];
+    // 遍历目录中的每个条目
     while let Some(entry) = entries
         .next_entry()
         .await
         .with_context(|| format!("读取目录条目失败: {}", path.display()))?
     {
+        // 为每个条目创建异步任务，并行获取元数据
         let task = tokio::task::spawn(async move {
+            // 获取文件元数据
             let metadata = entry
                 .metadata()
                 .await
-                .with_context(|| "get file metadata failed")?;
-            // convert last modified to string
+                .with_context(|| "获取文件元数据失败")?;
+
+            // 获取并格式化最后修改时间
             let last_modified = metadata
                 .modified()
-                .with_context(|| "get file modified failed")?;
+                .with_context(|| "获取文件修改时间失败")?;
             let last_modified = last_modified
                 .duration_since(UNIX_EPOCH)
-                .with_context(|| "calculate unix timestamp failed")?;
+                .with_context(|| "计算 Unix 时间戳失败")?;
+
+            // 转换为本地时间，处理可能的歧义情况
             let datetime = match Local
                 .timestamp_opt(last_modified.as_secs() as i64, last_modified.subsec_nanos())
             {
+                // 处理夏令时等情况下的时间歧义
                 chrono::LocalResult::Ambiguous(earlier, later) => {
                     tracing::warn!("发现歧义时间: {} 和 {}", earlier, later);
                     earlier // 选择较早的时间
                 }
+                // 无法解析时间时使用当前时间（这可能需要根据实际需求调整）
                 _ => Local::now(),
             };
             let last_modified = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
+
+            // 收集其他元数据
             let size = metadata.len();
             let is_dir = metadata.is_dir();
             let name = entry.file_name().to_string_lossy().to_string();
+
+            // 创建并返回目录条目信息
             let dir = DirList {
                 name,
                 path: entry.path(),
@@ -496,8 +562,11 @@ async fn list_dir(path: &PathBuf) -> anyhow::Result<Vec<DirList>> {
         });
         tasks.push(task);
     }
+
+    // 等待所有异步任务完成并收集结果
     for task in tasks {
         list.push(task.await??);
     }
+
     Ok(list)
 }
