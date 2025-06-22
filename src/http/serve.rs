@@ -138,11 +138,13 @@ pub async fn serve(
     // Build the list of candidate file paths to try:
     // - If `path` is provided, use it and check is file or not.
     // - If `path` is None, use the default index files (either from `host_route.index` or `HOST_INDEX`).
-    let path_arr = if let Some(path) = path {
+    // path_arr 是包含默认索引文件的数组
+    // req_path 是请求的路径
+    let (req_path, path_arr) = if let Some(path) = path {
         #[allow(clippy::unnecessary_to_owned)]
         let path = path.to_string();
         if path.contains('.') {
-            vec![format!("{}/{}", root, path)]
+            (root.into(), vec![format!("{}/{}", root, path)])
         } else {
             generate_default_index(&host_route, &format!("{root}/{path}"))
         }
@@ -160,12 +162,14 @@ pub async fn serve(
             break;
         }
     }
+    // 检查路径是否存在
+    // 不存时，检查是否开启自动生成目录索引
     let path_exists = match path_exists {
         Some(path_exists) => path_exists,
         None => {
+            // 生成自动目录索引
             if host_route.auto_index {
-                let root_path = PathBuf::from(root);
-                let list = list_dir(&root_path).await?;
+                let list = list_dir(&req_path).await?;
                 let list_html = render_list_html(list);
                 let mut headers = HeaderMap::new();
                 headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/html"));
@@ -176,10 +180,6 @@ pub async fn serve(
             }
         }
     };
-    // let Some(path_exists) = path_exists else {
-    //     debug!("No valid file found in path candidates");
-    //     return custom_not_found!(host_route, request, false).await;
-    // };
     match stream_file(path_exists.into(), request, None).await {
         Ok(res) => Ok(res),
         Err(e) => {
@@ -197,7 +197,14 @@ pub async fn serve(
 /// ## Arguments
 /// - `host_route`: the host route config
 /// - `root`: the root path
-fn generate_default_index(host_route: &Ref<'_, String, SettingRoute>, root: &str) -> Vec<String> {
+///
+/// ## Returns
+/// - PathBuf: 客户端访问的路径
+/// - Vec<String>: 包含默认索引文件名的数组
+fn generate_default_index(
+    host_route: &Ref<'_, String, SettingRoute>,
+    root: &str,
+) -> (PathBuf, Vec<String>) {
     let indices = if host_route.index.is_empty() {
         let host_iter = HOST_INDEX
             .iter()
@@ -207,7 +214,11 @@ fn generate_default_index(host_route: &Ref<'_, String, SettingRoute>, root: &str
     } else {
         host_route.index.clone().into_iter()
     };
-    indices.map(|s| format!("{root}/{s}")).collect()
+    // indices 就是 host_route.index 的中配置的 index 文件名
+    (
+        root.into(),
+        indices.map(|s| format!("{root}/{s}")).collect(),
+    )
 }
 
 /// Stream a file as an HTTP response.
@@ -440,6 +451,8 @@ async fn list_dir(path: &PathBuf) -> anyhow::Result<Vec<DirList>> {
     let mut entries = fs::read_dir(path)
         .await
         .with_context(|| format!("无法读取目录: {}", path.display()))?;
+
+    debug!("list dir path: {:?}", path);
 
     let mut tasks = vec![];
     while let Some(entry) = entries
