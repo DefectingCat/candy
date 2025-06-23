@@ -15,7 +15,7 @@ use http::{
 use mime_guess::from_path;
 use tokio::fs::{self, File};
 use tokio_util::io::ReaderStream;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 use crate::{
     config::SettingRoute,
@@ -536,13 +536,18 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
             let datetime = match Local
                 .timestamp_opt(last_modified.as_secs() as i64, last_modified.subsec_nanos())
             {
-                // 处理夏令时等情况下的时间歧义
                 chrono::LocalResult::Ambiguous(earlier, later) => {
-                    tracing::warn!("发现歧义时间: {} 和 {}", earlier, later);
-                    earlier // 选择较早的时间
+                    warn!("发现歧义时间: {} 和 {}", earlier, later);
+                    earlier
                 }
-                // 无法解析时间时使用当前时间（这可能需要根据实际需求调整）
-                _ => Local::now(),
+                chrono::offset::LocalResult::Single(single) => {
+                    // warn!("发现歧义时间: {}", single);
+                    single
+                }
+                chrono::offset::LocalResult::None => {
+                    error!("无法解析时间时使用当前时间");
+                    Local::now()
+                }
             };
             let last_modified = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
 
