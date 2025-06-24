@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1
+
+Features:
+
+- `auto-index` support
+- Stable rust version
+
 ## 0.2.0
 
 Features:
