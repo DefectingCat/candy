@@ -262,8 +262,13 @@ async fn stream_file(
         }
     }
 
+    #[cfg(windows)]
+    let null = PathBuf::from("NUL");
+    #[cfg(not(windows))]
+    let null = PathBuf::from("/dev/null");
+
     let stream = if not_modified {
-        let empty = File::open(PathBuf::from("/dev/null"))
+        let empty = File::open(null)
             .await
             .with_context(|| "open /dev/null failed")?;
         ReaderStream::new(empty)
