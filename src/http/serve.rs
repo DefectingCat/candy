@@ -1,4 +1,9 @@
-use std::{path::PathBuf, str::FromStr, time::UNIX_EPOCH};
+use std::{
+    fmt::{Display, Formatter},
+    path::PathBuf,
+    str::FromStr,
+    time::UNIX_EPOCH,
+};
 
 use anyhow::{Context, anyhow};
 use axum::{
@@ -397,14 +402,17 @@ fn render_list_html(root_path: &str, list: Vec<DirList>) -> String {
     let body_rows = list
         .iter()
         .map(|dist| {
-            format!(
-                r#"<tr><td><a href="{}">{}</a></td><td>{}</td><td>{}</td></tr>"#,
-                dist.path,
-                dist.name,
-                dist.last_modified,
-                dist.size,
-                // dist.is_dir
-            )
+            if dist.is_dir {
+                format!(
+                    r#"<tr><td><a href="{}">{}/</a></td><td>{}</td><td>{}</td></tr>"#,
+                    dist.path, dist.name, dist.last_modified, dist.size,
+                )
+            } else {
+                format!(
+                    r#"<tr><td><a href="{}">{}</a></td><td>{}</td><td>{}</td></tr>"#,
+                    dist.path, dist.name, dist.last_modified, dist.size,
+                )
+            }
         })
         .collect::<Vec<String>>()
         .join("");
@@ -482,12 +490,35 @@ fn render_list_html(root_path: &str, list: Vec<DirList>) -> String {
     list_html
 }
 
+const KB: u64 = 1024;
+const KB1: u64 = KB + 1;
+const MB: u64 = 1024 * 1024;
+const MB1: u64 = MB + 1;
+const GB: u64 = 1024 * 1024 * 1024;
+const GB1: u64 = GB + 1;
+const TB: u64 = 1024 * 1024 * 1024 * 1024;
+
+#[derive(Debug, Clone, Copy)]
+pub struct ByteUnit(u64);
+
+impl Display for ByteUnit {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            0..=KB => write!(f, "{} B", self.0),
+            KB1..=MB => write!(f, "{:.2} KB", self.0 as f64 / 1024.0),
+            MB1..=GB => write!(f, "{:.2} MB", self.0 as f64 / 1024.0 / 1024.0),
+            GB1..=TB => write!(f, "{:.2} TB", self.0 as f64 / 1024.0 / 1024.0 / 1024.0),
+            _ => write!(f, "{} B", self.0),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DirList {
     pub name: String,          // 文件或目录名称
     pub path: String,          // 文件或目录的完整路径
     pub is_dir: bool,          // 是否为目录
-    pub size: u64,             // 文件大小（字节）
+    pub size: ByteUnit,        // 文件大小（字节）
     pub last_modified: String, // 最后修改时间的字符串表示
 }
 
@@ -557,7 +588,7 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
             let last_modified = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
 
             // 收集其他元数据
-            let size = metadata.len();
+            let size = ByteUnit(metadata.len());
             let is_dir = metadata.is_dir();
             let name = entry.file_name().to_string_lossy().to_string();
 
