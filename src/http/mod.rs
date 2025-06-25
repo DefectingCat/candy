@@ -1,7 +1,7 @@
 use std::{net::SocketAddr, sync::LazyLock, time::Duration};
 
 use anyhow::anyhow;
-use axum::{Router, middleware, routing::get};
+use axum::{Router, extract::DefaultBodyLimit, middleware, routing::get};
 use axum_server::{Handle, tls_rustls::RustlsConfig};
 use dashmap::DashMap;
 use tower::ServiceBuilder;
@@ -46,6 +46,13 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
             // register wildcard path /doc/*
             let route_path = format!("{}{{*path}}", host_route.location);
             router = router.route(route_path.as_ref(), get(reverse_proxy::serve));
+            // Set request max body size
+            if let Some(max_body_size) = host_route.max_body_size {
+                router = router.layer(DefaultBodyLimit::max(max_body_size as usize));
+            }
+            // if host_route.root.is_some() {
+            //     router = router.layer(DefaultBodyLimit::max())
+            // }
             // save route path to map
             {
                 host_to_save
@@ -57,6 +64,10 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
             if host_route.root.is_none() {
                 warn!("root field not found for route: {:?}", host_route.location);
                 continue;
+            }
+            // Set request max body size
+            if let Some(max_body_size) = host_route.max_body_size {
+                router = router.layer(DefaultBodyLimit::max(max_body_size as usize));
             }
             // resister with location
             // location = "/doc"

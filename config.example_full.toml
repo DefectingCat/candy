@@ -11,11 +11,9 @@ timeout = 15
 # sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ./html/selfsigned.key -out ./html/selfsigned.crt
 certificate = "./html/selfsigned.crt"
 certificate_key = "./html/selfsigned.key"
-
 # Add custom headers to response
 [host.headers]
 X-Powered-By = "candy"
-
 # Routes for virtual host
 [[host.route]]
 # Route location
@@ -28,7 +26,6 @@ root = "./html"
 index = ["index.html"]
 # List directory
 auto_index = true
-
 # Custom 500 page
 [host.route.error_page]
 status = 500
@@ -38,8 +35,11 @@ page = "500.html"
 status = 404
 page = "404.html"
 
+# Reverse proxy
 [[host.route]]
 location = "/proxy/"
 proxy_pass = "http://localhost:3000/"
 # Timeout for connect to upstream
 proxy_timeout = 10
+# Client request max body size (bytes)
+max_body_size = 2048
