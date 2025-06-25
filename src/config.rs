@@ -40,6 +40,8 @@ pub struct SettingRoute {
     /// Timeout for connect to upstream
     #[serde(default = "upstream_timeout_default")]
     pub proxy_timeout: u16,
+    /// Request max body size (bytes)
+    pub max_body_size: Option<u64>,
 }
 
 /// Host routes
