@@ -188,7 +188,6 @@ pub async fn serve(
 
     // forward request body
     let body = req.into_body();
-    // TODO: set body size limit
     let bytes = axum::body::to_bytes(body, 2048).await.map_err(|err| {
         tracing::error!("Failed to proxy request: {}", err);
         RouteError::InternalError()

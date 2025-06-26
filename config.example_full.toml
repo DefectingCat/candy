@@ -1,7 +1,7 @@
 # Virtual host
 [[host]]
 ip = "0.0.0.0"
-port = 4000
+port = 80
 # Connection timeout
 timeout = 15
 # SSL certificate
@@ -21,7 +21,7 @@ location = "/"
 # Static file root
 # or proxy_pass
 # or redirect
-root = "./html"
+root = "html"
 # Only use for root field
 index = ["index.html"]
 # List directory
@@ -36,10 +36,21 @@ status = 404
 page = "404.html"
 
 # Reverse proxy
+[[host]]
+ip = "0.0.0.0"
+port = 8080
 [[host.route]]
-location = "/proxy/"
+location = "/"
 proxy_pass = "http://localhost:3000/"
 # Timeout for connect to upstream
 proxy_timeout = 10
 # Client request max body size (bytes)
 max_body_size = 2048
+
+# Lua script
+[[host]]
+ip = "0.0.0.0"
+port = 8081
+[[host.route]]
+location = "/"
+lua_script = "html/index.lua"
