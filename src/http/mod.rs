@@ -40,6 +40,11 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     // convert to axum routes
     // register routes
     for host_route in &host.route {
+        // lua script
+        if let Some(lua_path) = &host_route.lua_script {
+            continue;
+        }
+
         // reverse proxy
         if host_route.proxy_pass.is_some() {
             router = router.route(host_route.location.as_ref(), get(reverse_proxy::serve));
@@ -50,73 +55,70 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
             if let Some(max_body_size) = host_route.max_body_size {
                 router = router.layer(DefaultBodyLimit::max(max_body_size as usize));
             }
-            // if host_route.root.is_some() {
-            //     router = router.layer(DefaultBodyLimit::max())
-            // }
             // save route path to map
             {
                 host_to_save
                     .route_map
                     .insert(host_route.location.clone(), host_route.clone());
             }
-        } else {
-            // static file
-            if host_route.root.is_none() {
-                warn!("root field not found for route: {:?}", host_route.location);
-                continue;
-            }
-            // Set request max body size
-            if let Some(max_body_size) = host_route.max_body_size {
-                router = router.layer(DefaultBodyLimit::max(max_body_size as usize));
-            }
-            // resister with location
-            // location = "/doc"
-            // route: GET /doc/*
-            // resister with file path
-            // index = ["index.html", "index.txt"]
-            // route: GET /doc/index.html
-            // route: GET /doc/index.txt
-            // register parent path /doc
-            let path_morethan_one = host_route.location.len() > 1;
-            let route_path = if path_morethan_one && host_route.location.ends_with('/') {
-                // first register path with slash /doc
-                router = router.route(&host_route.location, get(serve::serve));
-                debug!("registed route {}", host_route.location);
-                let len = host_route.location.len();
-                let path_without_slash = host_route.location.chars().collect::<Vec<_>>()
-                    [0..len - 1]
-                    .iter()
-                    .collect::<String>();
-                // then register path without slash /doc/
-                router = router.route(&path_without_slash, get(serve::serve));
-                debug!("registed route {}", path_without_slash);
-                host_route.location.clone()
-            } else if path_morethan_one {
-                // first register path without slash /doc
-                router = router.route(&host_route.location, get(serve::serve));
-                debug!("registed route {}", host_route.location);
-                // then register path with slash /doc/
-                let path = format!("{}/", host_route.location);
-                router = router.route(&path, get(serve::serve));
-                debug!("registed route {}", path);
-                path
-            } else {
-                // register path /doc/
-                router = router.route(&host_route.location, get(serve::serve));
-                debug!("registed route {}", host_route.location);
-                host_route.location.clone()
-            };
-            // save route path to map
-            {
-                host_to_save
-                    .route_map
-                    .insert(route_path.clone(), host_route.clone());
-            }
-            let route_path = format!("{route_path}{{*path}}");
-            // register wildcard path /doc/*
-            router = router.route(route_path.as_ref(), get(serve::serve));
-            debug!("registed route: {}", route_path);
+            continue;
         }
+
+        // static file
+        if host_route.root.is_none() {
+            warn!("root field not found for route: {:?}", host_route.location);
+            continue;
+        }
+        // Set request max body size
+        if let Some(max_body_size) = host_route.max_body_size {
+            router = router.layer(DefaultBodyLimit::max(max_body_size as usize));
+        }
+        // resister with location
+        // location = "/doc"
+        // route: GET /doc/*
+        // resister with file path
+        // index = ["index.html", "index.txt"]
+        // route: GET /doc/index.html
+        // route: GET /doc/index.txt
+        // register parent path /doc
+        let path_morethan_one = host_route.location.len() > 1;
+        let route_path = if path_morethan_one && host_route.location.ends_with('/') {
+            // first register path with slash /doc
+            router = router.route(&host_route.location, get(serve::serve));
+            debug!("registed route {}", host_route.location);
+            let len = host_route.location.len();
+            let path_without_slash = host_route.location.chars().collect::<Vec<_>>()[0..len - 1]
+                .iter()
+                .collect::<String>();
+            // then register path without slash /doc/
+            router = router.route(&path_without_slash, get(serve::serve));
+            debug!("registed route {}", path_without_slash);
+            host_route.location.clone()
+        } else if path_morethan_one {
+            // first register path without slash /doc
+            router = router.route(&host_route.location, get(serve::serve));
+            debug!("registed route {}", host_route.location);
+            // then register path with slash /doc/
+            let path = format!("{}/", host_route.location);
+            router = router.route(&path, get(serve::serve));
+            debug!("registed route {}", path);
+            path
+        } else {
+            // register path /doc/
+            router = router.route(&host_route.location, get(serve::serve));
+            debug!("registed route {}", host_route.location);
+            host_route.location.clone()
+        };
+        // save route path to map
+        {
+            host_to_save
+                .route_map
+                .insert(route_path.clone(), host_route.clone());
+        }
+        let route_path = format!("{route_path}{{*path}}");
+        // register wildcard path /doc/*
+        router = router.route(route_path.as_ref(), get(serve::serve));
+        debug!("registed route: {}", route_path);
     }
 
     // save host to map

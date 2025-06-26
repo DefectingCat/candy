@@ -32,6 +32,16 @@ reqwest = { version = "0.12.20", features = [
     'deflate',
     "stream",
 ] }
+# lua
+mlua = { version = "0.10.5", features = [
+    "lua54",
+    "vendored",
+    "send",
+    "async",
+    "macros",
+    "serialize",
+    "anyhow",
+] }
 # tools
 thiserror = "2.0.12"
 anyhow = "1.0.98"
@@ -39,7 +49,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 toml = "0.8.23"
 bytes = "1.10.1"
 const_format = "0.2.34"
-md5 = "0.7.0"
+md5 = "0.8.0"
 dashmap = { version = "6.1.0", features = ["serde"] }
 # logging
 tracing = "0.1.41"

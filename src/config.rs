@@ -42,6 +42,9 @@ pub struct SettingRoute {
     pub proxy_timeout: u16,
     /// Request max body size (bytes)
     pub max_body_size: Option<u64>,
+
+    /// Lua script
+    pub lua_script: Option<String>,
 }
 
 /// Host routes
