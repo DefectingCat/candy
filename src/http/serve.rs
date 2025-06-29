@@ -173,7 +173,6 @@ pub async fn serve(
     let path_exists = match path_exists {
         Some(path_exists) => path_exists,
         None => {
-            error!("request {:?}", request);
             let uri_path = uri.path();
             // 如果请求路径不以 / 结尾，则返回 301 Moved Permanently 状态码
             if !uri_path.ends_with('/') {
@@ -625,7 +624,6 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
                 size,
                 last_modified,
             };
-            error!("dir: {:?}", dir);
             anyhow::Ok(dir)
         });
         tasks.push(task);
