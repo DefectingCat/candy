@@ -42,6 +42,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     for host_route in &host.route {
         // lua script
         if let Some(lua_path) = &host_route.lua_script {
+            // papare lua script
             continue;
         }
 
