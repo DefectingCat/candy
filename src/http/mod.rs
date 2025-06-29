@@ -4,6 +4,7 @@ use anyhow::anyhow;
 use axum::{Router, extract::DefaultBodyLimit, middleware, routing::get};
 use axum_server::{Handle, tls_rustls::RustlsConfig};
 use dashmap::DashMap;
+use mlua::Lua;
 use tower::ServiceBuilder;
 use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer};
 use tracing::{debug, info, warn};
@@ -32,6 +33,9 @@ pub mod reverse_proxy;
 ///     }
 /// }
 pub static HOSTS: LazyLock<DashMap<u16, SettingHost>> = LazyLock::new(DashMap::new);
+
+/// lua 脚本执行器
+pub static LUA_EXECUTOR: LazyLock<Lua> = LazyLock::new(Lua::new);
 
 pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     let mut router = Router::new();
