@@ -15,7 +15,7 @@ use axum_extra::extract::Host;
 use dashmap::mapref::one::Ref;
 use http::{
     HeaderMap, HeaderValue, StatusCode, Uri,
-    header::{CONTENT_TYPE, ETAG, IF_NONE_MATCH},
+    header::{CONTENT_TYPE, ETAG, IF_NONE_MATCH, LOCATION},
 };
 use mime_guess::from_path;
 use tokio::fs::{self, File};
@@ -75,7 +75,7 @@ async fn custom_page(
     match stream_file(path.into(), request, Some(status)).await {
         Ok(res) => RouteResult::Ok(res),
         Err(e) => {
-            println!("Failed to stream file: {:?}", e);
+            error!("Failed to stream file: {:?}", e);
             RouteResult::Err(RouteError::InternalError())
         }
     }
@@ -149,7 +149,7 @@ pub async fn serve(
         #[allow(clippy::unnecessary_to_owned)]
         let path = path.to_string();
         if path.contains('.') {
-            (root.into(), vec![format!("{}/{}", root, path)])
+            (root.into(), vec![format!("{}{}", root, path)])
         } else {
             generate_default_index(&host_route, &format!("{root}/{path}"))
         }
@@ -157,6 +157,7 @@ pub async fn serve(
         generate_default_index(&host_route, root)
     };
     debug!("request index file {:?}", path_arr);
+    debug!("req_path: {:?}", req_path);
     // Try each candidate path in order:
     // - Return the first successfully streamed file.
     // - If all fail, return a `RouteNotFound` error.
@@ -172,6 +173,27 @@ pub async fn serve(
     let path_exists = match path_exists {
         Some(path_exists) => path_exists,
         None => {
+            error!("request {:?}", request);
+            let uri_path = uri.path();
+            // 如果请求路径不以 / 结尾，则返回 301 Moved Permanently 状态码
+            if !uri_path.ends_with('/') {
+                let mut response = Response::builder();
+                let stream = empty_stream().await?;
+                let body = Body::from_stream(stream);
+                response
+                    .headers_mut()
+                    .with_context(|| "insert header failed")?
+                    .insert(
+                        LOCATION,
+                        HeaderValue::from_str(format!("{uri_path}/").as_str())
+                            .with_context(|| "insert header failed")?,
+                    );
+                response = response.status(StatusCode::MOVED_PERMANENTLY);
+                let response = response
+                    .body(body)
+                    .with_context(|| "Failed to build HTTP response with body")?;
+                return Ok(response);
+            }
             // 生成自动目录索引
             if host_route.auto_index {
                 // HTML 中的标题路径，需要移除掉配置文件中的 root = "./html" 字段
@@ -267,16 +289,8 @@ async fn stream_file(
         }
     }
 
-    #[cfg(windows)]
-    let null = PathBuf::from("NUL");
-    #[cfg(not(windows))]
-    let null = PathBuf::from("/dev/null");
-
     let stream = if not_modified {
-        let empty = File::open(null)
-            .await
-            .with_context(|| "open /dev/null failed")?;
-        ReaderStream::new(empty)
+        empty_stream().await?
     } else {
         ReaderStream::new(file)
     };
@@ -598,7 +612,11 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
                 .strip_prefix(&host_root_str)
                 .ok_or(anyhow!("strip prefix failed"))?
                 .to_string();
-            let path = format!("./{path}");
+            let path = if is_dir {
+                format!("./{path}/")
+            } else {
+                format!("./{path}")
+            };
             // 创建并返回目录条目信息
             let dir = DirList {
                 name,
@@ -607,6 +625,7 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
                 size,
                 last_modified,
             };
+            error!("dir: {:?}", dir);
             anyhow::Ok(dir)
         });
         tasks.push(task);
@@ -618,4 +637,25 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
     }
 
     Ok(list)
+}
+
+/// 创建一个空数据流，用于返回空响应或占位数据
+///
+/// 在不同操作系统上，会自动选择对应的空设备文件：
+/// - Windows: NUL
+/// - Unix/Linux: /dev/null
+///
+/// 返回一个异步流，内容为一个空文件的数据流
+///
+/// # 错误处理
+/// 如果无法打开空设备文件，会返回带有上下文信息的错误
+pub async fn empty_stream() -> anyhow::Result<ReaderStream<File>> {
+    #[cfg(windows)]
+    let null = PathBuf::from("NUL");
+    #[cfg(not(windows))]
+    let null = PathBuf::from("/dev/null");
+    let empty = File::open(null)
+        .await
+        .with_context(|| "open /dev/null failed")?;
+    Ok(ReaderStream::new(empty))
 }
