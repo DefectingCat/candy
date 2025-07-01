@@ -6,14 +6,21 @@ use axum::{
 };
 use axum_extra::extract::Host;
 use http::Uri;
+use mlua::{UserData, Value};
+use tokio::fs::{self};
 use tracing::error;
 
 use crate::{
-    http::{HOSTS, error::RouteError, serve::resolve_parent_path},
+    http::{HOSTS, LUA_ENGINE, error::RouteError, serve::resolve_parent_path},
     utils::parse_port_from_host,
 };
 
 use super::error::RouteResult;
+
+#[derive(Clone, Debug)]
+struct Candy {}
+
+impl UserData for Candy {}
 
 pub async fn lua(
     req_uri: Uri,
@@ -44,6 +51,16 @@ pub async fn lua(
         .as_ref()
         .ok_or(RouteError::InternalError())
         .with_context(|| "lua script not found")?;
-    error!("Lua script: {lua_script}");
+
+    let lua = &LUA_ENGINE.lua;
+    let script = fs::read_to_string(lua_script)
+        .await
+        .with_context(|| format!("Failed to read lua script file: {lua_script}",))?;
+    let data: Value = lua.load(script).eval_async().await.map_err(|err| {
+        error!("Lua script {lua_script} exec error: {err}");
+        RouteError::InternalError()
+    })?;
+    tracing::debug!("Lua script: {data:?}");
+
     Ok(())
 }
