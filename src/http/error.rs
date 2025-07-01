@@ -5,7 +5,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use const_format::{concatcp, formatcp};
+use const_format::formatcp;
 use serde_repr::*;
 use tracing::error;
 
@@ -36,7 +36,7 @@ pub enum ErrorCode {
 }
 
 /// Normal error message
-const SERVER_ERROR_STR: &str = concatcp!(
+const SERVER_ERROR_STR: &str = formatcp!(
     r#"Internal Server Error
 {NAME} v{VERSION}
 Powered by RUA
