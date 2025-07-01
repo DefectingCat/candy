@@ -71,7 +71,6 @@ pub async fn add_headers(Host(host): Host, req: Request, next: Next) -> impl Int
     debug!("port {:?}", port);
     let mut res = next.run(req).await;
     let req_headers = res.headers_mut();
-    // let host = HOSTS.read().await;
     let Some(host) = HOSTS.get(&port) else {
         return res;
     };
