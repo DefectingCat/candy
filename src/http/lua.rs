@@ -1,11 +1,13 @@
-use anyhow::Context;
+use std::str::FromStr;
+
+use anyhow::{Context, anyhow};
 use axum::{
     body::Body,
     extract::{Path, Request},
     response::{IntoResponse, Response},
 };
 use axum_extra::extract::Host;
-use http::Uri;
+use http::{HeaderMap, HeaderName, HeaderValue, Uri};
 use mlua::{UserData, UserDataMethods, UserDataRef};
 use tokio::fs::{self};
 use tracing::error;
@@ -17,13 +19,19 @@ use crate::{
 
 use super::error::RouteResult;
 
+/// 为 Lua 脚本提供 HTTP 请求上下文
 #[derive(Clone, Debug)]
 struct CandyRequest {
+    #[allow(dead_code)]
+    method: String,
+    /// Uri 在路由中被添加到上下文中
     uri: Uri,
 }
+/// 为 Lua 脚本提供 HTTP 响应上下文
 #[derive(Clone, Debug)]
 struct CandyResponse {
     status: u16,
+    headers: HeaderMap,
     body: String,
 }
 // HTTP 请求上下文，可在 Lua 中使用
@@ -40,6 +48,9 @@ impl UserData for RequestContext {
             Ok(this.req.uri.path().to_string())
         });
 
+        // 获取请求方法
+        methods.add_method("get_method", |_, this, ()| Ok(this.req.method.to_string()));
+
         // 设置响应状态码
         methods.add_method_mut("set_status", |_, this, status: u16| {
             this.res.status = status;
@@ -48,7 +59,17 @@ impl UserData for RequestContext {
 
         // 设置响应内容
         methods.add_method_mut("set_body", |_, this, body: String| {
-            this.res.body = body;
+            this.res.body = format!("{}{}", this.res.body, body);
+            Ok(())
+        });
+
+        // 设置响应头
+        methods.add_method_mut("set_header", |_, this, (key, value): (String, String)| {
+            this.res.headers.insert(
+                HeaderName::from_str(&key).map_err(|err| anyhow!("header name error: {err}"))?,
+                HeaderValue::from_str(&value)
+                    .map_err(|err| anyhow!("header value error: {err}"))?,
+            );
             Ok(())
         });
     }
@@ -60,8 +81,6 @@ pub async fn lua(
     Host(host): Host,
     req: Request<Body>,
 ) -> RouteResult<impl IntoResponse> {
-    // let req_path = req.uri().path();
-
     let scheme = req.uri().scheme_str().unwrap_or("http");
     let port = parse_port_from_host(&host, scheme).ok_or(RouteError::BadRequest())?;
     let route_map = &HOSTS
@@ -84,6 +103,8 @@ pub async fn lua(
         .ok_or(RouteError::InternalError())
         .with_context(|| "lua script not found")?;
 
+    let method = req.method().to_string();
+
     let lua = &LUA_ENGINE.lua;
     let script = fs::read_to_string(lua_script)
         .await
@@ -92,9 +113,13 @@ pub async fn lua(
         .set(
             "ctx",
             RequestContext {
-                req: CandyRequest { uri: req_uri },
+                req: CandyRequest {
+                    method,
+                    uri: req_uri,
+                },
                 res: CandyResponse {
                     status: 200,
+                    headers: HeaderMap::new(),
                     body: "".to_string(),
                 },
             },
