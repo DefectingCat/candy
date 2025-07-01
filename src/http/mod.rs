@@ -20,6 +20,8 @@ pub mod error;
 pub mod serve;
 // handle reverse proxy
 pub mod reverse_proxy;
+// handle lua script
+pub mod lua;
 
 /// Host configuration
 /// use virtual host port as key
@@ -45,8 +47,17 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     // register routes
     for host_route in &host.route {
         // lua script
-        if let Some(lua_path) = &host_route.lua_script {
+        if host_route.lua_script.is_some() {
             // papare lua script
+            router = router.route(host_route.location.as_ref(), get(lua::lua));
+            let route_path = format!("{}{{*path}}", host_route.location);
+            router = router.route(route_path.as_ref(), get(lua::lua));
+            // save route path to map
+            {
+                host_to_save
+                    .route_map
+                    .insert(host_route.location.clone(), host_route.clone());
+            }
             continue;
         }
 
