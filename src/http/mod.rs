@@ -15,6 +15,7 @@ use tracing::{debug, info, warn};
 
 use crate::{
     config::SettingHost,
+    consts::{ARCH, COMMIT, COMPILER, NAME, OS, VERSION},
     middlewares::{add_headers, add_version, logging_route},
     utils::graceful_shutdown,
 };
@@ -93,6 +94,15 @@ impl LuaEngine {
                 .expect("create log function failed"),
             )
             .expect("set log failed");
+
+        module.set("version", VERSION).expect("set version failed");
+        module.set("name", NAME).expect("set name failed");
+        module.set("os", OS).expect("set os failed");
+        module.set("arch", ARCH).expect("set arch failed");
+        module
+            .set("compiler", COMPILER)
+            .expect("set compiler failed");
+        module.set("commit", COMMIT).expect("set commit failed");
 
         // 全局变量 candy
         lua.globals()
