@@ -1,10 +1,14 @@
-use std::{net::SocketAddr, sync::LazyLock, time::Duration};
+use std::{
+    net::SocketAddr,
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
 
-use anyhow::anyhow;
+use anyhow::{Context, anyhow};
 use axum::{Router, extract::DefaultBodyLimit, middleware, routing::get};
 use axum_server::{Handle, tls_rustls::RustlsConfig};
 use dashmap::DashMap;
-use mlua::Lua;
+use mlua::{Lua, Value};
 use tower::ServiceBuilder;
 use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer};
 use tracing::{debug, info, warn};
@@ -36,8 +40,70 @@ pub mod lua;
 /// }
 pub static HOSTS: LazyLock<DashMap<u16, SettingHost>> = LazyLock::new(DashMap::new);
 
+pub struct LuaEngine {
+    pub lua: Lua,
+    pub shared_table: Arc<DashMap<String, String>>,
+}
+impl LuaEngine {
+    pub fn new() -> Self {
+        let lua = Lua::new();
+        let shared_table: DashMap<String, String> = DashMap::new();
+        let shared_table = Arc::new(shared_table);
+
+        let module = lua.create_table().expect("create table failed");
+        let shared_api = lua.create_table().expect("create shared table failed");
+
+        // 创建共享字典到 lua 中
+        let shared_table_get = shared_table.clone();
+        shared_api
+            .set(
+                "set",
+                lua.create_function(move |_, (key, value): (String, String)| {
+                    let t = shared_table_get
+                        .insert(key, value.clone())
+                        .ok_or(anyhow!("key not found"))?;
+                    Ok(t.clone())
+                })
+                .expect("create set function failed"),
+            )
+            .expect("set failed");
+        let shared_table_get = shared_table.clone();
+        shared_api
+            .set(
+                "get",
+                lua.create_function(move |_, key: String| {
+                    let t = shared_table_get.get(&key).ok_or(anyhow!("key not found"))?;
+                    Ok(t.clone())
+                })
+                .expect("create get function failed"),
+            )
+            .expect("get failed");
+        module
+            .set("shared", shared_api)
+            .expect("set shared_api failed");
+
+        // 日志函数
+        module
+            .set(
+                "log",
+                lua.create_function(move |_, msg: String| {
+                    tracing::info!("Lua: {}", msg);
+                    Ok(())
+                })
+                .expect("create log function failed"),
+            )
+            .expect("set log failed");
+
+        // 全局变量 candy
+        lua.globals()
+            .set("candy", module)
+            .expect("set candy failed");
+
+        Self { lua, shared_table }
+    }
+}
 /// lua 脚本执行器
-pub static LUA_EXECUTOR: LazyLock<Lua> = LazyLock::new(Lua::new);
+pub static LUA_ENGINE: LazyLock<LuaEngine> = LazyLock::new(LuaEngine::new);
 
 pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     let mut router = Router::new();
