@@ -52,23 +52,27 @@ async fn custom_page(
         host_route
             .error_page
             .as_ref()
-            .ok_or(RouteError::RouteNotFound())?
+            .ok_or(RouteError::RouteNotFound())
+            .with_context(|| "error page not found")?
     } else {
         host_route
             .not_found_page
             .as_ref()
-            .ok_or(RouteError::RouteNotFound())?
+            .ok_or(RouteError::RouteNotFound())
+            .with_context(|| "not found page not found")?
     };
 
     let root = host_route
         .root
         .as_ref()
-        .ok_or(RouteError::InternalError())?;
+        .ok_or(RouteError::InternalError())
+        .with_context(|| "root not found")?;
 
     let path = format!("{}/{}", root, page.page);
 
     let status = StatusCode::from_str(page.status.to_string().as_ref())
-        .map_err(|_| RouteError::BadRequest())?;
+        .map_err(|_| RouteError::BadRequest())
+        .with_context(|| format!("status code not found: {}", page.status))?;
 
     tracing::debug!("custom not found path: {:?}", path);
 
@@ -125,11 +129,18 @@ pub async fn serve(
     // which is `host_route.location`
     let scheme = request.uri().scheme_str().unwrap_or("http");
     let port = parse_port_from_host(&host, scheme).ok_or(RouteError::BadRequest())?;
-    let route_map = &HOSTS.get(&port).ok_or(RouteError::BadRequest())?.route_map;
+    let route_map = &HOSTS
+        .get(&port)
+        .ok_or(RouteError::BadRequest())
+        .with_context(|| {
+            format!("Hosts not found for port: {port}, host: {host}, scheme: {scheme}")
+        })?
+        .route_map;
     debug!("Route map entries: {:?}", route_map);
     let host_route = route_map
         .get(&parent_path)
-        .ok_or(RouteError::RouteNotFound())?;
+        .ok_or(RouteError::RouteNotFound())
+        .with_context(|| format!("route not found: {parent_path}"))?;
     debug!("route: {:?}", host_route);
     // after route found
     // check static file root configuration
