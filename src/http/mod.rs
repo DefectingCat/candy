@@ -4,11 +4,11 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 use axum::{Router, extract::DefaultBodyLimit, middleware, routing::get};
 use axum_server::{Handle, tls_rustls::RustlsConfig};
 use dashmap::DashMap;
-use mlua::{Lua, Value};
+use mlua::Lua;
 use tower::ServiceBuilder;
 use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer};
 use tracing::{debug, info, warn};
@@ -42,6 +42,8 @@ pub static HOSTS: LazyLock<DashMap<u16, SettingHost>> = LazyLock::new(DashMap::n
 
 pub struct LuaEngine {
     pub lua: Lua,
+    /// Lua 共享字典
+    #[allow(dead_code)]
     pub shared_table: Arc<DashMap<String, String>>,
 }
 impl LuaEngine {
@@ -59,10 +61,8 @@ impl LuaEngine {
             .set(
                 "set",
                 lua.create_function(move |_, (key, value): (String, String)| {
-                    let t = shared_table_get
-                        .insert(key, value.clone())
-                        .ok_or(anyhow!("key not found"))?;
-                    Ok(t.clone())
+                    shared_table_get.insert(key, value.clone());
+                    Ok(())
                 })
                 .expect("create set function failed"),
             )
@@ -97,7 +97,7 @@ impl LuaEngine {
         // 全局变量 candy
         lua.globals()
             .set("candy", module)
-            .expect("set candy failed");
+            .expect("set candy table to lua engine failed");
 
         Self { lua, shared_table }
     }
