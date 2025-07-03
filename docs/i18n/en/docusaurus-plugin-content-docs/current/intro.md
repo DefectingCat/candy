@@ -23,3 +23,11 @@ Options:
   -h, --help           Print help
   -V, --version        Print version
 ```
+
+Only one config file is supported, the default config file is `./config.toml`.
+
+```bash
+❯ ./target/release/candy -c config.toml
+```
+
+`-c` can be omitted, and when omitted, the default config file is `./config.toml` in the current directory.

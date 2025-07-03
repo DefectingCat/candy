@@ -5,9 +5,10 @@ import { themes as prismThemes } from 'prism-react-renderer';
 const config: Config = {
   title: 'Candy',
   tagline: 'Tiny http web server',
-  favicon: 'img/favicon.ico',
+  favicon: 'img/candy-transparent.png',
 
   future: {
+    v4: true,
     experimental_faster: true,
   },
 
@@ -66,8 +67,8 @@ const config: Config = {
     navbar: {
       title: 'RUA',
       logo: {
-        alt: 'My Site Logo',
-        src: 'img/logo.svg',
+        alt: 'Candy Logo',
+        src: 'img/candy-transparent.png',
       },
       items: [
         {

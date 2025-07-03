@@ -23,3 +23,11 @@ Options:
   -h, --help           Print help
   -V, --version        Print version
 ```
+
+只需要一个可执行文件和一个配置文件，就可以快速部署一个 HTTP 服务器。
+
+```bash
+❯ ./target/release/candy -c config.toml
+```
+
+`-c` 可以省略，当省略时，默认使用当前目录下的 `config.toml` 文件。
