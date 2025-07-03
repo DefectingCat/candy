@@ -1,13 +1,20 @@
 # Changelog
 
-## 0.2.1
+## 0.2.2 - 2025-07-03
+
+Features:
+
+- Support lua script
+- Add max body size limit
+
+## 0.2.1 - 2025-06-24
 
 Features:
 
 - `auto-index` support
 - Stable rust version
 
-## 0.2.0
+## 0.2.0 - 2025-06-17
 
 Features:
 
@@ -15,7 +22,7 @@ Features:
 - Refactor with axum
 - SSL support
 
-## 0.1.1
+## 0.1.1 - 2024-07-02
 
 Features:
 
@@ -35,7 +42,7 @@ Fix:
 - Custom error page
 - Config tests
 
-## 0.1.0
+## 0.1.0 - 2024-05-13
 
 Features:
 
