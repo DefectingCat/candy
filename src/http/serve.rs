@@ -160,7 +160,7 @@ pub async fn serve(
         #[allow(clippy::unnecessary_to_owned)]
         let path = path.to_string();
         if path.contains('.') {
-            (root.into(), vec![format!("{}{}", root, path)])
+            (root.into(), vec![format!("{}/{}", root, path)])
         } else {
             generate_default_index(&host_route, &format!("{root}/{path}"))
         }
@@ -173,20 +173,23 @@ pub async fn serve(
     // - Return the first successfully streamed file.
     // - If all fail, return a `RouteNotFound` error.
     let mut path_exists = None;
+    // TODO: Check auto_index enable
     for path in path_arr {
         if fs::metadata(path.clone()).await.is_ok() {
             path_exists = Some(path);
             break;
         }
     }
+    debug!("path_exists: {:?}", path_exists);
     // 检查路径是否存在
     // 不存时，检查是否开启自动生成目录索引
     let path_exists = match path_exists {
         Some(path_exists) => path_exists,
         None => {
             let uri_path = uri.path();
-            // 如果请求路径不以 / 结尾，则返回 301 Moved Permanently 状态码
-            if !uri_path.ends_with('/') {
+            debug!("uri_path: {:?}", uri_path);
+            // 如果请求路径不是文件且不以 / 结尾，则返回 301 Moved Permanently 状态码
+            if !uri_path.ends_with('/') && !uri_path.contains('.') {
                 let mut response = Response::builder();
                 let stream = empty_stream().await?;
                 let body = Body::from_stream(stream);
@@ -575,7 +578,11 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
         .await
         .with_context(|| format!("读取目录条目失败: {}", path.display()))?
     {
-        let host_root_str = host_root_str.to_string();
+        let host_root_str = if host_root_str.ends_with('/') {
+            host_root_str.to_string()
+        } else {
+            format!("{host_root_str}/")
+        };
         // 为每个条目创建异步任务，并行获取元数据
         let task = tokio::task::spawn(async move {
             // 获取文件元数据
