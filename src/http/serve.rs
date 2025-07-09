@@ -124,11 +124,15 @@ pub async fn serve(
         uri, path, request
     );
 
-    let parent_path = resolve_parent_path(&uri, path.as_ref());
     // parent_path is key in route map
     // which is `host_route.location`
+    let parent_path = resolve_parent_path(&uri, path.as_ref());
     let scheme = request.uri().scheme_str().unwrap_or("http");
+    // port is key in route_map
+    // which is `host_route.port`, used to find current host configuration
     let port = parse_port_from_host(&host, scheme).ok_or(RouteError::BadRequest())?;
+    // route_map can be found by port
+    // current host configruation
     let route_map = &HOSTS
         .get(&port)
         .ok_or(RouteError::BadRequest())
@@ -137,12 +141,15 @@ pub async fn serve(
         })?
         .route_map;
     debug!("Route map entries: {:?}", route_map);
+    // host_route can be found by parent_path
+    // current route configuration
     let host_route = route_map
         .get(&parent_path)
         .ok_or(RouteError::RouteNotFound())
         .with_context(|| format!("route not found: {parent_path}"))?;
     debug!("route: {:?}", host_route);
     // after route found
+    // TODO: Check auto_index enable
     // check static file root configuration
     // if root is None, then return InternalError
     let Some(ref root) = host_route.root else {
@@ -173,7 +180,6 @@ pub async fn serve(
     // - Return the first successfully streamed file.
     // - If all fail, return a `RouteNotFound` error.
     let mut path_exists = None;
-    // TODO: Check auto_index enable
     for path in path_arr {
         if fs::metadata(path.clone()).await.is_ok() {
             path_exists = Some(path);
@@ -255,6 +261,7 @@ fn generate_default_index(
     root: &str,
 ) -> (PathBuf, Vec<String>) {
     let indices = if host_route.index.is_empty() {
+        // use default index files
         let host_iter = HOST_INDEX
             .iter()
             .map(|s| s.to_string())
