@@ -149,7 +149,6 @@ pub async fn serve(
         .with_context(|| format!("route not found: {parent_path}"))?;
     debug!("route: {:?}", host_route);
     // after route found
-    // TODO: Check auto_index enable
     // check static file root configuration
     // if root is None, then return InternalError
     let Some(ref root) = host_route.root else {
@@ -176,6 +175,31 @@ pub async fn serve(
     };
     debug!("request index file {:?}", path_arr);
     debug!("req_path: {:?}", req_path);
+
+    // 检查是否开启自动生成目录索引
+    let uri_path = uri.path();
+    debug!("uri_path: {:?}", uri_path);
+    let uri_path_vec = uri_path.split('/').collect::<Vec<&str>>();
+    let uri_path_last = uri_path_vec.last();
+    debug!("uri_path_last: {:?}", uri_path_last);
+    let uri_path_last = uri_path_last.unwrap_or(&"");
+    if host_route.auto_index && !uri_path_last.contains('.') {
+        // HTML 中的标题路径，需要移除掉配置文件中的 root = "./html" 字段
+        let host_root = if let Some(root) = &host_route.root {
+            root
+        } else {
+            return custom_page(host_route, request, false).await;
+        };
+        let req_path_str = req_path.to_string_lossy();
+        debug!("req_path_str: {:?}", req_path_str);
+        let host_root = &req_path_str.strip_prefix(host_root).unwrap_or(host_root);
+        let list = list_dir(&req_path_str, &req_path).await?;
+        let list_html = render_list_html(host_root, list);
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/html"));
+        return Ok((headers, list_html).into_response());
+    }
+
     // Try each candidate path in order:
     // - Return the first successfully streamed file.
     // - If all fail, return a `RouteNotFound` error.
