@@ -8,7 +8,7 @@
 - [x] Custom error page with stats code
 - [ ] Logging to file
 - [ ] Benches
-- [ ] Max body size
+- [x] Max body size
 - [x] HTTP 2
 
 ## Features
@@ -35,15 +35,15 @@
 - [ ] HTTP 3
 - [ ] Specify thread numbers
 - [ ] Dockerization
-- [ ] Docs
-- [ ] Multiple virtual hosts
+- [x] Docs
+- [x] Multiple virtual hosts
 - [x] Build with compile info
 - [x] Refactor HTTP 1
 - [x] Graceful shutdown
 - [x] `keep-alive` timeout setting
 - [x] HTTP Etag: <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag#etag_value>
 - [x] 304 Not Modified
-- [ ] List directory
+- [x] List directory
 - [x] Content compress
   - [x] zstd
   - [x] gzip
