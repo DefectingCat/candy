@@ -73,8 +73,14 @@ impl LuaEngine {
             .set(
                 "get",
                 lua.create_function(move |_, key: String| {
-                    let t = shared_table_get.get(&key).ok_or(anyhow!("key not found"))?;
-                    Ok(t.clone())
+                    let value = shared_table_get.get(&key);
+                    match value {
+                        Some(value) => Ok(value.clone()),
+                        None => {
+                            tracing::error!("shared_api: get key not found: {}", key);
+                            Ok(String::new())
+                        }
+                    }
                 })
                 .expect("create get function failed"),
             )
