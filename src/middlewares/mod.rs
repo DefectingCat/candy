@@ -3,7 +3,7 @@ use std::{fmt::Display, time::Duration};
 use axum::{
     Router,
     body::{Body, Bytes},
-    extract::Request,
+    extract::{Path, Request},
     http::{HeaderMap, HeaderValue},
     middleware::Next,
     response::{IntoResponse, Response},
@@ -16,7 +16,7 @@ use tracing::{Span, debug, error, info, info_span};
 
 use crate::{
     consts::{NAME, VERSION},
-    http::HOSTS,
+    http::{HOSTS, serve::resolve_parent_path},
     utils::parse_port_from_host,
 };
 
@@ -61,22 +61,31 @@ pub async fn add_version(req: Request<Body>, next: Next) -> impl IntoResponse {
 /// [hosts."8080"]
 /// headers = { "X-Custom" = "value" }
 pub async fn add_headers(Host(host): Host, req: Request, next: Next) -> impl IntoResponse {
-    let Some(scheme) = req.uri().scheme_str() else {
-        return next.run(req).await;
-    };
+    let scheme = req.uri().scheme_str().unwrap_or("http");
     debug!("scheme {:?}", scheme);
     let Some(port) = parse_port_from_host(&host, scheme) else {
         return next.run(req).await;
     };
+    let uri = req.uri();
+    let path = req.extensions().get::<Path<String>>();
+    let parent_path = resolve_parent_path(uri, path);
+
     debug!("port {:?}", port);
     let mut res = next.run(req).await;
     let req_headers = res.headers_mut();
     let Some(host) = HOSTS.get(&port) else {
         return res;
     };
-    let Some(headers) = host.headers.as_ref() else {
+    let route_map = &host.route_map;
+
+    // Find host route
+    let Some(host_route) = route_map.get(&parent_path) else {
         return res;
     };
+    let Some(headers) = &host_route.headers else {
+        return res;
+    };
+
     headers.iter().for_each(|entery| {
         let (key, value) = (entery.key(), entery.value());
         let Ok(header_name) = HeaderName::from_bytes(key.as_bytes()) else {
