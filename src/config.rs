@@ -43,6 +43,10 @@ pub struct SettingRoute {
     /// Request max body size (bytes)
     pub max_body_size: Option<u64>,
 
+    /// HTTP headers
+    /// Used to overwrite headers in config
+    pub headers: Option<HeaderMap>,
+
     /// Lua script
     pub lua_script: Option<String>,
 }
@@ -79,9 +83,6 @@ pub struct SettingHost {
     /// HTTP keep-alive timeout
     #[serde(default = "timeout_default")]
     pub timeout: u16,
-    /// HTTP headers
-    /// Used to overwrite headers in config
-    pub headers: Option<HeaderMap>,
 }
 
 /// Whole config settings
