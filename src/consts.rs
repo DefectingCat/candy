@@ -30,3 +30,15 @@ pub fn upstream_timeout_default() -> u16 {
 pub fn default_disabled() -> bool {
     false
 }
+
+// default log level
+pub const DEFAULT_LOG_LEVEL: &str = "info";
+pub fn default_log_level() -> String {
+    DEFAULT_LOG_LEVEL.to_string()
+}
+
+// default log folder
+pub const DEFAULT_LOG_FOLDER: &str = "./logs";
+pub fn default_log_folder() -> String {
+    DEFAULT_LOG_FOLDER.to_string()
+}

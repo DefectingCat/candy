@@ -1,5 +1,8 @@
 use crate::{
-    consts::{default_disabled, host_index, timeout_default, upstream_timeout_default},
+    consts::{
+        default_disabled, default_log_folder, default_log_level, host_index, timeout_default,
+        upstream_timeout_default,
+    },
     error::Result,
 };
 use std::fs;
@@ -88,6 +91,13 @@ pub struct SettingHost {
 /// Whole config settings
 #[derive(Deserialize, Clone, Debug, Default)]
 pub struct Settings {
+    /// Logging level
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
+    /// Logging folder
+    #[serde(default = "default_log_folder")]
+    pub log_folder: String,
+
     /// Virtual host
     pub host: Vec<SettingHost>,
 }
