@@ -34,7 +34,8 @@ async fn main() -> Result<()> {
 
     let settings = Settings::new(&args.config).with_context(|| "init config failed")?;
 
-    init_logger(settings.log_level.as_str(), settings.log_folder.as_str());
+    let _guard = init_logger(settings.log_level.as_str(), settings.log_folder.as_str())
+        .with_context(|| "init logger failed")?;
 
     debug!("settings {:?}", settings);
     info!("{}/{} {}", NAME, VERSION, COMMIT);
