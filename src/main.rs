@@ -31,9 +31,11 @@ mod utils;
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = cli::Cli::parse();
-    init_logger();
 
     let settings = Settings::new(&args.config).with_context(|| "init config failed")?;
+
+    init_logger(settings.log_level.as_str(), settings.log_folder.as_str());
+
     debug!("settings {:?}", settings);
     info!("{}/{} {}", NAME, VERSION, COMMIT);
     info!("{}", COMPILER);
