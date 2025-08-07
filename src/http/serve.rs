@@ -615,10 +615,21 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
         .await
         .with_context(|| format!("读取目录条目失败: {}", path.display()))?
     {
+        #[cfg(unix)]
         let host_root_str = if host_root_str.ends_with('/') {
             host_root_str.to_string()
         } else {
             format!("{host_root_str}/")
+        };
+        // Windows 与 Unix 系统下的路劲处理方式不同
+        #[cfg(windows)]
+        let host_root_str = if host_root_str.ends_with('/') {
+            host_root_str
+                .strip_suffix('/')
+                .ok_or(anyhow!("list_dir: strip host_root_str suffix failed"))?
+                .to_string()
+        } else {
+            host_root_str.to_string()
         };
         // 为每个条目创建异步任务，并行获取元数据
         let task = tokio::task::spawn(async move {
