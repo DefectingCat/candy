@@ -13,6 +13,7 @@ use axum::{
 };
 use axum_extra::extract::Host;
 use dashmap::mapref::one::Ref;
+use http::response::Builder;
 use http::{
     HeaderMap, HeaderValue, StatusCode, Uri,
     header::{CONTENT_TYPE, ETAG, IF_NONE_MATCH, LOCATION},
@@ -74,13 +75,13 @@ async fn custom_page(
         .map_err(|_| RouteError::BadRequest())
         .with_context(|| format!("status code not found: {}", page.status))?;
 
-    tracing::debug!("custom not found path: {:?}", path);
+    debug!("custom not found path: {:?}", path);
 
     match stream_file(path.into(), request, Some(status)).await {
-        Ok(res) => RouteResult::Ok(res),
+        Ok(res) => Ok(res),
         Err(e) => {
             error!("Failed to stream file: {:?}", e);
-            RouteResult::Err(RouteError::InternalError())
+            Err(RouteError::InternalError())
         }
     }
 }
@@ -238,7 +239,7 @@ pub async fn serve(
                 return Ok(response);
             }
             // 生成自动目录索引
-            if host_route.auto_index {
+            return if host_route.auto_index {
                 // HTML 中的标题路径，需要移除掉配置文件中的 root = "./html" 字段
                 let host_root = if let Some(root) = &host_route.root {
                     root
@@ -252,11 +253,11 @@ pub async fn serve(
                 let list_html = render_list_html(host_root, list);
                 let mut headers = HeaderMap::new();
                 headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/html"));
-                return Ok((headers, list_html).into_response());
+                Ok((headers, list_html).into_response())
             } else {
                 debug!("No valid file found in path candidates");
-                return custom_page(host_route, request, false).await;
-            }
+                custom_page(host_route, request, false).await
+            };
         }
     };
     match stream_file(path_exists.into(), request, None).await {
@@ -321,17 +322,8 @@ async fn stream_file(
     let path_str = path.to_str().ok_or(anyhow!("convert path to str failed"))?;
     let etag = calculate_etag(&file, path_str).await?;
 
-    let mut response = Response::builder();
-    let mut not_modified = false;
-    // check request if-none-match
-    if let Some(if_none_match) = request.headers().get(IF_NONE_MATCH) {
-        if let Ok(if_none_match_str) = if_none_match.to_str() {
-            if if_none_match_str == etag {
-                response = response.status(StatusCode::NOT_MODIFIED);
-                not_modified = true;
-            }
-        }
-    }
+    let response = Response::builder();
+    let (mut response, not_modified) = check_if_none_match(request, &etag, response);
 
     let stream = if not_modified {
         empty_stream().await?
@@ -362,6 +354,20 @@ async fn stream_file(
         .body(body)
         .with_context(|| "Failed to build HTTP response with body")?;
     Ok(response)
+}
+
+pub fn check_if_none_match(request: Request, etag: &String, response: Builder) -> (Builder, bool) {
+    let mut not_modified = false;
+    // check request if-none-match
+    if let Some(if_none_match) = request.headers().get(IF_NONE_MATCH) {
+        if let Ok(if_none_match_str) = if_none_match.to_str() {
+            if if_none_match_str == etag {
+                not_modified = true;
+                return (response.status(StatusCode::NOT_MODIFIED), not_modified);
+            }
+        }
+    }
+    (response, not_modified)
 }
 
 pub async fn calculate_etag(file: &File, path: &str) -> anyhow::Result<String> {
@@ -658,7 +664,7 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
                 .path()
                 .to_string_lossy()
                 .strip_prefix(&host_root_str)
-                .ok_or(anyhow!("strip prefix failed"))?
+                .ok_or(anyhow!("list_dir: strip prefix failed"))?
                 .to_string();
             let path = if is_dir {
                 format!("./{path}/")

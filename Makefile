@@ -11,10 +11,10 @@ release:
 	$(CARGO) build --release
 
 dev:
-	CANDY_LOG=debug $(CARGO) watch -x run
+	$(CARGO) watch -x run
 
 run:
-	CANDY_LOG=debug $(CARGO) run
+	$(CARGO) run
 
 test:
 	$(CARGO) test
