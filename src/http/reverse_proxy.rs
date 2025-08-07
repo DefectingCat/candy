@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Duration};
+use std::time::Duration;
 
 use anyhow::Context;
 use axum::{
@@ -9,23 +9,23 @@ use axum::{
 use axum_extra::extract::Host;
 use dashmap::mapref::one::Ref;
 use http::{
-    HeaderName, HeaderValue, StatusCode, Uri,
-    header::{CONTENT_TYPE, ETAG, IF_NONE_MATCH},
+    HeaderName, HeaderValue, Uri,
+    header::{CONTENT_TYPE, ETAG},
 };
 use mime_guess::from_path;
 use reqwest::Client;
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 
+use super::{
+    HOSTS,
+    error::{RouteError, RouteResult},
+};
+use crate::http::serve::{check_if_none_match, empty_stream};
 use crate::{
     config::SettingRoute,
     http::serve::{calculate_etag, resolve_parent_path},
     utils::parse_port_from_host,
-};
-
-use super::{
-    HOSTS,
-    error::{RouteError, RouteResult},
 };
 
 /// 处理自定义错误页面（如404、500等）的请求
@@ -75,27 +75,13 @@ pub async fn handle_custom_page(
         .with_context(|| "open file failed")?;
 
     let etag = calculate_etag(&file, path.as_str()).await?;
-    let mut response = Response::builder();
-    let mut not_modified = false;
-
-    // 检查客户端缓存验证头（If-None-Match）
-    if let Some(if_none_match) = request.headers().get(IF_NONE_MATCH) {
-        if let Ok(if_none_match_str) = if_none_match.to_str() {
-            if if_none_match_str == etag {
-                // 资源未修改，返回304状态码
-                response = response.status(StatusCode::NOT_MODIFIED);
-                not_modified = true;
-            }
-        }
-    }
+    let response = Response::builder();
+    let (mut response, not_modified) = check_if_none_match(request, &etag, response);
 
     // 准备响应主体
     let stream = if not_modified {
-        // 304响应返回空内容
-        let empty = File::open(PathBuf::from("/dev/null"))
-            .await
-            .with_context(|| "open /dev/null failed")?;
-        ReaderStream::new(empty)
+        // 304 响应返回空内容
+        empty_stream().await?
     } else {
         // 正常响应返回文件内容
         ReaderStream::new(file)
