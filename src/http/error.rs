@@ -90,8 +90,8 @@ impl IntoResponse for RouteError {
             Any(err) => log_internal_error(err),
             RouteNotFound() => (StatusCode::NOT_FOUND, ErrorCode::NotFound.to_string()),
             InternalError() => (StatusCode::NOT_FOUND, ErrorCode::InternalError.to_string()),
-            // Infallible(infallible) => todo!(),
             BadRequest() => (StatusCode::NOT_FOUND, ErrorCode::BadRequest.to_string()),
+            _ => (StatusCode::NOT_FOUND, ErrorCode::NotFound.to_string()),
         };
         (status_code, err_message).into_response()
     }
