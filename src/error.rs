@@ -12,7 +12,7 @@ pub enum Error {
     #[error("failed to decode toml {0}")]
     TomlDecode(#[from] toml::de::Error),
     #[error("failed to handle http {0}")]
-    Http(#[from] hyper::http::Error),
+    Http(#[from] http::Error),
     #[error("failed to handle system time {0}")]
     Time(#[from] SystemTimeError),
     #[error("failed to convert int {0}")]

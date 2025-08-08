@@ -94,7 +94,7 @@ impl LuaEngine {
             .set(
                 "log",
                 lua.create_function(move |_, msg: String| {
-                    tracing::info!("Lua: {}", msg);
+                    info!("Lua: {}", msg);
                     Ok(())
                 })
                 .expect("create log function failed"),
