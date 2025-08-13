@@ -90,7 +90,7 @@ pub async fn lua(
             format!("Hosts not found for port: {port}, host: {host}, scheme: {scheme}")
         })?
         .route_map;
-    tracing::debug!("Route map entries: {:?}", route_map);
+    tracing::debug!("Lua: Route map entries: {:?}", route_map);
 
     let parent_path = resolve_parent_path(&req_uri, path.as_ref());
     let route_config = route_map

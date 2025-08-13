@@ -1,4 +1,8 @@
+log_level = "info"
+log_folder = "./logs"
+
 # Virtual host
+# Static file host
 [[host]]
 ip = "0.0.0.0"
 port = 80
@@ -34,6 +38,12 @@ page = "500.html"
 [host.route.not_found_page]
 status = 404
 page = "404.html"
+
+# Redirect
+[[host.route]]
+location = "/xfy"
+redirect_to = "http://localhost:8080/"
+redirect_code = 302
 
 # Reverse proxy
 [[host]]

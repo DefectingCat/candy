@@ -21,7 +21,7 @@
   - [x] x86_64-pc-windows-gnu
   - [x] x86_64-unknown-freebsd
   - [x] loongarch64-unknown-linux-gnu
-- [ ] HTTP redirect
+- [x] HTTP redirect
 - [ ] Load balance
 - [ ] Proxy
 - [x] Reverse Proxy
