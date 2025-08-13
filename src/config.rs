@@ -52,6 +52,10 @@ pub struct SettingRoute {
 
     /// Lua script
     pub lua_script: Option<String>,
+
+    /// HTTP redirect
+    pub redirect_to: Option<String>,
+    pub redirect_code: Option<u16>,
 }
 
 /// Host routes

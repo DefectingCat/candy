@@ -27,6 +27,8 @@ pub mod serve;
 pub mod reverse_proxy;
 // handle lua script
 pub mod lua;
+// handle http redirect
+pub mod redirect;
 
 /// Host configuration
 /// use virtual host port as key
@@ -128,6 +130,58 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     // convert to axum routes
     // register routes
     for host_route in &host.route {
+        // http redirect
+        if host_route.redirect_to.is_some() {
+            // resister with location
+            // location = "/doc"
+            // route: GET /doc/*
+            // resister with file path
+            // index = ["index.html", "index.txt"]
+            // route: GET /doc/index.html
+            // route: GET /doc/index.txt
+            // register parent path /doc
+            let path_morethan_one = host_route.location.len() > 1;
+            let route_path = if path_morethan_one && host_route.location.ends_with('/') {
+                // first register path with slash /doc
+                router = router.route(&host_route.location, get(redirect::redirect));
+                debug!("registed route {}", host_route.location);
+                let len = host_route.location.len();
+                let path_without_slash = host_route.location.chars().collect::<Vec<_>>()
+                    [0..len - 1]
+                    .iter()
+                    .collect::<String>();
+                // then register path without slash /doc/
+                router = router.route(&path_without_slash, get(redirect::redirect));
+                debug!("registed route {}", path_without_slash);
+                host_route.location.clone()
+            } else if path_morethan_one {
+                // first register path without slash /doc
+                router = router.route(&host_route.location, get(redirect::redirect));
+                debug!("registed route {}", host_route.location);
+                // then register path with slash /doc/
+                let path = format!("{}/", host_route.location);
+                router = router.route(&path, get(redirect::redirect));
+                debug!("registed route {}", path);
+                path
+            } else {
+                // register path /doc/
+                router = router.route(&host_route.location, get(serve::serve));
+                debug!("registed route {}", host_route.location);
+                host_route.location.clone()
+            };
+            // save route path to map
+            {
+                host_to_save
+                    .route_map
+                    .insert(route_path.clone(), host_route.clone());
+            }
+            let route_path = format!("{route_path}{{*path}}");
+            // register wildcard path /doc/*
+            router = router.route(route_path.as_ref(), get(serve::serve));
+            debug!("registed http redirect route: {}", route_path);
+            continue;
+        }
+
         // lua script
         if host_route.lua_script.is_some() {
             // papare lua script
@@ -140,6 +194,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
                     .route_map
                     .insert(host_route.location.clone(), host_route.clone());
             }
+            debug!("registed lua script route: {}", route_path);
             continue;
         }
 
@@ -159,6 +214,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
                     .route_map
                     .insert(host_route.location.clone(), host_route.clone());
             }
+            debug!("registed reverse proxy route: {}", route_path);
             continue;
         }
 
@@ -216,7 +272,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
         let route_path = format!("{route_path}{{*path}}");
         // register wildcard path /doc/*
         router = router.route(route_path.as_ref(), get(serve::serve));
-        debug!("registed route: {}", route_path);
+        debug!("registed static file route: {}", route_path);
     }
 
     // save host to map
