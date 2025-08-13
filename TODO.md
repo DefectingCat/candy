@@ -6,7 +6,7 @@
 - [x] Config init tests
 - [x] Error page
 - [x] Custom error page with stats code
-- [ ] Logging to file
+- [x] Logging to file
 - [ ] Benches
 - [x] Max body size
 - [x] HTTP 2
