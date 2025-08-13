@@ -356,18 +356,29 @@ async fn stream_file(
     Ok(response)
 }
 
+/// Check if-none-match header and return response
+///
+/// # Arguments
+///
+/// * `request` - The request object
+/// * `etag` - The etag to check
+/// * `response` - The response builder
+///
+/// # Returns
+///
+/// * `(response, bool)` - The response builder and a boolean indicating if the response is not modified
 pub fn check_if_none_match(request: Request, etag: &String, response: Builder) -> (Builder, bool) {
-    let mut not_modified = false;
     // check request if-none-match
-    if let Some(if_none_match) = request.headers().get(IF_NONE_MATCH) {
-        if let Ok(if_none_match_str) = if_none_match.to_str() {
-            if if_none_match_str == etag {
-                not_modified = true;
-                return (response.status(StatusCode::NOT_MODIFIED), not_modified);
-            }
-        }
+    let Some(if_none_match) = request.headers().get(IF_NONE_MATCH) else {
+        return (response, false);
+    };
+    let Ok(if_none_match_str) = if_none_match.to_str() else {
+        return (response, false);
+    };
+    if if_none_match_str == etag {
+        return (response.status(StatusCode::NOT_MODIFIED), true);
     }
-    (response, not_modified)
+    (response, false)
 }
 
 pub async fn calculate_etag(file: &File, path: &str) -> anyhow::Result<String> {
