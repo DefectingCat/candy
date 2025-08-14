@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.3 - 2025-08-14
+
+Features:
+
+- Logging to file
+- Add custom headers in route
+- Add HTTP redirect support
+
+Fix:
+
+- Fix auto_index file path render error
+- Fix auto_index rewrite error
+- Fix cannot write logs into file
+
 ## 0.2.2 - 2025-07-03
 
 Features:
