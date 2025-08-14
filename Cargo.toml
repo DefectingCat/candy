@@ -19,9 +19,12 @@ axum-extra = { version = "0.10.1", features = ["typed-header"] }
 axum-server = { version = "0.7.2", features = ["tls-rustls"] }
 tower = { version = "0.5.2", features = ["full"] }
 tower-http = { version = "0.6.6", features = ["full"] }
-reqwest = { version = "0.12.23", features = [
-    # "rustls-tls",
-    "native-tls-vendored",
+reqwest = { version = "0.12.23", default-features = false, features = [
+    "rustls-tls",
+    "charset",
+    "http2",
+    "system-proxy",
+    # "native-tls-vendored",
     "zstd",
     'gzip',
     'brotli',
