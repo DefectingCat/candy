@@ -5,6 +5,6 @@
   },
   "sidebar.tutorialSidebar.category.配置": {
     "message": "配置",
-    "description": "The label for category 配置 in sidebar tutorialSidebar"
+    "description": "The label for category '配置' in sidebar 'tutorialSidebar'"
   }
 }

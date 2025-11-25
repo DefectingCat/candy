@@ -30,6 +30,19 @@ pub mod lua;
 // handle http redirect
 pub mod redirect;
 
+// 0.2.4 todo
+// host update to support domain
+// {
+//     80: {
+//         "rua.plus": {
+//             "/doc": <SettingRoute>
+//         }
+//         "www.rua.plus": {
+//             "/doc": <SettingRoute>
+//         }
+//     }
+// }
+
 /// Host configuration
 /// use virtual host port as key
 /// use SettingHost as value

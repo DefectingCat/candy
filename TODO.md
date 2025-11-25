@@ -13,6 +13,8 @@
 
 ## Features
 
+- [ ] DNS Support
+- [ ] Feature flags to disable some functions
 - [x] Cross platform compile
   - [x] x86_64-unknown-linux-gnu
   - [x] x86_64-unknown-linux-musl
