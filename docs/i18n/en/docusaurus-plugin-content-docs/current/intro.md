@@ -76,20 +76,20 @@ index = ["index.html"]
 auto_index = true
 ```
 
-2. Create an `html` directory and add an `index.html` file:
+1. Create an `html` directory and add an `index.html` file:
 
 ```bash
 mkdir html
 echo "<h1>Hello from Candy!</h1>" > html/index.html
 ```
 
-3. Start the server:
+1. Start the server:
 
 ```bash
 ./target/release/candy
 ```
 
-4. Access in your browser: `http://localhost:8080`
+1. Access in your browser: `http://localhost:8080`
 
 ### Configuration File Location
 
@@ -135,6 +135,7 @@ lua_script = "./scripts/hello.lua"
 ```
 
 `scripts/hello.lua`:
+
 ```lua
 ctx:set_status(200)
 ctx:set_header("Content-Type", "text/plain")
@@ -159,5 +160,5 @@ Candy can run on the following platforms:
 
 Candy is an open-source project and contributions are welcome!
 
-- **Repository**: https://github.com/DefectingCat/candy
+- **Repository**: <https://github.com/DefectingCat/candy>
 - **License**: MIT License
