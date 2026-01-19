@@ -1,10 +1,10 @@
 use std::time::Duration;
 
-use axum_server::Handle;
+use axum_server::{Address, Handle};
 use tokio::{signal, time::sleep};
 use tracing::{debug, info};
 
-pub async fn graceful_shutdown(handle: Handle) {
+pub async fn graceful_shutdown<A: Address>(handle: Handle<A>) {
     let ctrl_c = async {
         signal::ctrl_c()
             .await
