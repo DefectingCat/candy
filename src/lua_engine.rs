@@ -31,7 +31,7 @@ impl LuaEngine {
         let shared_api = lua.create_table().expect("创建共享API子模块失败");
 
         // 注册共享字典操作方法
-        Self::register_shared_api(&lua, &shared_api, shared_table.clone());
+        Self::register_shared_api(&lua, &module, &shared_api, shared_table.clone());
 
         // 注册日志函数
         Self::register_log_function(&lua, &module);
@@ -50,6 +50,7 @@ impl LuaEngine {
     /// 注册共享字典操作 API
     fn register_shared_api(
         lua: &Lua,
+        module: &mlua::Table,
         shared_api: &mlua::Table,
         shared_table: Arc<DashMap<String, String>>,
     ) {
@@ -81,11 +82,7 @@ impl LuaEngine {
             .expect("设置共享字典 get 方法失败");
 
         // 将共享API添加到主模块
-        shared_api
-            .lua()
-            .globals()
-            .get::<_, mlua::Table>("candy")
-            .expect("获取全局变量 candy 失败")
+        module
             .set("shared", shared_api.clone())
             .expect("设置 shared 子模块失败");
     }
