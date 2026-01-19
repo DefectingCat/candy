@@ -25,6 +25,7 @@ mod config;
 mod consts;
 mod error;
 mod http;
+#[cfg(feature = "lua")]
 mod lua_engine;
 mod middlewares;
 mod utils;

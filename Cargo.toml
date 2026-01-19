@@ -7,6 +7,11 @@ edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["all"]
+all = ["lua"]
+lua = ["dep:mlua"]
+
 [dependencies]
 anyhow = "1.0.100"
 axum = { version = "0.8.8", features = ["macros"] }
@@ -22,7 +27,7 @@ md5 = "0.8.0"
 mimalloc = "0.1.48"
 mime_guess = "2.0.5"
 # lua
-mlua = { version = "0.11.5", features = [
+mlua = { version = "0.11.5", optional = true, features = [
     "anyhow",
     "async",
     "lua54",

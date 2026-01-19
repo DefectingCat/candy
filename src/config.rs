@@ -196,7 +196,7 @@ impl Settings {
                 // 验证至少有一个有效的路由配置
                 let has_valid_route = route.root.is_some()
                     || route.proxy_pass.is_some()
-                    || route.lua_script.is_some()
+                    || cfg!(feature = "lua") && route.lua_script.is_some()
                     || route.redirect_to.is_some();
 
                 if !has_valid_route {

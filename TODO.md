@@ -14,7 +14,8 @@
 ## Features
 
 - [x] DNS Support
-- [ ] Feature flags to disable some functions
+- [x] Feature flags to disable some functions
+  - [x] Lua support
 - [ ] Config file hot reload
 - [x] Cross platform compile
   - [x] x86_64-unknown-linux-gnu

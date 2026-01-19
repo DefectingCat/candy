@@ -21,6 +21,7 @@ pub mod serve;
 // 处理反向代理
 pub mod reverse_proxy;
 // 处理 Lua 脚本
+#[cfg(feature = "lua")]
 pub mod lua;
 // 处理 HTTP 重定向
 pub mod redirect;
@@ -99,6 +100,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
         }
 
         // Lua 脚本
+        #[cfg(feature = "lua")]
         if host_route.lua_script.is_some() {
             // 准备 Lua 脚本
             router = router.route(host_route.location.as_ref(), get(lua::lua));
