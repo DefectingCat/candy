@@ -4,7 +4,6 @@ use axum::{
     extract::{Path, Request},
     response::{IntoResponse, Response},
 };
-use axum_extra::extract::Host;
 use http::{Uri, header::LOCATION};
 
 use crate::{
@@ -19,11 +18,15 @@ use crate::{
 pub async fn redirect(
     req_uri: Uri,
     path: Option<Path<String>>,
-    Host(host): Host,
     req: Request<Body>,
 ) -> RouteResult<impl IntoResponse> {
     let scheme = req.uri().scheme_str().unwrap_or("http");
-    let port = parse_port_from_host(&host, scheme).ok_or(RouteError::BadRequest())?;
+    let host = req
+        .headers()
+        .get("host") // 注意：host 是小写的
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default();
+    let port = parse_port_from_host(host, scheme).ok_or(RouteError::BadRequest())?;
     let route_map = &HOSTS
         .get(&port)
         .ok_or(RouteError::BadRequest())

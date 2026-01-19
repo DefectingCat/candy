@@ -6,7 +6,6 @@ use axum::{
     extract::{Path, Request},
     response::{IntoResponse, Response},
 };
-use axum_extra::extract::Host;
 use dashmap::mapref::one::Ref;
 use http::{
     HeaderName, HeaderValue, Uri,
@@ -131,7 +130,6 @@ pub async fn handle_custom_page(
 pub async fn serve(
     req_uri: Uri,
     path: Option<Path<String>>,
-    Host(host): Host,
     mut req: Request<Body>,
 ) -> RouteResult<impl IntoResponse> {
     let req_path = req.uri().path();
@@ -141,8 +139,13 @@ pub async fn serve(
         .map(|v| v.as_str())
         .unwrap_or(req_path);
 
+    let host = req
+        .headers()
+        .get("host") // 注意：host 是小写的
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default();
     let scheme = req.uri().scheme_str().unwrap_or("http");
-    let port = parse_port_from_host(&host, scheme).ok_or(RouteError::BadRequest())?;
+    let port = parse_port_from_host(host, scheme).ok_or(RouteError::BadRequest())?;
     let route_map = &HOSTS
         .get(&port)
         .ok_or(RouteError::BadRequest())

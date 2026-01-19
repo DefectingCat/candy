@@ -11,7 +11,6 @@ use axum::{
     extract::{Path, Request},
     response::{IntoResponse, Response},
 };
-use axum_extra::extract::Host;
 use dashmap::mapref::one::Ref;
 use http::response::Builder;
 use http::{
@@ -104,7 +103,6 @@ async fn custom_page(
 pub async fn serve(
     uri: Uri,
     path: Option<Path<String>>,
-    Host(host): Host,
     request: Request,
 ) -> RouteResult<impl IntoResponse> {
     // find parent path
@@ -125,13 +123,19 @@ pub async fn serve(
         uri, path, request
     );
 
+    let host = request
+        .headers()
+        .get("host") // 注意：host 是小写的
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default();
+
     // parent_path is key in route map
     // which is `host_route.location`
     let parent_path = resolve_parent_path(&uri, path.as_ref());
     let scheme = request.uri().scheme_str().unwrap_or("http");
     // port is key in route_map
     // which is `host_route.port`, used to find current host configuration
-    let port = parse_port_from_host(&host, scheme).ok_or(RouteError::BadRequest())?;
+    let port = parse_port_from_host(host, scheme).ok_or(RouteError::BadRequest())?;
     // route_map can be found by port
     // current host configruation
     let route_map = &HOSTS

@@ -8,6 +8,7 @@ use anyhow::anyhow;
 use axum::{Router, extract::DefaultBodyLimit, middleware, routing::get};
 use axum_server::{Handle, tls_rustls::RustlsConfig};
 use dashmap::DashMap;
+use http::StatusCode;
 use mlua::Lua;
 use tower::ServiceBuilder;
 use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer};
@@ -295,7 +296,10 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
         ServiceBuilder::new()
             .layer(middleware::from_fn(add_version))
             .layer(middleware::from_fn(add_headers))
-            .layer(TimeoutLayer::new(Duration::from_secs(host.timeout.into())))
+            .layer(TimeoutLayer::with_status_code(
+                StatusCode::SERVICE_UNAVAILABLE,
+                Duration::from_secs(host.timeout.into()),
+            ))
             .layer(CompressionLayer::new()),
     );
 

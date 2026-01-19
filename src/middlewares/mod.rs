@@ -8,7 +8,6 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use axum_extra::extract::Host;
 use http::HeaderName;
 use tower_http::classify::ServerErrorsFailureClass;
 use tower_http::trace::TraceLayer;
@@ -60,10 +59,15 @@ pub async fn add_version(req: Request<Body>, next: Next) -> impl IntoResponse {
 /// ```toml
 /// [hosts."8080"]
 /// headers = { "X-Custom" = "value" }
-pub async fn add_headers(Host(host): Host, req: Request, next: Next) -> impl IntoResponse {
+pub async fn add_headers(req: Request, next: Next) -> impl IntoResponse {
     let scheme = req.uri().scheme_str().unwrap_or("http");
+    let host = req
+        .headers()
+        .get("host") // 注意：host 是小写的
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default();
     debug!("scheme {:?}", scheme);
-    let Some(port) = parse_port_from_host(&host, scheme) else {
+    let Some(port) = parse_port_from_host(host, scheme) else {
         return next.run(req).await;
     };
     let uri = req.uri();
