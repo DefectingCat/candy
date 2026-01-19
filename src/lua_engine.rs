@@ -115,3 +115,80 @@ impl LuaEngine {
 ///
 /// 整个应用程序中共享同一个 Lua 引擎实例，避免重复初始化开销
 pub static LUA_ENGINE: LazyLock<LuaEngine> = LazyLock::new(LuaEngine::new);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lua_engine_creation() {
+        // 测试 Lua 引擎是否能够正常创建
+        let engine = LuaEngine::new();
+        assert!(engine.lua.globals().contains_key("candy").unwrap());
+    }
+
+    #[test]
+    fn test_shared_table_operations() {
+        // 测试共享字典的 set 和 get 方法
+        let engine = LuaEngine::new();
+        let key = "test_key";
+        let value = "test_value";
+
+        // 使用 Lua 脚本设置和获取值
+        let result: String = engine
+            .lua
+            .load(&format!(
+                "candy.shared.set('{}', '{}'); return candy.shared.get('{}')",
+                key, value, key
+            ))
+            .eval()
+            .unwrap();
+
+        assert_eq!(result, value);
+
+        // 测试获取不存在的键
+        let result: String = engine
+            .lua
+            .load("return candy.shared.get('nonexistent_key')")
+            .eval()
+            .unwrap();
+
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_version_info() {
+        // 测试系统信息的访问
+        let engine = LuaEngine::new();
+
+        let version: String = engine.lua.load("return candy.version").eval().unwrap();
+        let name: String = engine.lua.load("return candy.name").eval().unwrap();
+        let os: String = engine.lua.load("return candy.os").eval().unwrap();
+        let arch: String = engine.lua.load("return candy.arch").eval().unwrap();
+        let compiler: String = engine.lua.load("return candy.compiler").eval().unwrap();
+        let commit: String = engine.lua.load("return candy.commit").eval().unwrap();
+
+        assert!(!version.is_empty());
+        assert!(!name.is_empty());
+        assert!(!os.is_empty());
+        assert!(!arch.is_empty());
+        assert!(!compiler.is_empty());
+        assert!(!commit.is_empty());
+    }
+
+    #[test]
+    fn test_log_function() {
+        // 测试 log 函数是否能够正常工作
+        let engine = LuaEngine::new();
+
+        // 执行 log 函数应该不会出错
+        engine
+            .lua
+            .load("candy.log('Test log message')")
+            .eval::<()>()
+            .unwrap();
+
+        // 测试成功，没有抛出异常
+        assert!(true);
+    }
+}
