@@ -61,13 +61,14 @@ pub async fn add_version(req: Request<Body>, next: Next) -> impl IntoResponse {
 /// headers = { "X-Custom" = "value" }
 pub async fn add_headers(req: Request, next: Next) -> impl IntoResponse {
     let scheme = req.uri().scheme_str().unwrap_or("http");
-    let host = req
+    let host_header = req
         .headers()
         .get("host") // 注意：host 是小写的
         .and_then(|h| h.to_str().ok())
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .to_string();
     debug!("scheme {:?}", scheme);
-    let Some(port) = parse_port_from_host(host, scheme) else {
+    let Some(port) = parse_port_from_host(&host_header, scheme) else {
         return next.run(req).await;
     };
     let uri = req.uri();
@@ -77,9 +78,35 @@ pub async fn add_headers(req: Request, next: Next) -> impl IntoResponse {
     debug!("port {:?}", port);
     let mut res = next.run(req).await;
     let req_headers = res.headers_mut();
-    let Some(host) = HOSTS.get(&port) else {
+    let Some(port_config) = HOSTS.get(&port) else {
         return res;
     };
+
+    // 解析域名
+    let (domain, _) = host_header.split_once(':').unwrap_or((&host_header, ""));
+    let domain = domain.to_lowercase();
+
+    // 查找匹配的域名配置
+    let host = if let Some(entry) = port_config.get(&Some(domain.clone())) {
+        Some(entry.clone())
+    } else {
+        // 尝试不区分大小写的匹配
+        let mut found = None;
+        for entry in port_config.iter() {
+            if let Some(server_name) = entry.key()
+                && server_name.to_lowercase() == domain
+            {
+                found = Some(entry.value().clone());
+                break;
+            }
+        }
+        found.or_else(|| port_config.get(&None).map(|v| v.clone()))
+    };
+
+    let Some(host) = host else {
+        return res;
+    };
+
     let route_map = &host.route_map;
 
     // Find host route
@@ -90,8 +117,8 @@ pub async fn add_headers(req: Request, next: Next) -> impl IntoResponse {
         return res;
     };
 
-    headers.iter().for_each(|entery| {
-        let (key, value) = (entery.key(), entery.value());
+    headers.iter().for_each(|entry| {
+        let (key, value) = (entry.key(), entry.value());
         let Ok(header_name) = HeaderName::from_bytes(key.as_bytes()) else {
             error!("Invalid header name: {key}");
             return;

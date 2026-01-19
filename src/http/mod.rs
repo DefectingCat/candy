@@ -40,16 +40,17 @@ pub mod redirect;
 
 /// 主机配置
 /// 使用虚拟主机端口作为键
+/// 使用域名（或 None 表示默认主机）作为二级键
 /// 使用 SettingHost 作为值
-/// 使用端口作为父级部分
-/// 使用 host.route.location 作为键
-/// 使用 host.route 结构体作为值
 /// {
 ///     80: {
-///         "/doc": <SettingRoute>
+///         Some("rua.plus"): <SettingHost>,
+///         Some("www.rua.plus"): <SettingHost>,
+///         None: <SettingHost> // 默认主机
 ///     }
 /// }
-pub static HOSTS: LazyLock<DashMap<u16, SettingHost>> = LazyLock::new(DashMap::new);
+pub static HOSTS: LazyLock<DashMap<u16, DashMap<Option<String>, SettingHost>>> =
+    LazyLock::new(DashMap::new);
 
 pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     let mut router = Router::new();
@@ -204,7 +205,14 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     }
 
     // 保存主机到映射中
-    HOSTS.insert(host.port, host_to_save);
+    let server_name = host.server_name.as_ref().cloned();
+    if let Some(port_entry) = HOSTS.get_mut(&host.port) {
+        port_entry.insert(server_name, host_to_save);
+    } else {
+        let domain_map = DashMap::new();
+        domain_map.insert(server_name, host_to_save);
+        HOSTS.insert(host.port, domain_map);
+    }
 
     router = router.layer(
         ServiceBuilder::new()

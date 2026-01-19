@@ -71,12 +71,17 @@ pub type HeaderMap = DashMap<String, String>;
 
 /// 虚拟主机配置
 /// 每个主机可以监听一个端口和一个 IP 地址
+/// 支持基于域名的路由配置
 #[derive(Deserialize, Clone, Debug, Default)]
 pub struct SettingHost {
     /// 主机 IP 地址
     pub ip: String,
     /// 主机端口
     pub port: u16,
+    /// 服务器名称（域名）
+    /// 用于支持同一端口下的不同域名路由
+    /// 例如："rua.plus" 或 "www.rua.plus"
+    pub server_name: Option<String>,
     /// 是否启用 SSL
     #[serde(default = "default_disabled")]
     pub ssl: bool,
