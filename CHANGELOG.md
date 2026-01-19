@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.4 - 2026-01-19
+
+Features:
+- Add Lua support as an optional feature with feature flag
+- Support domain-based routing configuration
+- Improve configuration module with validation and route mapping initialization
+- Add Lua engine unit tests
+- Update dependencies (axum-server, reqwest, and others)
+
+Fix:
+- Fix MDX compilation error in intro.md
+
+Docs:
+- Update documentation: improve formatting, add installation instructions and quick examples
+- Update AGENTS.md with comprehensive guidelines
+- Complete documentation for Lua script functionality
+- Improve configuration file documentation
+- Translate error messages and logs from Chinese to English
+
 ## 0.2.3 - 2025-08-14
 
 Features:
