@@ -12,7 +12,8 @@ use tokio::fs::{self};
 use tracing::error;
 
 use crate::{
-    http::{HOSTS, LUA_ENGINE, error::RouteError, serve::resolve_parent_path},
+    http::{HOSTS, error::RouteError, serve::resolve_parent_path},
+    lua_engine::LUA_ENGINE,
     utils::parse_port_from_host,
 };
 

@@ -25,6 +25,7 @@ mod config;
 mod consts;
 mod error;
 mod http;
+mod lua_engine;
 mod middlewares;
 mod utils;
 
