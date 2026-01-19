@@ -25,19 +25,6 @@ pub mod lua;
 // 处理 HTTP 重定向
 pub mod redirect;
 
-// 0.2.4 待办
-// 主机配置更新以支持域名
-// {
-//     80: {
-//         "rua.plus": {
-//             "/doc": <SettingRoute>
-//         }
-//         "www.rua.plus": {
-//             "/doc": <SettingRoute>
-//         }
-//     }
-// }
-
 /// 主机配置
 /// 使用虚拟主机端口作为键
 /// 使用域名（或 None 表示默认主机）作为二级键
@@ -73,7 +60,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
             let route_path = if path_morethan_one && host_route.location.ends_with('/') {
                 // 首先注册带斜杠的路径 /doc
                 router = router.route(&host_route.location, get(redirect::redirect));
-                debug!("已注册路由 {}", host_route.location);
+                debug!("Route registered: {}", host_route.location);
                 let len = host_route.location.len();
                 let path_without_slash = host_route.location.chars().collect::<Vec<_>>()
                     [0..len - 1]
@@ -81,21 +68,21 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
                     .collect::<String>();
                 // 然后注册不带斜杠的路径 /doc/
                 router = router.route(&path_without_slash, get(redirect::redirect));
-                debug!("已注册路由 {}", path_without_slash);
+                debug!("Route registered: {}", path_without_slash);
                 host_route.location.clone()
             } else if path_morethan_one {
                 // 首先注册不带斜杠的路径 /doc
                 router = router.route(&host_route.location, get(redirect::redirect));
-                debug!("已注册路由 {}", host_route.location);
+                debug!("Route registered: {}", host_route.location);
                 // 然后注册带斜杠的路径 /doc/
                 let path = format!("{}/", host_route.location);
                 router = router.route(&path, get(redirect::redirect));
-                debug!("已注册路由 {}", path);
+                debug!("Route registered: {}", path);
                 path
             } else {
                 // 注册路径 /doc/
                 router = router.route(&host_route.location, get(serve::serve));
-                debug!("已注册路由 {}", host_route.location);
+                debug!("Route registered: {}", host_route.location);
                 host_route.location.clone()
             };
             // 将路由路径保存到映射中
@@ -107,7 +94,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
             let route_path = format!("{route_path}{{*path}}");
             // 注册通配符路径 /doc/*
             router = router.route(route_path.as_ref(), get(serve::serve));
-            debug!("已注册 HTTP 重定向路由: {}", route_path);
+            debug!("HTTP redirect route registered: {}", route_path);
             continue;
         }
 
@@ -123,7 +110,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
                     .route_map
                     .insert(host_route.location.clone(), host_route.clone());
             }
-            debug!("已注册 Lua 脚本路由: {}", route_path);
+            debug!("Lua script route registered: {}", route_path);
             continue;
         }
 
@@ -143,13 +130,13 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
                     .route_map
                     .insert(host_route.location.clone(), host_route.clone());
             }
-            debug!("已注册反向代理路由: {}", route_path);
+            debug!("Reverse proxy route registered: {}", route_path);
             continue;
         }
 
         // 静态文件
         if host_route.root.is_none() {
-            warn!("路由未找到 root 字段: {:?}", host_route.location);
+            warn!("Route missing root field: {:?}", host_route.location);
             continue;
         }
         // 设置请求最大体大小
@@ -168,28 +155,28 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
         let route_path = if path_morethan_one && host_route.location.ends_with('/') {
             // 首先注册带斜杠的路径 /doc
             router = router.route(&host_route.location, get(serve::serve));
-            debug!("已注册路由 {}", host_route.location);
+            debug!("Route registered: {}", host_route.location);
             let len = host_route.location.len();
             let path_without_slash = host_route.location.chars().collect::<Vec<_>>()[0..len - 1]
                 .iter()
                 .collect::<String>();
             // 然后注册不带斜杠的路径 /doc/
             router = router.route(&path_without_slash, get(serve::serve));
-            debug!("已注册路由 {}", path_without_slash);
+            debug!("Route registered: {}", path_without_slash);
             host_route.location.clone()
         } else if path_morethan_one {
             // 首先注册不带斜杠的路径 /doc
             router = router.route(&host_route.location, get(serve::serve));
-            debug!("已注册路由 {}", host_route.location);
+            debug!("Route registered: {}", host_route.location);
             // 然后注册带斜杠的路径 /doc/
             let path = format!("{}/", host_route.location);
             router = router.route(&path, get(serve::serve));
-            debug!("已注册路由 {}", path);
+            debug!("Route registered: {}", path);
             path
         } else {
             // 注册路径 /doc/
             router = router.route(&host_route.location, get(serve::serve));
-            debug!("已注册路由 {}", host_route.location);
+            debug!("Route registered: {}", host_route.location);
             host_route.location.clone()
         };
         // 将路由路径保存到映射中
@@ -201,7 +188,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
         let route_path = format!("{route_path}{{*path}}");
         // 注册通配符路径 /doc/*
         router = router.route(route_path.as_ref(), get(serve::serve));
-        debug!("已注册静态文件路由: {}", route_path);
+        debug!("Static file route registered: {}", route_path);
     }
 
     // 保存主机到映射中
@@ -239,21 +226,24 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     // 则创建 SSL 监听器
     // 否则创建 TCP 监听器
     if host.ssl && host.certificate.is_some() && host.certificate_key.is_some() {
-        let cert = host.certificate.as_ref().ok_or(anyhow!("未找到证书"))?;
+        let cert = host
+            .certificate
+            .as_ref()
+            .ok_or(anyhow!("Certificate not found"))?;
         let key = host
             .certificate_key
             .as_ref()
-            .ok_or(anyhow!("未找到证书密钥"))?;
-        debug!("证书 {} 证书密钥 {}", cert, key);
+            .ok_or(anyhow!("Certificate key not found"))?;
+        debug!("Certificate: {} Certificate key: {}", cert, key);
 
         let rustls_config = RustlsConfig::from_pem_file(cert, key).await?;
-        info!("正在监听 https://{}", addr);
+        info!("Listening on https://{}", addr);
         axum_server::bind_rustls(addr, rustls_config)
             .handle(handle)
             .serve(router.into_make_service())
             .await?;
     } else {
-        info!("正在监听 http://{}", addr);
+        info!("Listening on http://{}", addr);
         axum_server::bind(addr)
             .handle(handle)
             .serve(router.into_make_service())

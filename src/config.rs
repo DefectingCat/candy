@@ -127,7 +127,7 @@ impl Settings {
     ///
     /// 解析后的 Settings 实例，或包含错误信息的 Result
     pub fn new(path: &str) -> Result<Self> {
-        let file = fs::read_to_string(path).with_context(|| format!("读取 {path} 失败"))?;
+        let file = fs::read_to_string(path).with_context(|| format!("Failed to read {path}"))?;
         let mut settings: Settings = toml::from_str(&file)?;
 
         // 初始化路由映射
@@ -150,22 +150,34 @@ impl Settings {
             // 验证 SSL 配置
             if host.ssl {
                 if host.certificate.is_none() || host.certificate_key.is_none() {
-                    return Err(anyhow::anyhow!("主机 {} 启用了 SSL 但缺少证书或密钥", i).into());
+                    return Err(anyhow::anyhow!(
+                        "Host {} has SSL enabled but missing certificate or key",
+                        i
+                    )
+                    .into());
                 }
 
                 // 验证证书文件存在
                 if let Some(cert_path) = &host.certificate
                     && !Path::new(cert_path).exists()
                 {
-                    return Err(anyhow::anyhow!("主机 {} 证书文件未找到: {}", i, cert_path).into());
+                    return Err(anyhow::anyhow!(
+                        "Host {} certificate file not found: {}",
+                        i,
+                        cert_path
+                    )
+                    .into());
                 }
 
                 if let Some(key_path) = &host.certificate_key
                     && !Path::new(key_path).exists()
                 {
-                    return Err(
-                        anyhow::anyhow!("主机 {} 证书密钥文件未找到: {}", i, key_path).into(),
-                    );
+                    return Err(anyhow::anyhow!(
+                        "Host {} certificate key file not found: {}",
+                        i,
+                        key_path
+                    )
+                    .into());
                 }
             }
 
@@ -173,7 +185,7 @@ impl Settings {
             for (j, route) in host.route.iter().enumerate() {
                 if route.location.is_empty() || !route.location.starts_with('/') {
                     return Err(anyhow::anyhow!(
-                        "主机 {} 路由 {} 位置无效: {}",
+                        "Host {} route {} location invalid: {}",
                         i,
                         j,
                         route.location
@@ -188,7 +200,7 @@ impl Settings {
                     || route.redirect_to.is_some();
 
                 if !has_valid_route {
-                    return Err(anyhow::anyhow!("主机 {} 路由 {} 配置无效（需要 root、proxy_pass、lua_script 或 redirect_to）", i, j).into());
+                    return Err(anyhow::anyhow!("Host {} route {} configuration invalid (requires root, proxy_pass, lua_script or redirect_to)", i, j).into());
                 }
             }
         }
@@ -252,7 +264,7 @@ mod tests {
             result
                 .unwrap_err()
                 .to_string()
-                .contains("读取 nonexistent.toml 失败")
+                .contains("Failed to read nonexistent.toml")
         );
     }
 
@@ -287,7 +299,12 @@ mod tests {
         let path = file.path().to_str().unwrap();
         let result = Settings::new(path);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("缺少证书或密钥"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("missing certificate or key")
+        );
     }
 
     #[test]
@@ -313,7 +330,12 @@ mod tests {
         let path = file.path().to_str().unwrap();
         let result = Settings::new(path);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("证书文件未找到"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("certificate file not found")
+        );
     }
 
     #[test]
@@ -337,7 +359,7 @@ mod tests {
         let path = file.path().to_str().unwrap();
         let result = Settings::new(path);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("位置无效"));
+        assert!(result.unwrap_err().to_string().contains("location invalid"));
     }
 
     #[test]
@@ -360,7 +382,12 @@ mod tests {
         let path = file.path().to_str().unwrap();
         let result = Settings::new(path);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("配置无效"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("configuration invalid")
+        );
     }
 
     #[test]

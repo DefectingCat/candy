@@ -27,8 +27,10 @@ impl LuaEngine {
         let shared_table = Arc::new(DashMap::new());
 
         // 创建主模块和共享API子模块
-        let module = lua.create_table().expect("创建 Lua 模块失败");
-        let shared_api = lua.create_table().expect("创建共享API子模块失败");
+        let module = lua.create_table().expect("Failed to create Lua module");
+        let shared_api = lua
+            .create_table()
+            .expect("Failed to create shared API submodule");
 
         // 注册共享字典操作方法
         Self::register_shared_api(&lua, &module, &shared_api, shared_table.clone());
@@ -61,10 +63,10 @@ impl LuaEngine {
                 table_clone.insert(key, value.clone());
                 Ok(())
             })
-            .expect("创建共享字典 set 函数失败");
+            .expect("Failed to create shared dictionary set function");
         shared_api
             .set("set", set_func)
-            .expect("设置共享字典 set 方法失败");
+            .expect("Failed to set shared dictionary set method");
 
         // 注册 get 方法
         let table_clone = shared_table.clone();
@@ -72,19 +74,19 @@ impl LuaEngine {
             .create_function(move |_, key: String| match table_clone.get(&key) {
                 Some(value) => Ok(value.clone()),
                 None => {
-                    error!("shared_api: 获取的键不存在: {}", key);
+                    error!("shared_api: Key not found: {}", key);
                     Ok(String::new())
                 }
             })
-            .expect("创建共享字典 get 函数失败");
+            .expect("Failed to create shared dictionary get function");
         shared_api
             .set("get", get_func)
-            .expect("设置共享字典 get 方法失败");
+            .expect("Failed to set shared dictionary get method");
 
         // 将共享API添加到主模块
         module
             .set("shared", shared_api.clone())
-            .expect("设置 shared 子模块失败");
+            .expect("Failed to set shared submodule");
     }
 
     /// 注册日志函数到主模块
@@ -94,20 +96,30 @@ impl LuaEngine {
                 info!("Lua: {}", msg);
                 Ok(())
             })
-            .expect("创建日志函数失败");
-        module.set("log", log_func).expect("设置 log 方法失败");
+            .expect("Failed to create log function");
+        module
+            .set("log", log_func)
+            .expect("Failed to set log method");
     }
 
     /// 注册版本信息常量到主模块
     fn register_version_info(module: &mlua::Table) {
-        module.set("version", VERSION).expect("设置版本号失败");
-        module.set("name", NAME).expect("设置应用名称失败");
-        module.set("os", OS).expect("设置操作系统信息失败");
-        module.set("arch", ARCH).expect("设置架构信息失败");
+        module
+            .set("version", VERSION)
+            .expect("Failed to set version");
+        module
+            .set("name", NAME)
+            .expect("Failed to set application name");
+        module.set("os", OS).expect("Failed to set OS info");
+        module
+            .set("arch", ARCH)
+            .expect("Failed to set architecture info");
         module
             .set("compiler", COMPILER)
-            .expect("设置编译器信息失败");
-        module.set("commit", COMMIT).expect("设置提交哈希失败");
+            .expect("Failed to set compiler info");
+        module
+            .set("commit", COMMIT)
+            .expect("Failed to set commit hash");
     }
 }
 
