@@ -2,3 +2,7 @@ target
 html
 .git
 *.example
+.github
+docs
+accsets
+logs
