@@ -13,7 +13,7 @@
 
 ## Features
 
-- [ ] DNS Support
+- [x] DNS Support
 - [ ] Feature flags to disable some functions
 - [ ] Config file hot reload
 - [x] Cross platform compile

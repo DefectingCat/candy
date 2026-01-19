@@ -1,66 +1,98 @@
-log_level = "info"
-log_folder = "./logs"
+# Candy Server Configuration Example
+# Full configuration with all available options
 
-# Virtual host
-# Static file host
+# Global settings
+log_level = "info"  # trace, debug, info, warn, error (default: info)
+log_folder = "./logs"  # Log files directory (default: ./logs)
+
+# Virtual host configuration
+# Each [[host]] block defines a separate virtual host
+
+# Example 1: Static file server with SSL
 [[host]]
-ip = "0.0.0.0"
-port = 80
-# Connection timeout
-timeout = 15
-# SSL certificate
-# ssl enable
-# ssl = true
-# Self sign a certificate
-# sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ./html/selfsigned.key -out ./html/selfsigned.crt
-certificate = "./html/selfsigned.crt"
-certificate_key = "./html/selfsigned.key"
-# Add custom headers to response
-[host.headers]
-X-Powered-By = "candy"
-# Routes for virtual host
+ip = "0.0.0.0"  # Listen on all interfaces
+port = 443  # HTTPS port
+server_name = "example.com"  # Optional domain name for virtual hosting
+ssl = true  # Enable SSL/TLS (default: false)
+certificate = "./ssl/certificate.crt"  # SSL certificate path
+certificate_key = "./ssl/private.key"  # SSL private key path
+timeout = 75  # HTTP keep-alive timeout in seconds (default: 75)
+
+# Route for static files
 [[host.route]]
-# Route location
-location = "/"
-# Static file root
-# or proxy_pass
-# or redirect
-root = "html"
-# Only use for root field
-index = ["index.html"]
-# List directory
-auto_index = true
-# Custom 500 page
+location = "/"  # Route path (must start with /)
+root = "./html"  # Static files root directory
+index = ["index.html", "index.htm"]  # Default index files (default: ["index.html"])
+auto_index = true  # Enable directory listing (default: false)
+proxy_timeout = 5  # Proxy timeout (only for proxy_pass, default: 5)
+max_body_size = 1048576  # Max request body size in bytes (optional)
+
+# Custom error page
 [host.route.error_page]
-status = 500
-page = "500.html"
+status = 500  # HTTP status code
+page = "/500.html"  # Path to error page
+
 # Custom 404 page
 [host.route.not_found_page]
-status = 404
-page = "404.html"
+status = 404  # HTTP status code
+page = "/404.html"  # Path to 404 page
 
-# Redirect
-[[host.route]]
-location = "/xfy"
-redirect_to = "http://localhost:8080/"
-redirect_code = 302
+# Custom response headers
+[host.route.headers]
+X-Powered-By = "Candy Server"
+Cache-Control = "public, max-age=3600"
 
-# Reverse proxy
+# Example 2: Reverse proxy
 [[host]]
 ip = "0.0.0.0"
 port = 8080
-[[host.route]]
-location = "/"
-proxy_pass = "http://localhost:3000/"
-# Timeout for connect to upstream
-proxy_timeout = 10
-# Client request max body size (bytes)
-max_body_size = 2048
+server_name = "api.example.com"
+ssl = false  # Disable SSL for HTTP
 
-# Lua script
+[[host.route]]
+location = "/api"
+proxy_pass = "http://localhost:3000"  # Upstream server URL
+proxy_timeout = 10  # Proxy timeout in seconds (default: 5)
+max_body_size = 10485760  # 10MB max body size
+
+# Example 3: HTTP redirect
+[[host]]
+ip = "0.0.0.0"
+port = 80
+server_name = "example.com"
+
+[[host.route]]
+location = "/old-path"
+redirect_to = "https://example.com/new-path"  # Target URL
+redirect_code = 301  # Redirect status code (301 = permanent, 302 = temporary)
+
+# Example 4: Lua script handler
 [[host]]
 ip = "0.0.0.0"
 port = 8081
+
+[[host.route]]
+location = "/lua"
+lua_script = "./scripts/handler.lua"  # Path to Lua script
+
+# Example 5: Multiple routes on same host
+[[host]]
+ip = "0.0.0.0"
+port = 8082
+
+# Static files route
 [[host.route]]
 location = "/"
-lua_script = "html/index.lua"
+root = "./static"
+index = ["index.html"]
+
+# API proxy route
+[[host.route]]
+location = "/api"
+proxy_pass = "http://localhost:3001"
+
+# Admin panel redirect
+[[host.route]]
+location = "/admin"
+redirect_to = "https://admin.example.com"
+redirect_code = 302
