@@ -160,5 +160,5 @@ Candy can run on the following platforms:
 
 Candy is an open-source project and contributions are welcome!
 
-- **Repository**: <https://github.com/DefectingCat/candy>
+- **Repository**: [https://github.com/DefectingCat/candy](https://github.com/DefectingCat/candy)
 - **License**: MIT License

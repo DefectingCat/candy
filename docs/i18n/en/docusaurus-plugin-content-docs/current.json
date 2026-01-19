@@ -4,7 +4,7 @@
     "description": "The label for version current"
   },
   "sidebar.tutorialSidebar.category.配置": {
-    "message": "配置",
+    "message": "Configuration",
     "description": "The label for category '配置' in sidebar 'tutorialSidebar'"
   }
 }

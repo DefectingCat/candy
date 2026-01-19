@@ -160,5 +160,5 @@ Candy 可以在以下平台上运行：
 
 Candy 是一个开源项目，欢迎贡献！
 
-- **仓库地址**：<https://github.com/DefectingCat/candy>
+- **仓库地址**：[https://github.com/DefectingCat/candy](https://github.com/DefectingCat/candy)
 - **许可证**：MIT License
