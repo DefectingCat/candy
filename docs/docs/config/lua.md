@@ -25,10 +25,12 @@ lua_script = "scripts/api_handler.lua"
 #### `ctx` - 请求/响应上下文
 
 **请求方法：**
+
 - `ctx:get_path()` - 获取当前请求路径
 - `ctx:get_method()` - 获取 HTTP 请求方法
 
 **响应方法：**
+
 - `ctx:set_status(status)` - 设置响应状态码（默认为 200）
 - `ctx:set_body(body)` - 设置响应内容
 - `ctx:set_header(key, value)` - 设置响应头
@@ -36,13 +38,16 @@ lua_script = "scripts/api_handler.lua"
 #### `candy` - 核心 API
 
 **共享数据：**
+
 - `candy.shared.set(key, value)` - 设置共享数据
 - `candy.shared.get(key)` - 获取共享数据
 
 **日志功能：**
+
 - `candy.log(message)` - 输出日志信息（使用 info 级别）
 
 **系统信息：**
+
 - `candy.version` - 获取版本号
 - `candy.name` - 获取应用名称
 - `candy.os` - 获取操作系统信息
@@ -105,4 +110,3 @@ ctx:set_body(string.format([[
 - 内存使用有限制
 - 不能直接访问底层系统资源
 - 不支持 Lua C 扩展
-
