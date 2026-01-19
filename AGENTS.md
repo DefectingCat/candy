@@ -17,8 +17,14 @@ make run
 # Run all tests
 make test
 
-# Run a specific test
+# Run a specific test module
 cargo test --test <test_module_name>
+
+# Run a specific test function
+cargo test <test_function_name> --package <package_name>
+
+# Run tests with verbose output
+cargo test -v
 
 # Clean build artifacts
 make clean
@@ -35,6 +41,9 @@ make format
 
 # Auto-fix lint issues
 make fix
+
+# Check for formatting issues without making changes
+cargo fmt --check
 ```
 
 ## Cross-Compilation Targets
@@ -58,31 +67,41 @@ make loongarch          # LoongArch Linux
 - **Line endings**: LF (Unix-style)
 - **Trailing whitespace**: Must be trimmed
 - **Final newline**: Required at end of file
+- **Line length**: Aim for 80-100 characters (soft limit)
 
 ### Rust-specific
 - **Indentation**: 4 spaces (no tabs)
-- **Import style**: Grouped as shown in Cargo.toml:
-  1. Standard library
-  2. External dependencies
-  3. Internal modules
+- **Import style**: Group and order as follows:
+  1. Standard library (std::*)
+  2. External dependencies (alphabetical)
+  3. Internal modules (crate::*, super::*, self::*)
+  - Use `use` statements for specific items, avoid glob imports
 - **Naming conventions**:
   - Variables/functions: `snake_case`
-  - Types: `PascalCase`
-  - Constants: `SCREAMING_SNAKE_CASE`
+  - Types/traits/enums: `PascalCase`
+  - Constants/static variables: `SCREAMING_SNAKE_CASE`
+  - Modules: `snake_case`
+  - Lifetimes: `'a`, `'b` (single lowercase letter)
 - **Error handling**:
-  - Use `anyhow` for application errors
-  - Use `thiserror` for structured error types
-  - Prefer `?` operator over `unwrap()`
-  - Avoid `panic!` in production code
+  - Use `anyhow::Result` for application-level errors
+  - Use `thiserror::Error` for structured error types
+  - Prefer `?` operator over `unwrap()`/`expect()`
+  - Avoid `panic!` in production code (use only for unrecoverable errors)
+  - Provide context with `with_context()` for better error messages
 - **Type annotations**:
   - Use Rust's type inference where possible
   - Explicitly annotate public API signatures
-  - Use `derive` macros for common traits (Debug, Clone, etc.)
+  - Use `derive` macros for common traits (Debug, Clone, PartialEq, Eq)
+- **Memory safety**:
+  - Prefer safe Rust over unsafe Rust
+  - Document unsafe blocks with `// SAFETY:` comments
 
 ### Documentation
 - **Public API**: Must have doc comments `///`
 - **Module-level**: Use `//!` at top of module files
-- **Examples**: Include usage examples in doc comments
+- **Examples**: Include runnable examples in doc comments
+- **Error messages**: Be descriptive and actionable
+- **Internal documentation**: Use `//!` for module-level docs, `///` for internal items
 
 ## Development Workflow
 
@@ -92,12 +111,22 @@ make dev
 
 # Check for compilation errors
 make check
+
+# Update dependencies
+cargo update
+
+# Add a new dependency
+cargo add <dependency_name>
+
+# Remove a dependency
+cargo remove <dependency_name>
 ```
 
 ## Configuration
 
 - Project configuration uses TOML format (`config.example.toml`)
 - Copy `config.example.toml` to `config.toml` and customize
+- Never commit `config.toml` to version control
 
 ## Performance Optimization
 
@@ -111,17 +140,13 @@ panic = "abort"
 codegen-units = 1
 ```
 
-## Dependencies Management
-
-- Dependencies are managed via Cargo.toml
-- Always run `cargo update` after modifying dependencies
-- Use exact version pins (">=0.1.0") for production dependencies
-
 ## Git Integration
 
 - Branch naming: `<type>/<short-description>`
+  - Types: feat, fix, docs, refactor, test, chore
 - Commit messages:
   - Use imperative mood ("Add feature" not "Added feature")
   - First line <= 50 characters
   - Body explains "why" not just "what"
-```
+  - Reference issues/PRs where relevant
+- Never commit secrets or sensitive information
