@@ -260,4 +260,206 @@ mod tests {
         let result = Settings::new(path);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_settings_ssl_missing_cert() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(
+            file,
+            r#"
+            [[host]]
+            ip = "127.0.0.1"
+            port = 443
+            ssl = true
+
+            [[host.route]]
+            location = "/"
+            root = "/var/www"
+            "#,
+        )
+        .unwrap();
+
+        let path = file.path().to_str().unwrap();
+        let result = Settings::new(path);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("缺少证书或密钥"));
+    }
+
+    #[test]
+    fn test_settings_ssl_cert_not_found() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(
+            file,
+            r#"
+            [[host]]
+            ip = "127.0.0.1"
+            port = 443
+            ssl = true
+            certificate = "nonexistent.crt"
+            certificate_key = "nonexistent.key"
+
+            [[host.route]]
+            location = "/"
+            root = "/var/www"
+            "#,
+        )
+        .unwrap();
+
+        let path = file.path().to_str().unwrap();
+        let result = Settings::new(path);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("证书文件未找到"));
+    }
+
+    #[test]
+    fn test_settings_invalid_route_location() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(
+            file,
+            r#"
+            [[host]]
+            ip = "127.0.0.1"
+            port = 8080
+            ssl = false
+
+            [[host.route]]
+            location = "invalid"
+            root = "/var/www"
+            "#,
+        )
+        .unwrap();
+
+        let path = file.path().to_str().unwrap();
+        let result = Settings::new(path);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("位置无效"));
+    }
+
+    #[test]
+    fn test_settings_invalid_route_config() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(
+            file,
+            r#"
+            [[host]]
+            ip = "127.0.0.1"
+            port = 8080
+            ssl = false
+
+            [[host.route]]
+            location = "/"
+            "#,
+        )
+        .unwrap();
+
+        let path = file.path().to_str().unwrap();
+        let result = Settings::new(path);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("配置无效"));
+    }
+
+    #[test]
+    fn test_settings_complete_config() {
+        // Create temporary certificate files for test
+        let mut cert_file = NamedTempFile::new().unwrap();
+        writeln!(cert_file, "dummy certificate").unwrap();
+        let cert_path = cert_file.path().to_str().unwrap().to_string();
+
+        let mut key_file = NamedTempFile::new().unwrap();
+        writeln!(key_file, "dummy key").unwrap();
+        let key_path = key_file.path().to_str().unwrap().to_string();
+
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(
+            file,
+            r#"
+            log_level = "debug"
+            log_folder = "/var/log/candy"
+
+            [[host]]
+            ip = "127.0.0.1"
+            port = 8080
+            ssl = false
+            timeout = 60
+
+            [[host.route]]
+            location = "/"
+            root = "/var/www"
+            index = ["index.html", "index.htm"]
+            auto_index = true
+
+            [[host.route]]
+            location = "/api"
+            proxy_pass = "http://localhost:3000"
+            proxy_timeout = 30
+            max_body_size = 1048576
+
+            [[host]]
+            ip = "0.0.0.0"
+            port = 443
+            ssl = true
+            certificate = "{}"
+            certificate_key = "{}"
+            timeout = 30
+
+            [[host.route]]
+            location = "/"
+            root = "/var/www/ssl"
+            error_page = {{ status = 404, page = "/404.html" }}
+            "#,
+            cert_path, key_path
+        )
+        .unwrap();
+
+        let path = file.path().to_str().unwrap();
+        let settings = Settings::new(path).unwrap();
+
+        // Verify global settings
+        assert_eq!(settings.log_level, "debug");
+        assert_eq!(settings.log_folder, "/var/log/candy");
+
+        // Verify first host
+        assert_eq!(settings.host.len(), 2);
+        let host1 = &settings.host[0];
+        assert_eq!(host1.ip, "127.0.0.1");
+        assert_eq!(host1.port, 8080);
+        assert!(!host1.ssl);
+        assert_eq!(host1.timeout, 60);
+        assert_eq!(host1.route.len(), 2);
+        assert!(host1.route_map.contains_key("/"));
+        assert!(host1.route_map.contains_key("/api"));
+
+        // Verify second host
+        let host2 = &settings.host[1];
+        assert_eq!(host2.ip, "0.0.0.0");
+        assert_eq!(host2.port, 443);
+        assert!(host2.ssl);
+        assert_eq!(host2.certificate, Some(cert_path));
+        assert_eq!(host2.certificate_key, Some(key_path));
+    }
+
+    #[test]
+    fn test_settings_default_values() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(
+            file,
+            r#"
+            [[host]]
+            ip = "127.0.0.1"
+            port = 8080
+
+            [[host.route]]
+            location = "/"
+            root = "/var/www"
+            "#,
+        )
+        .unwrap();
+
+        let path = file.path().to_str().unwrap();
+        let settings = Settings::new(path).unwrap();
+
+        // Verify default values
+        assert!(!settings.host[0].ssl);
+        assert!(!settings.host[0].route[0].auto_index); // default_disabled is false
+    }
 }

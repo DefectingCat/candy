@@ -137,7 +137,7 @@ mod tests {
         // 使用 Lua 脚本设置和获取值
         let result: String = engine
             .lua
-            .load(&format!(
+            .load(format!(
                 "candy.shared.set('{}', '{}'); return candy.shared.get('{}')",
                 key, value, key
             ))
@@ -187,8 +187,5 @@ mod tests {
             .load("candy.log('Test log message')")
             .eval::<()>()
             .unwrap();
-
-        // 测试成功，没有抛出异常
-        assert!(true);
     }
 }
