@@ -6,111 +6,189 @@ use crate::{
     error::Result,
 };
 use std::fs;
+use std::path::Path;
 
 use anyhow::Context;
 use dashmap::DashMap;
 use serde::Deserialize;
 
+/// 错误页面路由配置
 #[derive(Deserialize, Clone, Debug)]
 pub struct ErrorRoute {
+    /// HTTP 状态码
     pub status: u16,
+    /// 错误页面路径
     pub page: String,
 }
 
-/// Route in virtual host
-/// Can be a static file or a reverse proxy
+/// 虚拟主机中的路由
+/// 可以是静态文件或反向代理
 #[derive(Deserialize, Clone, Debug)]
 pub struct SettingRoute {
-    /// The register route
-    /// for axum route
+    /// 路由位置
+    /// 用于 axum 路由注册
     pub location: String,
-    /// The static assets root folder
+    /// 静态资源根文件夹
     pub root: Option<String>,
-    /// List directory
+    /// 是否启用目录列表
     #[serde(default = "default_disabled")]
     pub auto_index: bool,
 
-    /// Index files format
+    /// 索引文件格式列表
     #[serde(default = "host_index")]
     pub index: Vec<String>,
-    /// Custom error page
+    /// 自定义错误页面
     pub error_page: Option<ErrorRoute>,
-    /// Custom 404 page
+    /// 自定义 404 页面
     pub not_found_page: Option<ErrorRoute>,
 
-    /// Reverse proxy url
+    /// 反向代理 URL
     pub proxy_pass: Option<String>,
-    /// Timeout for connect to upstream
+    /// 连接上游服务器超时时间（秒）
     #[serde(default = "upstream_timeout_default")]
     pub proxy_timeout: u16,
-    /// Request max body size (bytes)
+    /// 请求最大 body 大小（字节）
     pub max_body_size: Option<u64>,
 
-    /// HTTP headers
-    /// Used to overwrite headers in config
+    /// HTTP 头部
+    /// 用于覆盖配置中的头部
     pub headers: Option<HeaderMap>,
 
-    /// Lua script
+    /// Lua 脚本
     pub lua_script: Option<String>,
 
-    /// HTTP redirect
+    /// HTTP 重定向目标 URL
     pub redirect_to: Option<String>,
+    /// HTTP 重定向状态码
     pub redirect_code: Option<u16>,
 }
 
-/// Host routes
-/// Each host can have multiple routes
+/// 主机路由映射
+/// 每个主机可以有多个路由
 pub type HostRouteMap = DashMap<String, SettingRoute>;
-/// headers
+/// HTTP 头部映射
 pub type HeaderMap = DashMap<String, String>;
 
-/// Virtual host
-/// Each host can listen on one port and one ip
+/// 虚拟主机配置
+/// 每个主机可以监听一个端口和一个 IP 地址
 #[derive(Deserialize, Clone, Debug, Default)]
 pub struct SettingHost {
-    /// Host ip
+    /// 主机 IP 地址
     pub ip: String,
-    /// Host port
+    /// 主机端口
     pub port: u16,
-    /// SSL enable
+    /// 是否启用 SSL
     #[serde(default = "default_disabled")]
     pub ssl: bool,
-    /// SSL certificate location
+    /// SSL 证书文件路径
     pub certificate: Option<String>,
-    /// ssl key location
+    /// SSL 密钥文件路径
     pub certificate_key: Option<String>,
-    /// Routes in config file
+    /// 配置文件中的路由列表
     pub route: Vec<SettingRoute>,
-    /// Host routes convert from Vec<SettingRoute> to DashMap<String, SettingRoute>
+    /// 主机路由从 Vec<SettingRoute> 转换为 DashMap<String, SettingRoute>
     /// {
     ///     "/doc": <SettingRoute>
     /// }
     #[serde(skip)]
     pub route_map: HostRouteMap,
-    /// HTTP keep-alive timeout
+    /// HTTP 保持连接超时时间（秒）
     #[serde(default = "timeout_default")]
     pub timeout: u16,
 }
 
-/// Whole config settings
+/// 完整的服务器配置
 #[derive(Deserialize, Clone, Debug, Default)]
 pub struct Settings {
-    /// Logging level
+    /// 日志级别 (trace, debug, info, warn, error)
     #[serde(default = "default_log_level")]
     pub log_level: String,
-    /// Logging folder
+    /// 日志文件夹路径
     #[serde(default = "default_log_folder")]
     pub log_folder: String,
 
-    /// Virtual host
+    /// 虚拟主机列表
     pub host: Vec<SettingHost>,
 }
 
 impl Settings {
+    /// 从 TOML 配置文件创建 Settings 实例
+    ///
+    /// # 参数
+    ///
+    /// * `path` - 配置文件路径
+    ///
+    /// # 返回值
+    ///
+    /// 解析后的 Settings 实例，或包含错误信息的 Result
     pub fn new(path: &str) -> Result<Self> {
-        let file = fs::read_to_string(path).with_context(|| format!("read {path} failed"))?;
-        let settings: Settings = toml::from_str(&file)?;
+        let file = fs::read_to_string(path).with_context(|| format!("读取 {path} 失败"))?;
+        let mut settings: Settings = toml::from_str(&file)?;
+
+        // 初始化路由映射
+        for host in &mut settings.host {
+            host.route_map = HostRouteMap::new();
+            for route in &host.route {
+                host.route_map.insert(route.location.clone(), route.clone());
+            }
+        }
+
+        // 验证配置
+        settings.validate()?;
+
         Ok(settings)
+    }
+
+    /// 验证配置的有效性
+    fn validate(&self) -> Result<()> {
+        for (i, host) in self.host.iter().enumerate() {
+            // 验证 SSL 配置
+            if host.ssl {
+                if host.certificate.is_none() || host.certificate_key.is_none() {
+                    return Err(anyhow::anyhow!("主机 {} 启用了 SSL 但缺少证书或密钥", i).into());
+                }
+
+                // 验证证书文件存在
+                if let Some(cert_path) = &host.certificate
+                    && !Path::new(cert_path).exists()
+                {
+                    return Err(anyhow::anyhow!("主机 {} 证书文件未找到: {}", i, cert_path).into());
+                }
+
+                if let Some(key_path) = &host.certificate_key
+                    && !Path::new(key_path).exists()
+                {
+                    return Err(
+                        anyhow::anyhow!("主机 {} 证书密钥文件未找到: {}", i, key_path).into(),
+                    );
+                }
+            }
+
+            // 验证路由配置
+            for (j, route) in host.route.iter().enumerate() {
+                if route.location.is_empty() || !route.location.starts_with('/') {
+                    return Err(anyhow::anyhow!(
+                        "主机 {} 路由 {} 位置无效: {}",
+                        i,
+                        j,
+                        route.location
+                    )
+                    .into());
+                }
+
+                // 验证至少有一个有效的路由配置
+                let has_valid_route = route.root.is_some()
+                    || route.proxy_pass.is_some()
+                    || route.lua_script.is_some()
+                    || route.redirect_to.is_some();
+
+                if !has_valid_route {
+                    return Err(anyhow::anyhow!("主机 {} 路由 {} 配置无效（需要 root、proxy_pass、lua_script 或 redirect_to）", i, j).into());
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -169,7 +247,7 @@ mod tests {
             result
                 .unwrap_err()
                 .to_string()
-                .contains("read nonexistent.toml failed")
+                .contains("读取 nonexistent.toml 失败")
         );
     }
 
