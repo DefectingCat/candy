@@ -1,10 +1,6 @@
-use notify::{RecursiveMode, Watcher};
-use std::{
-    path::Path,
-    sync::mpsc,
-    time::Duration,
-};
-use tracing::{info, error};
+use notify::{EventKind, RecursiveMode, Watcher};
+use std::{path::Path, sync::mpsc, time::Duration};
+use tracing::{error, info};
 
 /// 启动配置文件监听
 ///
@@ -34,7 +30,10 @@ pub fn start_config_watcher(
         };
 
         if let Err(e) = watcher.watch(&config_path, RecursiveMode::NonRecursive) {
-            error!("Failed to watch config file: {:?}, error: {:?}", config_path, e);
+            error!(
+                "Failed to watch config file: {:?}, error: {:?}",
+                config_path, e
+            );
             return;
         }
 
@@ -55,7 +54,28 @@ pub fn start_config_watcher(
                 Ok(Ok(event)) => {
                     let now = std::time::Instant::now();
                     if now.duration_since(last_event_time) > debounce_duration {
-                        info!("Config file changed: {:?}", event);
+                        info!("Config file event: {:?}", event);
+
+                        // 处理文件删除/覆盖导致 watch 失效的问题
+                        // 当文件被删除、重命名或属性改变时，可能需要重新 watch
+                        match event.kind {
+                            EventKind::Remove(_)
+                            | EventKind::Modify(notify::event::ModifyKind::Name(_)) => {
+                                // 重新添加 watch，处理文件被覆盖或删除的情况
+                                if let Err(e) = watcher.unwatch(&config_path) {
+                                    error!("Failed to unwatch config file (ignored): {:?}", e);
+                                }
+                                if let Err(e) =
+                                    watcher.watch(&config_path, RecursiveMode::NonRecursive)
+                                {
+                                    error!("Failed to re-watch config file: {:?}", e);
+                                } else {
+                                    info!("Re-watching config file: {:?}", config_path);
+                                }
+                            }
+                            _ => {}
+                        }
+
                         callback();
                         last_event_time = now;
                     }

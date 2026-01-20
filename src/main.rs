@@ -12,7 +12,7 @@ use tracing::{debug, info};
 
 use crate::{
     consts::{ARCH, NAME, OS, VERSION},
-    utils::{config_watcher::start_config_watcher, init_logger},
+    utils::{init_logger, start_config_watcher},
 };
 
 use mimalloc::MiMalloc;
