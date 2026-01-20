@@ -22,7 +22,8 @@ pub fn start_config_watcher(
     let (stop_tx, stop_rx) = mpsc::channel();
     let config_path = config_path.as_ref().to_owned();
 
-    std::thread::spawn(move || {
+    // 使用 tokio::spawn 代替 std::thread::spawn，确保回调在 Tokio 运行时中执行
+    tokio::spawn(async move {
         let (tx, rx) = mpsc::channel();
         let mut watcher = match notify::recommended_watcher(tx) {
             Ok(w) => w,

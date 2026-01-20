@@ -51,17 +51,50 @@ async fn main() -> Result<()> {
 
     // 启动配置文件监听
     let _config_path = args.config.clone();
-    let handles = std::sync::Arc::new(handles);
+    let handles = std::sync::Arc::new(std::sync::Mutex::new(handles));
+    let config_path = args.config.clone();
     let _stop_tx = start_config_watcher(&args.config, move |result| {
         match result {
             Ok(new_settings) => {
                 info!("Config file reloaded successfully: {:?}", new_settings);
-                info!("Config file changed, stopping servers...");
-                // 停止所有服务器
-                for handle in handles.iter() {
-                    handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
+                info!("Config file changed, restarting servers to apply new config...");
+
+                // 停止当前所有服务器
+                if let Ok(mut current_handles) = handles.lock() {
+                    for handle in current_handles.iter() {
+                        handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
+                    }
+                    current_handles.clear();
+                    info!("All existing servers have been signaled to shut down");
+
+                    // 在新的 tokio 任务中启动新服务器
+                    let new_hosts = new_settings.host;
+                    let handles_clone = handles.clone();
+                    let _config_path_clone = config_path.clone();
+                    tokio::spawn(async move {
+                        let mut new_handles = Vec::new();
+                        for host in new_hosts {
+                            match make_server(host).await {
+                                Ok(handle) => {
+                                    new_handles.push(handle);
+                                    info!("New server instance started");
+                                }
+                                Err(e) => {
+                                    error!("Failed to start new server instance: {:?}", e);
+                                }
+                            }
+                        }
+
+                        if let Ok(mut current_handles) = handles_clone.lock() {
+                            *current_handles = new_handles;
+                            info!("All servers have been restarted successfully");
+                        } else {
+                            error!("Failed to acquire lock for server handles");
+                        }
+                    });
+                } else {
+                    error!("Failed to acquire lock for server handles");
                 }
-                info!("All servers have been signaled to shut down");
             }
             Err(e) => {
                 error!("Failed to reload config file: {:?}", e);
