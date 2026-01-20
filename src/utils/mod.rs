@@ -1,3 +1,4 @@
+pub mod config_watcher;
 pub mod logging;
 pub mod service;
 

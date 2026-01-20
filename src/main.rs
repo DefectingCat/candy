@@ -12,7 +12,7 @@ use tracing::{debug, info};
 
 use crate::{
     consts::{ARCH, NAME, OS, VERSION},
-    utils::init_logger,
+    utils::{config_watcher::start_config_watcher, init_logger},
 };
 
 use mimalloc::MiMalloc;
@@ -46,6 +46,21 @@ async fn main() -> Result<()> {
 
     let hosts = settings.host;
     let mut servers = hosts.into_iter().map(make_server).collect::<JoinSet<_>>();
+
+    // 启动配置文件监听
+    let config_path = args.config.clone();
+    let _stop_tx = start_config_watcher(&args.config, move || {
+        info!("Config file changed, reloading...");
+        match Settings::new(&config_path) {
+            Ok(new_settings) => {
+                info!("Config reloaded successfully: {:?}", new_settings);
+                // 这里可以添加配置重载后的逻辑，例如重启服务器等
+            }
+            Err(e) => {
+                error!("Failed to reload config: {:?}", e);
+            }
+        }
+    })?;
 
     info!("server started");
 
