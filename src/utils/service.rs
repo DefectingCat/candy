@@ -34,12 +34,6 @@ pub async fn graceful_shutdown<A: Address>(handle: Handle<A>) {
 
     // Signal the server to shutdown using Handle.
     handle.graceful_shutdown(Some(Duration::from_secs(30)));
-
-    // Print alive connection count every second.
-    loop {
-        sleep(Duration::from_secs(1)).await;
-        debug!("alive connections: {}", handle.connection_count());
-    }
 }
 
 /// Parse port from host
