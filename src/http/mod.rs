@@ -40,7 +40,7 @@ pub mod redirect;
 pub static HOSTS: LazyLock<DashMap<u16, DashMap<Option<String>, SettingHost>>> =
     LazyLock::new(DashMap::new);
 
-pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
+pub async fn make_server(host: SettingHost) -> anyhow::Result<axum_server::Handle<SocketAddr>> {
     let mut router = Router::new();
     let host_to_save = host.clone();
     // 在配置中查找路由
@@ -220,37 +220,44 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<()> {
     let addr: SocketAddr = addr.parse()?;
 
     let handle = Handle::new();
-    // 生成一个任务来优雅地关闭服务器
-    tokio::spawn(graceful_shutdown(handle.clone()));
+    let handle_clone = handle.clone();
 
-    // 检查是否启用 SSL
-    // 如果启用 SSL
-    // 则创建 SSL 监听器
-    // 否则创建 TCP 监听器
-    if host.ssl && host.certificate.is_some() && host.certificate_key.is_some() {
-        let cert = host
-            .certificate
-            .as_ref()
-            .ok_or(anyhow!("Certificate not found"))?;
-        let key = host
-            .certificate_key
-            .as_ref()
-            .ok_or(anyhow!("Certificate key not found"))?;
-        debug!("Certificate: {} Certificate key: {}", cert, key);
+    // 生成一个任务来运行服务器
+    tokio::spawn(async move {
+        // 生成一个任务来优雅地关闭服务器
+        tokio::spawn(graceful_shutdown(handle_clone.clone()));
 
-        let rustls_config = RustlsConfig::from_pem_file(cert, key).await?;
-        info!("Listening on https://{}", addr);
-        axum_server::bind_rustls(addr, rustls_config)
-            .handle(handle)
-            .serve(router.into_make_service())
-            .await?;
-    } else {
-        info!("Listening on http://{}", addr);
-        axum_server::bind(addr)
-            .handle(handle)
-            .serve(router.into_make_service())
-            .await?;
-    }
+        // 检查是否启用 SSL
+        // 如果启用 SSL
+        // 则创建 SSL 监听器
+        // 否则创建 TCP 监听器
+        let result = if host.ssl && host.certificate.is_some() && host.certificate_key.is_some() {
+            let cert = host
+                .certificate
+                .as_ref()
+                .ok_or(anyhow!("Certificate not found"))?;
+            let key = host
+                .certificate_key
+                .as_ref()
+                .ok_or(anyhow!("Certificate key not found"))?;
+            debug!("Certificate: {} Certificate key: {}", cert, key);
 
-    Ok(())
+            let rustls_config = RustlsConfig::from_pem_file(cert, key).await?;
+            info!("Listening on https://{}", addr);
+            axum_server::bind_rustls(addr, rustls_config)
+                .handle(handle_clone.clone())
+                .serve(router.into_make_service())
+                .await
+        } else {
+            info!("Listening on http://{}", addr);
+            axum_server::bind(addr)
+                .handle(handle_clone.clone())
+                .serve(router.into_make_service())
+                .await
+        };
+
+        result.map_err(|e| anyhow::Error::from(e))
+    });
+
+    Ok(handle)
 }

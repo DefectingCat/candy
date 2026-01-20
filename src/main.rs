@@ -1,13 +1,11 @@
 // #![feature(iterator_try_collect)]
 
 use anyhow::{Context, Result};
-use tracing::error;
 
 use clap::Parser;
 use config::Settings;
 use consts::{COMMIT, COMPILER};
 use http::make_server;
-use tokio::task::JoinSet;
 use tracing::{debug, info};
 
 use crate::{
@@ -45,35 +43,29 @@ async fn main() -> Result<()> {
     info!("OS: {} {}", OS, ARCH);
 
     let hosts = settings.host;
-    let mut servers = hosts.into_iter().map(make_server).collect::<JoinSet<_>>();
+    let mut handles = Vec::new();
+    for host in hosts {
+        let handle = make_server(host).await?;
+        handles.push(handle);
+    }
 
     // 启动配置文件监听
-    let config_path = args.config.clone();
+    let _config_path = args.config.clone();
+    let handles = std::sync::Arc::new(handles);
     let _stop_tx = start_config_watcher(&args.config, move || {
-        info!("Config file changed, reloading...");
-        match Settings::new(&config_path) {
-            Ok(new_settings) => {
-                info!("Config reloaded successfully: {:?}", new_settings);
-                // 这里可以添加配置重载后的逻辑，例如重启服务器等
-            }
-            Err(e) => {
-                error!("Failed to reload config: {:?}", e);
-            }
+        info!("Config file changed, stopping servers...");
+        // 停止所有服务器
+        for handle in handles.iter() {
+            handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
         }
+        info!("All servers have been signaled to shut down");
     })?;
 
     info!("server started");
 
-    while let Some(res) = servers.join_next().await {
-        match res {
-            Ok(err) => {
-                err.map_err(|err| error!("server error: {}", err)).ok();
-            }
-            Err(err) => {
-                error!("server error: {}", err);
-            }
-        }
-    }
+    // 保持主线程运行，直到所有服务器停止
+    tokio::signal::ctrl_c().await?;
+    info!("Received Ctrl+C, shutting down");
 
     Ok(())
 }
