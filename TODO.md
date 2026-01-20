@@ -8,6 +8,7 @@
 - [x] Custom error page with stats code
 - [x] Logging to file
 - [ ] Benches
+  - [ ] Docker with oha
 - [x] Max body size
 - [x] HTTP 2
 
@@ -38,7 +39,7 @@
 - [x] HTTP 2
 - [ ] HTTP 3
 - [ ] Specify thread numbers
-- [ ] Dockerization
+- [x] Dockerization
 - [x] Docs
 - [x] Multiple virtual hosts
 - [x] Build with compile info

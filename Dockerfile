@@ -42,6 +42,7 @@ RUN RUSTFLAGS="-C target-feature=-crt-static -C link-arg=-static" cargo build ${
 ################################################################################
 FROM scratch
 
+ARG TARGET=aarch64-unknown-linux-musl
 # 从构建阶段复制编译好的二进制文件
 COPY --from=builder /app/target/${TARGET}/release/candy /
 
