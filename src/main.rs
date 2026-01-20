@@ -6,7 +6,7 @@ use clap::Parser;
 use config::Settings;
 use consts::{COMMIT, COMPILER};
 use http::make_server;
-use tracing::{debug, info};
+use tracing::{debug, info, error};
 
 use crate::{
     consts::{ARCH, NAME, OS, VERSION},
@@ -52,13 +52,21 @@ async fn main() -> Result<()> {
     // 启动配置文件监听
     let _config_path = args.config.clone();
     let handles = std::sync::Arc::new(handles);
-    let _stop_tx = start_config_watcher(&args.config, move || {
-        info!("Config file changed, stopping servers...");
-        // 停止所有服务器
-        for handle in handles.iter() {
-            handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
+    let _stop_tx = start_config_watcher(&args.config, move |result| {
+        match result {
+            Ok(new_settings) => {
+                info!("Config file reloaded successfully: {:?}", new_settings);
+                info!("Config file changed, stopping servers...");
+                // 停止所有服务器
+                for handle in handles.iter() {
+                    handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
+                }
+                info!("All servers have been signaled to shut down");
+            }
+            Err(e) => {
+                error!("Failed to reload config file: {:?}", e);
+            }
         }
-        info!("All servers have been signaled to shut down");
     })?;
 
     info!("server started");
