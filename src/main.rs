@@ -52,6 +52,7 @@ async fn main() -> Result<()> {
     // 启动配置文件监听
     let _config_path = args.config.clone();
     let handles = std::sync::Arc::new(std::sync::Mutex::new(handles));
+    let handles_clone = handles.clone(); // 克隆一个副本用于闭包
     let config_path = args.config.clone();
     let _stop_tx = start_config_watcher(&args.config, move |result| {
         match result {
@@ -60,7 +61,7 @@ async fn main() -> Result<()> {
                 info!("Config file changed, restarting servers to apply new config...");
 
                 // 停止当前所有服务器
-                if let Ok(mut current_handles) = handles.lock() {
+                if let Ok(mut current_handles) = handles_clone.lock() {
                     for handle in current_handles.iter() {
                         handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
                     }
@@ -69,7 +70,7 @@ async fn main() -> Result<()> {
 
                     // 在新的 tokio 任务中启动新服务器
                     let new_hosts = new_settings.host;
-                    let handles_clone = handles.clone();
+                    let handles_clone2 = handles_clone.clone();
                     let _config_path_clone = config_path.clone();
                     tokio::spawn(async move {
                         let mut new_handles = Vec::new();
@@ -85,7 +86,7 @@ async fn main() -> Result<()> {
                             }
                         }
 
-                        if let Ok(mut current_handles) = handles_clone.lock() {
+                        if let Ok(mut current_handles) = handles_clone2.lock() {
                             *current_handles = new_handles;
                             info!("All servers have been restarted successfully");
                         } else {
@@ -107,6 +108,17 @@ async fn main() -> Result<()> {
     // 保持主线程运行，直到所有服务器停止
     tokio::signal::ctrl_c().await?;
     info!("Received Ctrl+C, shutting down");
+
+    // 优雅关闭所有服务器
+    if let Ok(mut current_handles) = handles.lock() {
+        for handle in current_handles.iter() {
+            handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
+        }
+        info!("All servers have been signaled to shut down");
+        current_handles.clear();
+    } else {
+        error!("Failed to acquire lock for server handles");
+    }
 
     Ok(())
 }
