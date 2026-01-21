@@ -17,7 +17,11 @@ use crate::error::Result;
 /// 返回一个发送器，用于发送停止信号
 pub fn start_config_watcher(
     config_path: impl AsRef<Path>,
-    callback: impl Fn(Result<Settings>) + Send + 'static,
+    callback: impl Fn(
+        Result<Settings>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+    + Send
+    + 'static,
 ) -> Result<mpsc::Sender<()>, notify::Error> {
     let (stop_tx, stop_rx) = mpsc::channel();
     let config_path = config_path.as_ref().to_owned();
@@ -85,7 +89,7 @@ pub fn start_config_watcher(
                             .to_str()
                             .expect("Config path is not valid UTF-8");
                         let result = Settings::new(config_str);
-                        callback(result);
+                        callback(result).await;
 
                         last_event_time = now;
                     }
