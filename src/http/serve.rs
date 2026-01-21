@@ -37,7 +37,7 @@ use super::error::RouteResult;
 /// - `request`: 原始HTTP请求
 /// - `is_error_page`: 是否为错误页面（true: 错误页面, false: 404页面）
 /// - `RouteResult<Response>`: 成功时返回HTTP响应，失败时返回路由错误
-async fn custom_page(
+pub async fn custom_page(
     host_route: Ref<'_, String, SettingRoute>,
     request: Request<Body>,
     is_error_page: bool,

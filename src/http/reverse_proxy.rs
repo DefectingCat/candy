@@ -1,3 +1,4 @@
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -6,108 +7,26 @@ use axum::{
     extract::{Path, Request},
     response::{IntoResponse, Response},
 };
-use http::{
-    HeaderName, HeaderValue, Uri,
-    header::{CONTENT_TYPE, ETAG},
-};
-use mime_guess::from_path;
+use http::{HeaderName, Uri};
 use reqwest::Client;
-use tokio::fs::File;
-use tokio_util::io::ReaderStream;
 
 use super::{
     HOSTS,
     error::{RouteError, RouteResult},
 };
-use crate::http::serve::{check_if_none_match, empty_stream};
-use crate::{
-    config::SettingRoute,
-    http::serve::{calculate_etag, resolve_parent_path},
-    utils::parse_port_from_host,
-};
+use crate::http::serve::custom_page;
+use crate::{http::serve::resolve_parent_path, utils::parse_port_from_host};
 
-/// 处理自定义错误页面（如404、500等）的请求
-///
-/// 该函数根据配置信息加载自定义错误页面文件，并根据HTTP缓存机制
-/// 决定是返回完整内容还是304 Not Modified状态码。
-///
-/// # 参数
-/// - `host_config`: 主机路由配置，包含错误页面路径和根目录信息
-/// - `request`: 原始HTTP请求
-/// - `is_error_page`: 是否为错误页面（true: 错误页，false: 404页）
-///
-/// # 返回
-/// - `Ok(Response)`: 成功时返回HTTP响应
-/// - `Err(RouteError)`: 失败时返回路由错误
-pub async fn handle_custom_page(
-    host_config: dashmap::mapref::one::Ref<'_, String, SettingRoute>,
-    request: Request<Body>,
-    is_error_page: bool,
-) -> RouteResult<Response<Body>> {
-    // 根据请求类型选择相应的页面配置
-    let page = if is_error_page {
-        host_config
-            .error_page
-            .as_ref()
-            .ok_or(RouteError::RouteNotFound())?
-    } else {
-        host_config
-            .not_found_page
-            .as_ref()
-            .ok_or(RouteError::RouteNotFound())?
-    };
+/// 全局 reqwest 客户端实例，用于复用连接池，提高性能
+static CLIENT: OnceLock<Client> = OnceLock::new();
 
-    // 获取站点根目录配置
-    let root = host_config
-        .root
-        .as_ref()
-        .ok_or(RouteError::InternalError())?;
-
-    // 构建完整文件路径
-    let path = format!("{}/{}", root, page.page);
-    tracing::debug!("custom not found path: {:?}", path);
-
-    // 打开文件并计算ETag用于缓存验证
-    let file = File::open(path.clone())
-        .await
-        .with_context(|| "open file failed")?;
-
-    let etag = calculate_etag(&file, path.as_str()).await?;
-    let response = Response::builder();
-    let (mut response, not_modified) = check_if_none_match(request, &etag, response);
-
-    // 准备响应主体
-    let stream = if not_modified {
-        // 304 响应返回空内容
-        empty_stream().await?
-    } else {
-        // 正常响应返回文件内容
-        ReaderStream::new(file)
-    };
-    let body = Body::from_stream(stream);
-
-    // 设置响应头：内容类型和ETag
-    let mime = from_path(path).first_or_octet_stream();
-    response
-        .headers_mut()
-        .with_context(|| "insert header failed")?
-        .insert(
-            CONTENT_TYPE,
-            HeaderValue::from_str(mime.as_ref()).with_context(|| "insert header failed")?,
-        );
-    response
-        .headers_mut()
-        .with_context(|| "insert header failed")?
-        .insert(
-            ETAG,
-            HeaderValue::from_str(&etag).with_context(|| "insert header failed")?,
-        );
-
-    // 构建最终响应
-    let response = response
-        .body(body)
-        .with_context(|| "Failed to build HTTP response with body")?;
-    Ok(response)
+/// 获取全局 reqwest 客户端实例
+fn get_client() -> &'static Client {
+    CLIENT.get_or_init(|| {
+        Client::builder()
+            .build()
+            .expect("Failed to initialize reqwest client")
+    })
 }
 
 /// 处理入站请求的反向代理逻辑。
@@ -189,7 +108,7 @@ pub async fn serve(
         .with_context(|| format!("route not found: {parent_path}"))?;
     tracing::debug!("proxy pass: {:?}", proxy_config);
     let Some(ref proxy_pass) = proxy_config.proxy_pass else {
-        return handle_custom_page(proxy_config, req, true).await;
+        return custom_page(proxy_config, req, true).await;
     };
     let uri = format!("{proxy_pass}{path_query}");
     tracing::debug!("reverse proxy uri: {:?}", &uri);
@@ -200,7 +119,7 @@ pub async fn serve(
     let timeout = proxy_config.proxy_timeout;
 
     // forward request headers
-    let client = Client::new();
+    let client = get_client();
     let mut forward_req = client
         .request(req.method().clone(), uri)
         .timeout(Duration::from_secs(timeout.into()));
@@ -212,15 +131,14 @@ pub async fn serve(
 
     // forward request body
     let body = req.into_body();
-    let bytes = axum::body::to_bytes(body, 2048).await.map_err(|err| {
-        tracing::error!("Failed to proxy request: {}", err);
-        RouteError::InternalError()
-    })?;
-    let body_str = String::from_utf8(bytes.to_vec()).map_err(|err| {
-        tracing::error!("Failed to proxy request: {}", err);
-        RouteError::InternalError()
-    })?;
-    forward_req = forward_req.body(body_str);
+    // 直接转发请求体，避免中间转换为字符串，提高性能
+    let bytes = axum::body::to_bytes(body, 10 * 1024 * 1024)
+        .await
+        .map_err(|err| {
+            tracing::error!("Failed to proxy request: {}", err);
+            RouteError::InternalError()
+        })?;
+    forward_req = forward_req.body(bytes);
 
     // send reverse proxy request
     let reqwest_response = forward_req.send().await.map_err(|e| {
