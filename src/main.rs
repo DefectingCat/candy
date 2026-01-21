@@ -75,6 +75,9 @@ async fn main() -> Result<()> {
                     let new_hosts = new_settings.host;
                     let handles_clone2 = handles_clone.clone();
                     tokio::spawn(async move {
+                        // 清空全局 HOSTS 变量，确保新配置完全生效
+                        crate::http::HOSTS.clear();
+
                         let mut new_handles = Vec::new();
                         for host in new_hosts {
                             match make_server(host).await {

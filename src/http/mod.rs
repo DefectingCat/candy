@@ -215,7 +215,14 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<axum_server::Handl
 
     router = logging_route(router);
 
-    let addr = format!("{}:{}", host.ip, host.port);
+    let (ip, port, ssl, certificate, certificate_key) = (
+        host.ip.clone(),
+        host.port,
+        host.ssl,
+        host.certificate.clone(),
+        host.certificate_key.clone()
+    );
+    let addr = format!("{}:{}", ip, port);
     let addr: SocketAddr = addr.parse()?;
 
     let handle = Handle::new();
@@ -227,13 +234,11 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<axum_server::Handl
         // 如果启用 SSL
         // 则创建 SSL 监听器
         // 否则创建 TCP 监听器
-        let result = if host.ssl && host.certificate.is_some() && host.certificate_key.is_some() {
-            let cert = host
-                .certificate
+        let result = if ssl && certificate.is_some() && certificate_key.is_some() {
+            let cert = certificate
                 .as_ref()
                 .ok_or(anyhow!("Certificate not found"))?;
-            let key = host
-                .certificate_key
+            let key = certificate_key
                 .as_ref()
                 .ok_or(anyhow!("Certificate key not found"))?;
             debug!("Certificate: {} Certificate key: {}", cert, key);

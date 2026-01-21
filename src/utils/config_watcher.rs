@@ -60,48 +60,37 @@ pub fn start_config_watcher(
             // 等待事件，带超时
             match rx.recv_timeout(Duration::from_secs(1)) {
                 Ok(Ok(event)) => {
+                    // 过滤只处理表示文件内容真正变更的事件类型，忽略访问事件和元数据修改事件
+                    let is_relevant_event = matches!(
+                        event.kind,
+                        EventKind::Modify(notify::event::ModifyKind::Data(_)) // 文件内容变更
+                        | EventKind::Modify(notify::event::ModifyKind::Name(_)) // 文件重命名
+                        | EventKind::Remove(_) // 文件删除
+                        | EventKind::Create(_) // 文件创建
+                    );
+
+                    if !is_relevant_event {
+                        // 忽略不相关的事件，如访问事件、元数据修改事件等
+                        continue;
+                    }
+
                     let now = std::time::Instant::now();
                     if now.duration_since(last_event_time) > debounce_duration {
                         info!("Config file event: {:?}", event);
 
                         // 处理文件删除/覆盖导致 watch 失效的问题
                         // 当文件被删除、重命名或属性改变时，可能需要重新 watch
-                        match event.kind {
-                            EventKind::Remove(_)
-                            | EventKind::Modify(notify::event::ModifyKind::Name(_)) => {
-                                // 重新添加 watch，处理文件被覆盖或删除的情况
-                                if let Err(e) = watcher.unwatch(&config_path) {
-                                    error!("Failed to unwatch config file (ignored): {:?}", e);
-                                }
-                                // 重试机制：文件可能短暂不存在，最多重试 5 次，每次间隔 100ms
-                                let mut retry_count = 0;
-                                let max_retries = 5;
-                                let retry_delay = Duration::from_millis(100);
-                                let mut watch_successful = false;
+                        let needs_re_watch = matches!(
+                            event.kind,
+                            EventKind::Remove(_) | EventKind::Modify(notify::event::ModifyKind::Name(_))
+                        );
 
-                                while retry_count < max_retries {
-                                    match watcher.watch(&config_path, RecursiveMode::NonRecursive) {
-                                        Ok(_) => {
-                                            info!("Re-watching config file: {:?}", config_path);
-                                            watch_successful = true;
-                                            break;
-                                        }
-                                        Err(e) => {
-                                            error!("Failed to re-watch config file (retry {}): {:?}", retry_count + 1, e);
-                                            retry_count += 1;
-                                            std::thread::sleep(retry_delay);
-                                        }
-                                    }
-                                }
-
-                                if !watch_successful {
-                                    error!("Failed to re-watch config file after {} retries", max_retries);
-                                }
-                            }
-                            _ => {}
+                        // 对于文件重命名/覆盖事件，先等待一小段时间确保文件写入完成
+                        if needs_re_watch {
+                            std::thread::sleep(Duration::from_millis(800));
                         }
 
-                        // 重新读取配置文件，同样添加重试机制
+                        // 重新读取配置文件，添加重试机制
                         let config_str = config_path
                             .to_str()
                             .expect("Config path is not valid UTF-8");
@@ -124,6 +113,36 @@ pub fn start_config_watcher(
                                 }
                             }
                         };
+
+                        // 如果需要重新 watch 文件（在读取配置成功后）
+                        if needs_re_watch {
+                            if let Err(e) = watcher.unwatch(&config_path) {
+                                error!("Failed to unwatch config file (ignored): {:?}", e);
+                            }
+                            // 重试机制：文件可能短暂不存在，最多重试 5 次，每次间隔 100ms
+                            let mut retry_count = 0;
+                            let max_retries = 5;
+                            let mut watch_successful = false;
+
+                            while retry_count < max_retries {
+                                match watcher.watch(&config_path, RecursiveMode::NonRecursive) {
+                                    Ok(_) => {
+                                        info!("Re-watching config file: {:?}", config_path);
+                                        watch_successful = true;
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to re-watch config file (retry {}): {:?}", retry_count + 1, e);
+                                        retry_count += 1;
+                                        std::thread::sleep(retry_delay);
+                                    }
+                                }
+                            }
+
+                            if !watch_successful {
+                                error!("Failed to re-watch config file after {} retries", max_retries);
+                            }
+                        }
 
                         callback(result).await;
 
