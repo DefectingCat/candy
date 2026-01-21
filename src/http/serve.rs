@@ -1,7 +1,6 @@
 use std::{
     fmt::{Display, Formatter},
     path::PathBuf,
-    str::FromStr,
     time::UNIX_EPOCH,
 };
 
@@ -65,19 +64,18 @@ async fn custom_page(
 
     let path = format!("{}/{}", root, page.page);
 
-    let status = StatusCode::from_str(page.status.to_string().as_ref())
+    let status = StatusCode::from_u16(page.status)
         .map_err(|_| RouteError::BadRequest())
-        .with_context(|| format!("Status code not found: {}", page.status))?;
+        .with_context(|| format!("Invalid status code: {}", page.status))?;
 
-    debug!("custom not found path: {:?}", path);
+    debug!("Custom page path: {:?}", path);
 
-    match stream_file(path.into(), request, Some(status)).await {
-        Ok(res) => Ok(res),
-        Err(e) => {
-            error!("Failed to stream file: {:?}", e);
-            Err(RouteError::InternalError())
-        }
-    }
+    stream_file(path.into(), request, Some(status))
+        .await
+        .map_err(|e| {
+            error!("Failed to stream custom page: {:?}", e);
+            RouteError::InternalError()
+        })
 }
 
 /// 提供静态文件服务
@@ -339,7 +337,7 @@ async fn stream_file(
     request: Request,
     status: Option<StatusCode>,
 ) -> RouteResult<Response<Body>> {
-    let file = File::open(path.clone())
+    let file = File::open(&path)
         .await
         .with_context(|| "Open file failed")?;
 
@@ -359,27 +357,27 @@ async fn stream_file(
     let body = Body::from_stream(stream);
 
     let mime = from_path(path).first_or_octet_stream();
-    response
+    let headers = response
         .headers_mut()
-        .with_context(|| "Insert header failed")?
-        .insert(
-            CONTENT_TYPE,
-            HeaderValue::from_str(mime.as_ref()).with_context(|| "Insert header failed")?,
-        );
-    response
-        .headers_mut()
-        .with_context(|| "Insert header failed")?
-        .insert(
-            ETAG,
-            HeaderValue::from_str(&etag).with_context(|| "Insert header failed")?,
-        );
-    if let Some(status) = status {
-        response = response.status(status);
-    }
-    let response = response
+        .with_context(|| "Insert header failed")?;
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_str(mime.as_ref()).with_context(|| "Insert header failed")?,
+    );
+    headers.insert(
+        ETAG,
+        HeaderValue::from_str(&etag).with_context(|| "Insert header failed")?,
+    );
+
+    let response = if let Some(status) = status {
+        response.status(status)
+    } else {
+        response
+    };
+
+    Ok(response
         .body(body)
-        .with_context(|| "Failed to build HTTP response with body")?;
-    Ok(response)
+        .with_context(|| "Failed to build HTTP response with body")?)
 }
 
 /// 检查 if-none-match 头部并返回响应
@@ -408,33 +406,23 @@ pub fn check_if_none_match(request: Request, etag: &String, response: Builder) -
 }
 
 pub async fn calculate_etag(file: &File, path: &str) -> anyhow::Result<String> {
-    // 计算文件元数据作为ETag
     let metadata = file
         .metadata()
         .await
         .with_context(|| "Get file metadata failed")?;
-    let created_timestamp = metadata
-        .created()
-        .with_context(|| "Get file created time failed")?
-        .duration_since(UNIX_EPOCH)
-        .with_context(|| "Calculate Unix timestamp failed")?
-        .as_secs();
+
     let modified_timestamp = metadata
         .modified()
         .with_context(|| "Get file modified time failed")?
         .duration_since(UNIX_EPOCH)
         .with_context(|| "Calculate Unix timestamp failed")?
         .as_secs();
-    // file path - created - modified - len
-    let etag = format!(
-        "{}-{}-{}-{}",
-        path,
-        created_timestamp,
-        modified_timestamp,
-        metadata.len()
-    );
-    let etag = format!("W/\"{:?}\"", md5::compute(etag));
-    debug!("file {:?} etag: {:?}", path, etag);
+
+    // 使用修改时间和文件大小计算ETag（简化且足够唯一）
+    let etag_data = format!("{}-{}-{}", path, modified_timestamp, metadata.len());
+    let etag = format!("W/\"{:x}\"", md5::compute(etag_data));
+    debug!("File {:?} ETag: {:?}", path, etag);
+
     Ok(etag)
 }
 
@@ -446,19 +434,16 @@ pub fn resolve_parent_path(uri: &Uri, path: Option<&Path<String>>) -> String {
     match path {
         Some(path) => {
             let uri_path = uri.path();
-    // 使用路径从URI路径中提取
-    // 找到存储在ROUTE_MAP中的父路径
-    // uri: /assets/css/styles.07713cb6.css, path: Some(Path("assets/css/styles.07713cb6.css")
+            // 使用路径从URI路径中提取存储在ROUTE_MAP中的父路径
+            // uri: /assets/css/styles.07713cb6.css, path: Some(Path("assets/css/styles.07713cb6.css")
             let parent_path = uri_path.get(0..uri_path.len() - path.len());
             parent_path.unwrap_or("/").to_string()
         }
         None => {
-    // URI需要以/结尾
-    // 因为全局ROUTE_MAP的键是以/结尾的
-    // 所以我们需要在URI路径后添加/以获取正确的路由
-            let uri_path = uri.path().to_string();
+            // URI需要以/结尾，因为ROUTE_MAP的键是以/结尾的
+            let uri_path = uri.path();
             if uri_path.ends_with('/') {
-                uri_path
+                uri_path.to_string()
             } else {
                 format!("{uri_path}/")
             }
@@ -637,104 +622,73 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
     use chrono::{Local, TimeZone};
     use std::time::UNIX_EPOCH;
 
-    let mut list = vec![];
-    // 异步读取目录条目
     let mut entries = fs::read_dir(path)
         .await
-            .with_context(|| format!("读取目录失败: {}", path.display()))?;
+        .with_context(|| format!("读取目录失败: {}", path.display()))?;
 
     debug!("列出目录路径: {:?}", path);
 
+    let host_root = host_root_str.to_string();
     let mut tasks = vec![];
-    // 遍历目录中的每个条目
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .with_context(|| format!("读取目录条目失败: {}", path.display()))?
-    {
-        #[cfg(unix)]
-        let host_root_str = if host_root_str.ends_with('/') {
-            host_root_str.to_string()
-        } else {
-            format!("{host_root_str}/")
-        };
-        // Windows 与 Unix 系统下的路劲处理方式不同
-        #[cfg(windows)]
-        let host_root_str = if host_root_str.ends_with('/') {
-            host_root_str
-                .strip_suffix('/')
-                .ok_or(anyhow!("List dir: Strip host root string suffix failed"))?
-                .to_string()
-        } else {
-            host_root_str.to_string()
-        };
-        // 为每个条目创建异步任务，并行获取元数据
+
+    while let Some(entry_result) = entries.next_entry().await? {
+        let entry = entry_result;
+        let root = host_root.clone();
+
         let task = tokio::task::spawn(async move {
-            // 获取文件元数据
             let metadata = entry
                 .metadata()
                 .await
-                .with_context(|| "Get file metadata failed")?;
+                .with_context(|| "获取文件元数据失败")?;
 
-            // 获取并格式化最后修改时间
             let last_modified = metadata
                 .modified()
-                .with_context(|| "Get file modification time failed")?;
-            let last_modified = last_modified
+                .with_context(|| "获取文件修改时间失败")?
                 .duration_since(UNIX_EPOCH)
-                .with_context(|| "Calculate Unix timestamp failed")?;
+                .with_context(|| "计算Unix时间戳失败")?;
 
-            // 转换为本地时间，处理可能的歧义情况
             let datetime = match Local
                 .timestamp_opt(last_modified.as_secs() as i64, last_modified.subsec_nanos())
             {
-                 chrono::LocalResult::Ambiguous(earlier, later) => {
+                chrono::LocalResult::Ambiguous(earlier, later) => {
                     warn!("检测到歧义时间: {} 和 {}", earlier, later);
                     earlier
                 }
-                chrono::offset::LocalResult::Single(single) => {
-                    // warn!("发现歧义时间: {}", single);
-                    single
-                }
+                chrono::offset::LocalResult::Single(single) => single,
                 chrono::offset::LocalResult::None => {
                     error!("解析时间失败，使用当前时间");
                     Local::now()
                 }
             };
-            let last_modified = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
 
-            // 收集其他元数据
-            let size = ByteUnit(metadata.len());
-            let is_dir = metadata.is_dir();
-            let name = entry.file_name().to_string_lossy().to_string();
-
-            let path = entry
-                .path()
-                .to_string_lossy()
-                .strip_prefix(&host_root_str)
-                .ok_or(anyhow!("List dir: Strip prefix failed"))?
-                .to_string();
-            let path = if is_dir {
-                format!("./{path}/")
-            } else {
-                format!("./{path}")
-            };
-            // 创建并返回目录条目信息
             let dir = DirList {
-                name,
-                path,
-                is_dir,
-                size,
-                last_modified,
+                name: entry.file_name().to_string_lossy().to_string(),
+                path: entry
+                    .path()
+                    .to_string_lossy()
+                    .strip_prefix(&root)
+                    .ok_or(anyhow!("去除路径前缀失败"))?
+                    .to_string(),
+                is_dir: metadata.is_dir(),
+                size: ByteUnit(metadata.len()),
+                last_modified: datetime.format("%Y-%m-%d %H:%M:%S").to_string(),
             };
+
             anyhow::Ok(dir)
         });
+
         tasks.push(task);
     }
 
-    // 等待所有异步任务完成并收集结果
+    let mut list = vec![];
     for task in tasks {
-        list.push(task.await??);
+        let mut dir = task.await??;
+        dir.path = if dir.is_dir {
+            format!("./{}/", dir.path)
+        } else {
+            format!("./{}", dir.path)
+        };
+        list.push(dir);
     }
 
     Ok(list)
