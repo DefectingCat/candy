@@ -40,6 +40,7 @@ pub static HOSTS: LazyLock<DashMap<u16, DashMap<Option<String>, SettingHost>>> =
     LazyLock::new(DashMap::new);
 
 pub async fn make_server(host: SettingHost) -> anyhow::Result<axum_server::Handle<SocketAddr>> {
+    debug!("make_server start with host: {:?}", host);
     let mut router = Router::new();
     let host_to_save = host.clone();
     // 在配置中查找路由
@@ -220,7 +221,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<axum_server::Handl
         host.port,
         host.ssl,
         host.certificate.clone(),
-        host.certificate_key.clone()
+        host.certificate_key.clone(),
     );
     let addr = format!("{}:{}", ip, port);
     let addr: SocketAddr = addr.parse()?;
@@ -246,18 +247,18 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<axum_server::Handl
             let rustls_config = RustlsConfig::from_pem_file(cert, key).await?;
             info!("Listening on https://{}", addr);
             axum_server::bind_rustls(addr, rustls_config)
-                .handle(handle_clone.clone())
+                .handle(handle_clone)
                 .serve(router.into_make_service())
                 .await
         } else {
             info!("Listening on http://{}", addr);
             axum_server::bind(addr)
-                .handle(handle_clone.clone())
+                .handle(handle_clone)
                 .serve(router.into_make_service())
                 .await
         };
 
-        result.map_err(|e| anyhow::Error::from(e))
+        result.map_err(anyhow::Error::from)
     });
 
     Ok(handle)
