@@ -31,17 +31,12 @@ use crate::{
 
 use super::error::RouteResult;
 
-/// 处理自定义页面请求（如404错误页或自定义错误页面）
-///
-/// 此函数根据请求类型（错误页或404页）加载相应的自定义页面，
-/// 构建完整文件路径并尝试流式传输文件内容作为HTTP响应。
-///
-/// # 参数
-/// - `host_route`: 主机路由配置引用，包含页面位置和根目录信息
+/// 处理自定义页面请求（如404错误页面或自定义错误页面）
+/// 该函数根据请求类型（错误页面或404页面）加载对应的自定义页面，
+/// 构造完整的文件路径，并尝试将文件内容流式传输为HTTP响应。
+/// - `host_route`: 包含页面位置和根目录信息的主机路由配置引用
 /// - `request`: 原始HTTP请求
-/// - `is_error_page`: 是否为错误页面（true: 错误页，false: 404页）
-///
-/// # 返回
+/// - `is_error_page`: 是否为错误页面（true: 错误页面, false: 404页面）
 /// - `RouteResult<Response>`: 成功时返回HTTP响应，失败时返回路由错误
 async fn custom_page(
     host_route: Ref<'_, String, SettingRoute>,
@@ -53,26 +48,26 @@ async fn custom_page(
             .error_page
             .as_ref()
             .ok_or(RouteError::RouteNotFound())
-            .with_context(|| "error page not found")?
+            .with_context(|| "Error page not found")?
     } else {
         host_route
             .not_found_page
             .as_ref()
             .ok_or(RouteError::RouteNotFound())
-            .with_context(|| "not found page not found")?
+            .with_context(|| "Not found page not found")?
     };
 
     let root = host_route
         .root
         .as_ref()
         .ok_or(RouteError::InternalError())
-        .with_context(|| "root not found")?;
+        .with_context(|| "Root not found")?;
 
     let path = format!("{}/{}", root, page.page);
 
     let status = StatusCode::from_str(page.status.to_string().as_ref())
         .map_err(|_| RouteError::BadRequest())
-        .with_context(|| format!("status code not found: {}", page.status))?;
+        .with_context(|| format!("Status code not found: {}", page.status))?;
 
     debug!("custom not found path: {:?}", path);
 
@@ -85,20 +80,20 @@ async fn custom_page(
     }
 }
 
-/// Serve static files.
+/// 提供静态文件服务
 ///
-/// This function handles requests for static files by:
-/// 1. Resolving the parent path from the URI or provided path.
-/// 2. Looking up the route in `ROUTE_MAP` to find the root directory.
-/// 3. Attempting to serve the requested file or a default index file.
+/// 该函数通过以下步骤处理静态文件请求：
+/// 1. 从 URI 或提供的路径解析父路径
+/// 2. 在 `ROUTE_MAP` 中查找路由以找到根目录
+/// 3. 尝试提供请求的文件或默认索引文件
 ///
-/// # Arguments
-/// - `uri`: The request URI, used to extract the full path.
-/// - `path`: Optional path segment provided by the router.
+/// # 参数
+/// - `uri`: 请求的 URI，用于提取完整路径
+/// - `path`: 路由器提供的可选路径段
 ///
-/// # Returns
-/// - `Ok(Response)`: If the file is found and successfully streamed.
-/// - `Err(RouteError)`: If the route or file is not found.
+/// # 返回值
+/// - `Ok(Response)`: 如果文件找到并成功流式传输
+/// - `Err(RouteError)`: 如果路由或文件未找到
 #[axum::debug_handler]
 pub async fn serve(
     uri: Uri,
@@ -188,9 +183,9 @@ pub async fn serve(
     // try find index file first
     // build index filename as vec
     // ["./html/index.html", "./html/index.txt"]
-    // Build the list of candidate file paths to try:
-    // - If `path` is provided, use it and check is file or not.
-    // - If `path` is None, use the default index files (either from `host_route.index` or `HOST_INDEX`).
+    // 构建要尝试的候选文件路径列表：
+    // - 如果提供了 `path`，则使用它并检查是否是文件
+    // - 如果 `path` 为 None，则使用默认索引文件（来自 `host_route.index` 或 `HOST_INDEX`）
     // path_arr 是包含默认索引文件的数组
     // req_path 是请求的路径
     let (req_path, path_arr) = if let Some(path) = path {
@@ -231,9 +226,9 @@ pub async fn serve(
         return Ok((headers, list_html).into_response());
     }
 
-    // Try each candidate path in order:
-    // - Return the first successfully streamed file.
-    // - If all fail, return a `RouteNotFound` error.
+    // 按顺序尝试每个候选路径：
+    // - 返回第一个成功流式传输的文件
+    // - 如果所有路径都失败，返回 `RouteNotFound` 错误
     let mut path_exists = None;
     for path in path_arr {
         if fs::metadata(path.clone()).await.is_ok() {
@@ -256,11 +251,11 @@ pub async fn serve(
                 let body = Body::from_stream(stream);
                 response
                     .headers_mut()
-                    .with_context(|| "insert header failed")?
+                    .with_context(|| "Insert header failed")?
                     .insert(
                         LOCATION,
                         HeaderValue::from_str(format!("{uri_path}/").as_str())
-                            .with_context(|| "insert header failed")?,
+                            .with_context(|| "Insert header failed")?,
                     );
                 response = response.status(StatusCode::MOVED_PERMANENTLY);
                 let response = response
@@ -299,16 +294,15 @@ pub async fn serve(
     }
 }
 
-/// Generate default index files
-/// if request path is not a file
-/// this read config index field
-/// and build with root: ["./html/index.html", "./html/index.txt"]
+/// 生成默认索引文件
+/// 如果请求路径不是文件，该函数会读取配置的 index 字段
+/// 并与根路径一起构建索引文件数组，如 ["./html/index.html", "./html/index.txt"]
 ///
-/// ## Arguments
-/// - `host_route`: the host route config
-/// - `root`: the root path
+/// ## 参数
+/// - `host_route`: 主机路由配置
+/// - `root`: 根路径
 ///
-/// ## Returns
+/// ## 返回值
 /// - PathBuf: 客户端访问的路径
 /// - Vec<String>: 包含默认索引文件名的数组
 fn generate_default_index(
@@ -332,14 +326,14 @@ fn generate_default_index(
     )
 }
 
-/// Stream a file as an HTTP response.
+/// 将文件流式传输为 HTTP 响应
 ///
-/// # Arguments
-/// - `path`: The filesystem path to the file.
+/// # 参数
+/// - `path`: 文件的文件系统路径
 ///
-/// # Returns
-/// - `Ok(Response)`: If the file is successfully opened and streamed.
-/// - `Err(anyhow::Error)`: If the file cannot be opened or read.
+/// # 返回值
+/// - `Ok(Response)`: 如果文件成功打开并流式传输
+/// - `Err(anyhow::Error)`: 如果文件无法打开或读取
 async fn stream_file(
     path: PathBuf,
     request: Request,
@@ -347,9 +341,11 @@ async fn stream_file(
 ) -> RouteResult<Response<Body>> {
     let file = File::open(path.clone())
         .await
-        .with_context(|| "open file failed")?;
+        .with_context(|| "Open file failed")?;
 
-    let path_str = path.to_str().ok_or(anyhow!("convert path to str failed"))?;
+    let path_str = path
+        .to_str()
+        .ok_or(anyhow!("Convert path to string failed"))?;
     let etag = calculate_etag(&file, path_str).await?;
 
     let response = Response::builder();
@@ -365,17 +361,17 @@ async fn stream_file(
     let mime = from_path(path).first_or_octet_stream();
     response
         .headers_mut()
-        .with_context(|| "insert header failed")?
+        .with_context(|| "Insert header failed")?
         .insert(
             CONTENT_TYPE,
-            HeaderValue::from_str(mime.as_ref()).with_context(|| "insert header failed")?,
+            HeaderValue::from_str(mime.as_ref()).with_context(|| "Insert header failed")?,
         );
     response
         .headers_mut()
-        .with_context(|| "insert header failed")?
+        .with_context(|| "Insert header failed")?
         .insert(
             ETAG,
-            HeaderValue::from_str(&etag).with_context(|| "insert header failed")?,
+            HeaderValue::from_str(&etag).with_context(|| "Insert header failed")?,
         );
     if let Some(status) = status {
         response = response.status(status);
@@ -386,17 +382,17 @@ async fn stream_file(
     Ok(response)
 }
 
-/// Check if-none-match header and return response
+/// 检查 if-none-match 头部并返回响应
 ///
-/// # Arguments
+/// # 参数
 ///
-/// * `request` - The request object
-/// * `etag` - The etag to check
-/// * `response` - The response builder
+/// * `request` - 请求对象
+/// * `etag` - 要检查的 ETag
+/// * `response` - 响应构建器
 ///
-/// # Returns
+/// # 返回值
 ///
-/// * `(response, bool)` - The response builder and a boolean indicating if the response is not modified
+/// * `(response, bool)` - 响应构建器和一个布尔值，表示响应是否未修改
 pub fn check_if_none_match(request: Request, etag: &String, response: Builder) -> (Builder, bool) {
     // check request if-none-match
     let Some(if_none_match) = request.headers().get(IF_NONE_MATCH) else {
@@ -412,22 +408,22 @@ pub fn check_if_none_match(request: Request, etag: &String, response: Builder) -
 }
 
 pub async fn calculate_etag(file: &File, path: &str) -> anyhow::Result<String> {
-    // calculate file metadata as etag
+    // 计算文件元数据作为ETag
     let metadata = file
         .metadata()
         .await
-        .with_context(|| "get file metadata failed")?;
+        .with_context(|| "Get file metadata failed")?;
     let created_timestamp = metadata
         .created()
-        .with_context(|| "get file created failed")?
+        .with_context(|| "Get file created time failed")?
         .duration_since(UNIX_EPOCH)
-        .with_context(|| "calculate unix timestamp failed")?
+        .with_context(|| "Calculate Unix timestamp failed")?
         .as_secs();
     let modified_timestamp = metadata
         .modified()
-        .with_context(|| "get file created failed")?
+        .with_context(|| "Get file modified time failed")?
         .duration_since(UNIX_EPOCH)
-        .with_context(|| "calculate unix timestamp failed")?
+        .with_context(|| "Calculate Unix timestamp failed")?
         .as_secs();
     // file path - created - modified - len
     let etag = format!(
@@ -442,24 +438,24 @@ pub async fn calculate_etag(file: &File, path: &str) -> anyhow::Result<String> {
     Ok(etag)
 }
 
-// Resolve the parent path:
-// - If `path` is provided, extract the parent segment from the URI.
-// - If `path` is None, use the URI path directly (ensuring it ends with '/').
-/// Resolves the parent path from the URI and optional path segment.
+// 解析父路径：
+// - 如果提供了 `path`，则从 URI 中提取父段
+// - 如果 `path` 为 None，则直接使用 URI 路径（确保以 '/' 结尾）
+/// 从 URI 和可选的路径段解析父路径
 pub fn resolve_parent_path(uri: &Uri, path: Option<&Path<String>>) -> String {
     match path {
         Some(path) => {
             let uri_path = uri.path();
-            // use path sub to this uri path
-            // to find parent path that store in ROUTE_MAP
-            // uri: /assets/css/styles.07713cb6.css, path: Some(Path("assets/css/styles.07713cb6.css")
+    // 使用路径从URI路径中提取
+    // 找到存储在ROUTE_MAP中的父路径
+    // uri: /assets/css/styles.07713cb6.css, path: Some(Path("assets/css/styles.07713cb6.css")
             let parent_path = uri_path.get(0..uri_path.len() - path.len());
             parent_path.unwrap_or("/").to_string()
         }
         None => {
-            // uri needs end with /
-            // because global ROUTE_MAP key is end with /
-            // so we need add / to uri path to get correct Route
+    // URI需要以/结尾
+    // 因为全局ROUTE_MAP的键是以/结尾的
+    // 所以我们需要在URI路径后添加/以获取正确的路由
             let uri_path = uri.path().to_string();
             if uri_path.ends_with('/') {
                 uri_path
@@ -645,9 +641,9 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
     // 异步读取目录条目
     let mut entries = fs::read_dir(path)
         .await
-        .with_context(|| format!("无法读取目录: {}", path.display()))?;
+            .with_context(|| format!("读取目录失败: {}", path.display()))?;
 
-    debug!("list dir path: {:?}", path);
+    debug!("列出目录路径: {:?}", path);
 
     let mut tasks = vec![];
     // 遍历目录中的每个条目
@@ -667,7 +663,7 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
         let host_root_str = if host_root_str.ends_with('/') {
             host_root_str
                 .strip_suffix('/')
-                .ok_or(anyhow!("list_dir: strip host_root_str suffix failed"))?
+                .ok_or(anyhow!("List dir: Strip host root string suffix failed"))?
                 .to_string()
         } else {
             host_root_str.to_string()
@@ -678,22 +674,22 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
             let metadata = entry
                 .metadata()
                 .await
-                .with_context(|| "获取文件元数据失败")?;
+                .with_context(|| "Get file metadata failed")?;
 
             // 获取并格式化最后修改时间
             let last_modified = metadata
                 .modified()
-                .with_context(|| "获取文件修改时间失败")?;
+                .with_context(|| "Get file modification time failed")?;
             let last_modified = last_modified
                 .duration_since(UNIX_EPOCH)
-                .with_context(|| "计算 Unix 时间戳失败")?;
+                .with_context(|| "Calculate Unix timestamp failed")?;
 
             // 转换为本地时间，处理可能的歧义情况
             let datetime = match Local
                 .timestamp_opt(last_modified.as_secs() as i64, last_modified.subsec_nanos())
             {
-                chrono::LocalResult::Ambiguous(earlier, later) => {
-                    warn!("发现歧义时间: {} 和 {}", earlier, later);
+                 chrono::LocalResult::Ambiguous(earlier, later) => {
+                    warn!("检测到歧义时间: {} 和 {}", earlier, later);
                     earlier
                 }
                 chrono::offset::LocalResult::Single(single) => {
@@ -701,7 +697,7 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
                     single
                 }
                 chrono::offset::LocalResult::None => {
-                    error!("无法解析时间时使用当前时间");
+                    error!("解析时间失败，使用当前时间");
                     Local::now()
                 }
             };
@@ -716,7 +712,7 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
                 .path()
                 .to_string_lossy()
                 .strip_prefix(&host_root_str)
-                .ok_or(anyhow!("list_dir: strip prefix failed"))?
+                .ok_or(anyhow!("List dir: Strip prefix failed"))?
                 .to_string();
             let path = if is_dir {
                 format!("./{path}/")
@@ -761,6 +757,6 @@ pub async fn empty_stream() -> anyhow::Result<ReaderStream<File>> {
     let null = PathBuf::from("/dev/null");
     let empty = File::open(null)
         .await
-        .with_context(|| "open /dev/null failed")?;
+        .with_context(|| "Open /dev/null failed")?;
     Ok(ReaderStream::new(empty))
 }

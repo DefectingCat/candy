@@ -2,6 +2,16 @@
 
 This file provides instructions for agentic coding assistants working in this Rust repository.
 
+## Project Overview
+
+**Candy** is a modern, lightweight web server written in Rust. It supports:
+- Static file serving
+- Reverse proxying
+- Lua scripting (optional feature)
+- SSL/TLS encryption
+- Configuration reload on file change
+- Multiple virtual hosts
+
 ## Build and Test Commands
 
 ```bash
@@ -17,11 +27,14 @@ make run
 # Run all tests
 make test
 
-# Run a specific test module
-cargo test --test <test_module_name>
+# Run config module tests specifically
+cargo test --package candy config
+
+# Run config watcher tests
+cargo test --package candy config_watcher
 
 # Run a specific test function
-cargo test <test_function_name> --package <package_name>
+cargo test test_settings_new --package candy
 
 # Run tests with verbose output
 cargo test -v
@@ -70,7 +83,7 @@ make loongarch          # LoongArch Linux
 - **Line length**: Aim for 80-100 characters (soft limit)
 
 ### Rust-specific
-- **Indentation**: 4 spaces (no tabs)
+- **Indentation**: 4 spaces (no tabs) - enforced by .editorconfig
 - **Import style**: Group and order as follows:
   1. Standard library (std::*)
   2. External dependencies (alphabetical)
@@ -120,6 +133,9 @@ cargo add <dependency_name>
 
 # Remove a dependency
 cargo remove <dependency_name>
+
+# Run with custom config file
+cargo run -- --config path/to/config.toml
 ```
 
 ## Configuration
@@ -127,6 +143,7 @@ cargo remove <dependency_name>
 - Project configuration uses TOML format (`config.example.toml`)
 - Copy `config.example.toml` to `config.toml` and customize
 - Never commit `config.toml` to version control
+- Configuration file is automatically reloaded when changed
 
 ## Performance Optimization
 
@@ -150,3 +167,27 @@ codegen-units = 1
   - Body explains "why" not just "what"
   - Reference issues/PRs where relevant
 - Never commit secrets or sensitive information
+
+## Key Modules
+
+### Main Entry Point
+- **src/main.rs**: Initializes logger, loads config, starts servers, and watches for config changes
+
+### Configuration
+- **src/config.rs**: Defines configuration structure, validation, and loading from TOML files
+
+### HTTP Server
+- **src/http/mod.rs**: Core server implementation using Axum
+- **src/http/handler.rs**: Request handlers for static files, proxy, and Lua scripts
+- **src/http/router.rs**: Route matching and dispatch logic
+
+### Utilities
+- **src/utils/config_watcher.rs**: Monitors configuration file for changes and reloads config
+- **src/utils/init_logger.rs**: Initializes tracing logger
+- **src/utils/mime_types.rs**: MIME type detection for static files
+
+### Lua Engine (Optional)
+- **src/lua_engine.rs**: Lua script execution context (enabled with "lua" feature)
+
+### Error Handling
+- **src/error.rs**: Custom error types and conversion functions

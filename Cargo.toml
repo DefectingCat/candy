@@ -1,5 +1,3 @@
-# cargo-features = ["profile-rustflags", "trim-paths"]
-
 [package]
 name = "candy"
 version = "0.2.4"
@@ -76,5 +74,3 @@ strip = true      # Ensures debug symbols are removed.
 lto = true        # Enables link-time-optimizations.
 panic = "abort"   # Higher performance by disabling panic handlers.
 codegen-units = 1 # Allows LLVM to perform better optimization.
-# trim-paths = "all" # Removes potentially privileged information from your binaries.
-# rustflags = ["-Cdebuginfo=0", "-C", "target-cpu=native", "-Z", "threads=8"]
