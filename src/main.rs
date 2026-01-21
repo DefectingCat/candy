@@ -6,7 +6,7 @@ use clap::Parser;
 use config::Settings;
 use consts::{COMMIT, COMPILER};
 use http::make_server;
-use tracing::{debug, info, error};
+use tracing::{debug, error, info};
 
 use crate::{
     consts::{ARCH, NAME, OS, VERSION},
@@ -50,11 +50,10 @@ async fn main() -> Result<()> {
     }
 
     // 启动配置文件监听
-    let _config_path = args.config.clone();
     let handles = std::sync::Arc::new(std::sync::Mutex::new(handles));
     let handles_clone = handles.clone(); // 克隆一个副本用于闭包
     let config_path = args.config.clone();
-    let _stop_tx = start_config_watcher(&args.config, move |result| {
+    let stop_tx = start_config_watcher(&args.config, move |result| {
         match result {
             Ok(new_settings) => {
                 info!("Config file reloaded successfully: {:?}", new_settings);
@@ -103,7 +102,7 @@ async fn main() -> Result<()> {
         }
     })?;
 
-    info!("server started");
+    info!("Server started");
 
     // 保持主线程运行，直到所有服务器停止
     tokio::signal::ctrl_c().await?;
@@ -116,6 +115,9 @@ async fn main() -> Result<()> {
         }
         info!("All servers have been signaled to shut down");
         current_handles.clear();
+        let _ = stop_tx
+            .send(())
+            .map_err(|err| error!("Send stop_tx failed: {:?}", err));
     } else {
         error!("Failed to acquire lock for server handles");
     }

@@ -81,7 +81,9 @@ pub fn start_config_watcher(
                         }
 
                         // 重新读取配置文件
-                        let config_str = config_path.to_str().expect("Config path is not valid UTF-8");
+                        let config_str = config_path
+                            .to_str()
+                            .expect("Config path is not valid UTF-8");
                         let result = Settings::new(config_str);
                         callback(result);
 

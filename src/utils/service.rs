@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use axum_server::{Address, Handle};
-use tokio::{signal, time::sleep};
+use tokio::signal;
 use tracing::{debug, info};
 
 pub async fn graceful_shutdown<A: Address>(handle: Handle<A>) {
