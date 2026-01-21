@@ -110,21 +110,20 @@ pub async fn handle_custom_page(
     Ok(response)
 }
 
-/// Handles the reverse proxy logic for incoming requests.
-/// This function:
-/// 1. Extracts the request path, host, and other details.
-/// 2. Resolves the parent path and proxy configuration.
-/// 3. Forwards the request to the configured proxy server.
-/// 4. Returns the response from the proxy server to the client.
+/// 处理入站请求的反向代理逻辑。
+/// 该函数：
+/// 1. 提取请求路径、主机和其他细节信息。
+/// 2. 解析父路径和代理配置。
+/// 3. 将请求转发到配置的代理服务器。
+/// 4. 将代理服务器的响应返回给客户端。
 ///
-/// # Arguments
-/// * `req_uri` - The URI of the incoming request.
-/// * `path` - Optional path parameter extracted from the request.
-/// * `host` - The host header from the request.
-/// * `req` - The incoming HTTP request.
+/// # 参数
+/// * `req_uri` - 入站请求的URI。
+/// * `path` - 从请求中提取的可选路径参数。
+/// * `req` - 入站的HTTP请求。
 ///
-/// # Returns
-/// A `RouteResult` containing the response from the proxy server or an error.
+/// # 返回
+/// 包含代理服务器响应或错误的 `RouteResult`。
 #[axum::debug_handler]
 pub async fn serve(
     req_uri: Uri,
@@ -248,8 +247,8 @@ pub async fn serve(
     Ok(res)
 }
 
-/// Checks if a given header should be excluded from being forwarded in the reverse proxy.
-/// Headers like "host", "connection", etc., are typically excluded to avoid conflicts or security issues.
+/// 检查给定的头部是否应该在反向代理中被排除转发。
+/// 像 "host"、"connection" 等头部通常会被排除，以避免冲突或安全问题。
 fn is_exclude_header(name: &HeaderName) -> bool {
     matches!(
         name.as_str(),
@@ -264,8 +263,8 @@ fn is_exclude_header(name: &HeaderName) -> bool {
     )
 }
 
-/// Copies headers from one `HeaderMap` to another, excluding headers specified in `is_exclude_header`.
-/// This ensures only relevant headers are forwarded, avoiding conflicts or security issues.
+/// 将头部从一个 `HeaderMap` 复制到另一个，排除在 `is_exclude_header` 中指定的头部。
+/// 这确保只转发相关的头部，避免冲突或安全问题。
 fn copy_headers(from: &http::HeaderMap, to: &mut http::HeaderMap) {
     for (name, value) in from.iter() {
         if !is_exclude_header(name) {
