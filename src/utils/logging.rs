@@ -15,29 +15,60 @@ use tracing_subscriber::{
 ///
 /// 配置文件路径只能文件夹，日志文件将按天分割。
 pub fn init_logger(log_level: &str, log_folder: &str) -> anyhow::Result<WorkerGuard> {
-    let file_appender = tracing_appender::rolling::daily(log_folder, "candy_log");
-    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
-
-    let file_subscriber = fmt::layer()
-        .compact()
-        .with_target(false)
-        .with_thread_ids(true)
-        .with_ansi(false)
-        .with_writer(non_blocking);
-
-    let formatting_layer = fmt::layer()
-        // .pretty()
-        // .with_thread_ids(true)
-        .with_target(false)
-        .with_writer(std::io::stdout);
-
     let env_layer = EnvFilter::from_str(log_level).unwrap_or_else(|_| "info".into());
+    let formatting_layer = fmt::layer().with_target(false).with_writer(std::io::stdout);
 
-    let collector = tracing_subscriber::registry()
-        .with(env_layer)
-        .with(formatting_layer)
-        .with(file_subscriber);
-    tracing::subscriber::set_global_default(collector)
-        .with_context(|| "to set a global collector")?;
-    Ok(guard)
+    // 使用 builder 模式创建 RollingFileAppender，这样可以捕获初始化错误
+    let builder = tracing_appender::rolling::RollingFileAppender::builder()
+        .rotation(tracing_appender::rolling::Rotation::DAILY)
+        .filename_prefix("candy_log");
+
+    match builder.build(log_folder) {
+        Ok(file_appender) => {
+            let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+            let file_subscriber = fmt::layer()
+                .compact()
+                .with_target(false)
+                .with_thread_ids(true)
+                .with_ansi(false)
+                .with_writer(non_blocking);
+
+            let collector = tracing_subscriber::registry()
+                .with(env_layer)
+                .with(formatting_layer)
+                .with(file_subscriber);
+
+            tracing::subscriber::set_global_default(collector)
+                .with_context(|| "to set a global collector")?;
+
+            Ok(guard)
+        }
+        Err(e) => {
+            eprintln!(
+                "Warning: Failed to initialize log file appender ({:?}), will only output logs to console",
+                e
+            );
+
+            let collector = tracing_subscriber::registry()
+                .with(env_layer)
+                .with(formatting_layer);
+
+            tracing::subscriber::set_global_default(collector)
+                .with_context(|| "to set a global collector")?;
+
+            // 创建一个 dummy guard，因为我们需要返回一个值
+            let dummy_appender = tracing_appender::rolling::RollingFileAppender::builder()
+                .rotation(tracing_appender::rolling::Rotation::NEVER)
+                .filename_prefix("dummy")
+                .build("/tmp") // /tmp 目录通常是可写的
+                .unwrap_or_else(|_| {
+                    // 如果 /tmp 也不可写，那么我们只能创建一个内存 appender 或者直接返回一个空 guard
+                    // 这里我们使用 never rotate 到 /dev/null，这在 Unix 系统上应该总是可行的
+                    tracing_appender::rolling::never("/dev/null", "dummy")
+                });
+            let (_, dummy_guard) = tracing_appender::non_blocking(dummy_appender);
+
+            Ok(dummy_guard)
+        }
+    }
 }
