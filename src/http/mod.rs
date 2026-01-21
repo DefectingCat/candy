@@ -96,96 +96,89 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<axum_server::Handl
     debug!("make_server start with host: {:?}", host);
     let mut router = Router::new();
     let host_to_save = host.clone();
-    // 在配置中查找路由
-    // 转换为 Axum 路由
-    // 注册路由
+
+    // 辅助函数：注册路由（处理带/不带斜杠的路径）
+    let register_route = |router: Router,
+                          location: &str,
+                          handler: axum::routing::MethodRouter|
+     -> (Router, String) {
+        let path_morethan_one = location.len() > 1;
+        let mut router = router;
+
+        if path_morethan_one && location.ends_with('/') {
+            // 首先注册带斜杠的路径 /doc
+            router = router.route(location, handler.clone());
+            debug!("Route registered: {}", location);
+            let len = location.len();
+            let path_without_slash = &location[0..len - 1];
+            // 然后注册不带斜杠的路径 /doc/
+            router = router.route(path_without_slash, handler.clone());
+            debug!("Route registered: {}", path_without_slash);
+            (router, location.to_string())
+        } else if path_morethan_one {
+            // 首先注册不带斜杠的路径 /doc
+            router = router.route(location, handler.clone());
+            debug!("Route registered: {}", location);
+            // 然后注册带斜杠的路径 /doc/
+            let path_with_slash = format!("{}/", location);
+            router = router.route(&path_with_slash, handler.clone());
+            debug!("Route registered: {}", path_with_slash);
+            (router, path_with_slash)
+        } else {
+            // 注册根路径 /
+            router = router.route(location, handler);
+            debug!("Route registered: {}", location);
+            (router, location.to_string())
+        }
+    };
+
+    // 在配置中查找路由，转换为 Axum 路由并注册
     for host_route in &host.route {
         // HTTP 重定向
         if host_route.redirect_to.is_some() {
-            // 使用位置注册
-            // location = "/doc"
-            // 路由: GET /doc/*
-            // 使用文件路径注册
-            // index = ["index.html", "index.txt"]
-            // 路由: GET /doc/index.html
-            // 路由: GET /doc/index.txt
-            // 注册父路径 /doc
-            let path_morethan_one = host_route.location.len() > 1;
-            let route_path = if path_morethan_one && host_route.location.ends_with('/') {
-                // 首先注册带斜杠的路径 /doc
-                router = router.route(&host_route.location, get(redirect::redirect));
-                debug!("Route registered: {}", host_route.location);
-                let len = host_route.location.len();
-                let path_without_slash = host_route.location.chars().collect::<Vec<_>>()
-                    [0..len - 1]
-                    .iter()
-                    .collect::<String>();
-                // 然后注册不带斜杠的路径 /doc/
-                router = router.route(&path_without_slash, get(redirect::redirect));
-                debug!("Route registered: {}", path_without_slash);
-                host_route.location.clone()
-            } else if path_morethan_one {
-                // 首先注册不带斜杠的路径 /doc
-                router = router.route(&host_route.location, get(redirect::redirect));
-                debug!("Route registered: {}", host_route.location);
-                // 然后注册带斜杠的路径 /doc/
-                let path = format!("{}/", host_route.location);
-                router = router.route(&path, get(redirect::redirect));
-                debug!("Route registered: {}", path);
-                path
-            } else {
-                // 注册路径 /doc/
-                router = router.route(&host_route.location, get(serve::serve));
-                debug!("Route registered: {}", host_route.location);
-                host_route.location.clone()
-            };
+            let (new_router, route_path) =
+                register_route(router, &host_route.location, get(redirect::redirect));
+            router = new_router;
+
             // 将路由路径保存到映射中
-            {
-                host_to_save
-                    .route_map
-                    .insert(route_path.clone(), host_route.clone());
-            }
-            let route_path = format!("{route_path}{{*path}}");
-            // 注册通配符路径 /doc/*
-            router = router.route(route_path.as_ref(), get(serve::serve));
-            debug!("HTTP redirect route registered: {}", route_path);
+            host_to_save
+                .route_map
+                .insert(route_path.clone(), host_route.clone());
+
+            let wildcard_path = format!("{route_path}{{*path}}");
+            router = router.route(&wildcard_path, get(serve::serve));
+            debug!("HTTP redirect wildcard route registered: {}", wildcard_path);
             continue;
         }
 
         // Lua 脚本
         #[cfg(feature = "lua")]
         if host_route.lua_script.is_some() {
-            // 准备 Lua 脚本
-            router = router.route(host_route.location.as_ref(), get(lua::lua));
-            let route_path = format!("{}{{*path}}", host_route.location);
-            router = router.route(route_path.as_ref(), get(lua::lua));
-            // 将路由路径保存到映射中
-            {
-                host_to_save
-                    .route_map
-                    .insert(host_route.location.clone(), host_route.clone());
-            }
-            debug!("Lua script route registered: {}", route_path);
+            router = router.route(&host_route.location, get(lua::lua));
+            let wildcard_path = format!("{}{{*path}}", host_route.location);
+            router = router.route(&wildcard_path, get(lua::lua));
+
+            host_to_save
+                .route_map
+                .insert(host_route.location.clone(), host_route.clone());
+            debug!("Lua script route registered: {}", wildcard_path);
             continue;
         }
 
         // 反向代理
         if host_route.proxy_pass.is_some() {
-            router = router.route(host_route.location.as_ref(), get(reverse_proxy::serve));
-            // 注册通配符路径 /doc/*
-            let route_path = format!("{}{{*path}}", host_route.location);
-            router = router.route(route_path.as_ref(), get(reverse_proxy::serve));
-            // 设置请求最大体大小
+            router = router.route(&host_route.location, get(reverse_proxy::serve));
+            let wildcard_path = format!("{}{{*path}}", host_route.location);
+            router = router.route(&wildcard_path, get(reverse_proxy::serve));
+
             if let Some(max_body_size) = host_route.max_body_size {
                 router = router.layer(DefaultBodyLimit::max(max_body_size as usize));
             }
-            // 将路由路径保存到映射中
-            {
-                host_to_save
-                    .route_map
-                    .insert(host_route.location.clone(), host_route.clone());
-            }
-            debug!("Reverse proxy route registered: {}", route_path);
+
+            host_to_save
+                .route_map
+                .insert(host_route.location.clone(), host_route.clone());
+            debug!("Reverse proxy route registered: {}", wildcard_path);
             continue;
         }
 
@@ -194,56 +187,22 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<axum_server::Handl
             warn!("Route missing root field: {:?}", host_route.location);
             continue;
         }
-        // 设置请求最大体大小
+
         if let Some(max_body_size) = host_route.max_body_size {
             router = router.layer(DefaultBodyLimit::max(max_body_size as usize));
         }
-        // 使用位置注册
-        // location = "/doc"
-        // 路由: GET /doc/*
-        // 使用文件路径注册
-        // index = ["index.html", "index.txt"]
-        // 路由: GET /doc/index.html
-        // 路由: GET /doc/index.txt
-        // 注册父路径 /doc
-        let path_morethan_one = host_route.location.len() > 1;
-        let route_path = if path_morethan_one && host_route.location.ends_with('/') {
-            // 首先注册带斜杠的路径 /doc
-            router = router.route(&host_route.location, get(serve::serve));
-            debug!("Route registered: {}", host_route.location);
-            let len = host_route.location.len();
-            let path_without_slash = host_route.location.chars().collect::<Vec<_>>()[0..len - 1]
-                .iter()
-                .collect::<String>();
-            // 然后注册不带斜杠的路径 /doc/
-            router = router.route(&path_without_slash, get(serve::serve));
-            debug!("Route registered: {}", path_without_slash);
-            host_route.location.clone()
-        } else if path_morethan_one {
-            // 首先注册不带斜杠的路径 /doc
-            router = router.route(&host_route.location, get(serve::serve));
-            debug!("Route registered: {}", host_route.location);
-            // 然后注册带斜杠的路径 /doc/
-            let path = format!("{}/", host_route.location);
-            router = router.route(&path, get(serve::serve));
-            debug!("Route registered: {}", path);
-            path
-        } else {
-            // 注册路径 /doc/
-            router = router.route(&host_route.location, get(serve::serve));
-            debug!("Route registered: {}", host_route.location);
-            host_route.location.clone()
-        };
-        // 将路由路径保存到映射中
-        {
-            host_to_save
-                .route_map
-                .insert(route_path.clone(), host_route.clone());
-        }
-        let route_path = format!("{route_path}{{*path}}");
-        // 注册通配符路径 /doc/*
-        router = router.route(route_path.as_ref(), get(serve::serve));
-        debug!("Static file route registered: {}", route_path);
+
+        let (new_router, route_path) =
+            register_route(router, &host_route.location, get(serve::serve));
+        router = new_router;
+
+        host_to_save
+            .route_map
+            .insert(route_path.clone(), host_route.clone());
+
+        let wildcard_path = format!("{route_path}{{*path}}");
+        router = router.route(&wildcard_path, get(serve::serve));
+        debug!("Static file wildcard route registered: {}", wildcard_path);
     }
 
     // 保存主机到映射中
@@ -284,34 +243,32 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<axum_server::Handl
 
     // 生成一个任务来运行服务器
     tokio::spawn(async move {
-        // 检查是否启用 SSL
-        // 如果启用 SSL
-        // 则创建 SSL 监听器
-        // 否则创建 TCP 监听器
-        let result = if ssl && certificate.is_some() && certificate_key.is_some() {
-            let cert = certificate
-                .as_ref()
-                .ok_or(anyhow!("Certificate not found"))?;
-            let key = certificate_key
-                .as_ref()
-                .ok_or(anyhow!("Certificate key not found"))?;
-            debug!("Certificate: {} Certificate key: {}", cert, key);
-
-            let rustls_config = RustlsConfig::from_pem_file(cert, key).await?;
-            info!("Listening on https://{}", addr);
-            axum_server::bind_rustls(addr, rustls_config)
-                .handle(handle_clone)
-                .serve(router.into_make_service())
-                .await
+        if ssl && certificate.is_some() && certificate_key.is_some() {
+            match (certificate, certificate_key) {
+                (Some(cert), Some(key)) => {
+                    debug!("Certificate: {} Certificate key: {}", cert, key);
+                    match RustlsConfig::from_pem_file(&cert, &key).await {
+                        Ok(rustls_config) => {
+                            info!("Listening on https://{}", addr);
+                            axum_server::bind_rustls(addr, rustls_config)
+                                .handle(handle_clone)
+                                .serve(router.into_make_service())
+                                .await
+                                .map_err(anyhow::Error::from)
+                        }
+                        Err(e) => Err(anyhow::Error::from(e)),
+                    }
+                }
+                _ => Err(anyhow!("SSL enabled but certificate or key missing")),
+            }
         } else {
             info!("Listening on http://{}", addr);
             axum_server::bind(addr)
                 .handle(handle_clone)
                 .serve(router.into_make_service())
                 .await
-        };
-
-        result.map_err(anyhow::Error::from)
+                .map_err(anyhow::Error::from)
+        }
     });
 
     Ok(handle)
