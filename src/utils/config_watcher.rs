@@ -82,7 +82,8 @@ pub fn start_config_watcher(
                         // 当文件被删除、重命名或属性改变时，可能需要重新 watch
                         let needs_re_watch = matches!(
                             event.kind,
-                            EventKind::Remove(_) | EventKind::Modify(notify::event::ModifyKind::Name(_))
+                            EventKind::Remove(_)
+                                | EventKind::Modify(notify::event::ModifyKind::Name(_))
                         );
 
                         // 对于文件重命名/覆盖事件，先等待一小段时间确保文件写入完成
@@ -104,7 +105,11 @@ pub fn start_config_watcher(
                                 Ok(settings) => break Ok(settings),
                                 Err(e) => {
                                     if retry_count < max_retries {
-                                        error!("Failed to read config file (retry {}): {:?}", retry_count + 1, e);
+                                        error!(
+                                            "Failed to read config file (retry {}): {:?}",
+                                            retry_count + 1,
+                                            e
+                                        );
                                         retry_count += 1;
                                         std::thread::sleep(retry_delay);
                                     } else {
@@ -132,7 +137,11 @@ pub fn start_config_watcher(
                                         break;
                                     }
                                     Err(e) => {
-                                        error!("Failed to re-watch config file (retry {}): {:?}", retry_count + 1, e);
+                                        error!(
+                                            "Failed to re-watch config file (retry {}): {:?}",
+                                            retry_count + 1,
+                                            e
+                                        );
                                         retry_count += 1;
                                         std::thread::sleep(retry_delay);
                                     }
@@ -140,7 +149,10 @@ pub fn start_config_watcher(
                             }
 
                             if !watch_successful {
-                                error!("Failed to re-watch config file after {} retries", max_retries);
+                                error!(
+                                    "Failed to re-watch config file after {} retries",
+                                    max_retries
+                                );
                             }
                         }
 

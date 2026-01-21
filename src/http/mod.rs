@@ -7,7 +7,7 @@ use dashmap::DashMap;
 use http::StatusCode;
 use tower::ServiceBuilder;
 use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     config::SettingHost,
@@ -38,6 +38,59 @@ pub mod redirect;
 /// }
 pub static HOSTS: LazyLock<DashMap<u16, DashMap<Option<String>, SettingHost>>> =
     LazyLock::new(DashMap::new);
+
+/// 优雅关闭所有服务器
+///
+/// 对所有运行中的服务器发送优雅关闭信号，并清空服务器句柄列表。
+/// 服务器将在 30 秒内完成正在处理的请求后停止。
+///
+/// # 参数
+///
+/// * `handles` - 服务器句柄的可变引用，用于存储所有正在运行的服务器实例
+///
+/// # 日志记录
+///
+/// 函数会记录一个信息级别的日志，指示所有服务器已收到关闭信号
+pub async fn shutdown_servers(handles: &mut Vec<axum_server::Handle<SocketAddr>>) {
+    for handle in handles.iter() {
+        handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
+    }
+    handles.clear();
+    info!("All servers have been signaled to shut down");
+}
+
+/// 启动所有服务器
+///
+/// 根据配置文件中定义的主机列表启动所有服务器实例。
+/// 每个服务器实例会根据其配置（HTTP 或 HTTPS）进行初始化和启动。
+/// 对于启动失败的服务器，会记录错误日志但不会中断其他服务器的启动过程。
+///
+/// # 参数
+///
+/// * `hosts` - 配置文件中定义的所有主机的列表，每个主机包含完整的服务器配置
+///
+/// # 返回值
+///
+/// 返回一个包含所有成功启动的服务器句柄的向量
+///
+/// # 错误处理
+///
+/// 单个服务器启动失败会被捕获并记录为错误日志，不会影响其他服务器的启动
+pub async fn start_servers(hosts: Vec<SettingHost>) -> Vec<axum_server::Handle<SocketAddr>> {
+    let mut handles = Vec::new();
+    for host in hosts {
+        match make_server(host).await {
+            Ok(handle) => {
+                handles.push(handle);
+                info!("Server instance started");
+            }
+            Err(e) => {
+                error!("Failed to start server instance: {:?}", e);
+            }
+        }
+    }
+    handles
+}
 
 pub async fn make_server(host: SettingHost) -> anyhow::Result<axum_server::Handle<SocketAddr>> {
     debug!("make_server start with host: {:?}", host);

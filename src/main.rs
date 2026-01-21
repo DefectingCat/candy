@@ -3,18 +3,14 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-
 use clap::Parser;
 use config::Settings;
-use consts::{COMMIT, COMPILER};
-use http::make_server;
+use consts::{ARCH, COMMIT, COMPILER, NAME, OS, VERSION};
+use http::{make_server, shutdown_servers, start_servers};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info};
 
-use crate::{
-    consts::{ARCH, NAME, OS, VERSION},
-    utils::{init_logger, start_config_watcher},
-};
+use crate::utils::{init_logger, start_config_watcher};
 
 use mimalloc::MiMalloc;
 
@@ -35,26 +31,27 @@ mod utils;
 async fn main() -> Result<()> {
     let args = cli::Cli::parse();
 
-    let settings = Settings::new(&args.config).with_context(|| "init config failed")?;
+    let settings =
+        Settings::new(&args.config).with_context(|| "Failed to initialize configuration")?;
 
     let _guard = init_logger(settings.log_level.as_str(), settings.log_folder.as_str())
-        .with_context(|| "init logger failed")?;
+        .with_context(|| "Failed to initialize logger")?;
 
-    debug!("settings {:?}", settings);
-    info!("{}/{} {}", NAME, VERSION, COMMIT);
-    info!("{}", COMPILER);
+    debug!("Configuration: {:?}", settings);
+    info!("{} v{} ({})", NAME, VERSION, COMMIT);
+    info!("Compiler: {}", COMPILER);
     info!("OS: {} {}", OS, ARCH);
 
-    let hosts = settings.host;
+    // 启动初始服务器
     let mut handles = Vec::new();
-    for host in hosts {
+    for host in settings.host {
         let handle = make_server(host).await?;
         handles.push(handle);
     }
 
     // 启动配置文件监听
     let handles = Arc::new(Mutex::new(handles));
-    let handles_clone = handles.clone(); // 克隆一个副本用于闭包
+    let handles_clone = handles.clone();
     let stop_tx = start_config_watcher(&args.config, move |result| {
         let handles_clone = handles_clone.clone();
         Box::pin(async move {
@@ -65,11 +62,7 @@ async fn main() -> Result<()> {
 
                     // 停止当前所有服务器
                     let mut current_handles = handles_clone.lock().await;
-                    for handle in current_handles.iter() {
-                        handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
-                    }
-                    current_handles.clear();
-                    info!("All existing servers have been signaled to shut down");
+                    shutdown_servers(&mut current_handles).await;
 
                     // 在新的 tokio 任务中启动新服务器
                     let new_hosts = new_settings.host;
@@ -78,18 +71,7 @@ async fn main() -> Result<()> {
                         // 清空全局 HOSTS 变量，确保新配置完全生效
                         crate::http::HOSTS.clear();
 
-                        let mut new_handles = Vec::new();
-                        for host in new_hosts {
-                            match make_server(host).await {
-                                Ok(handle) => {
-                                    new_handles.push(handle);
-                                    info!("New server instance started");
-                                }
-                                Err(e) => {
-                                    error!("Failed to start new server instance: {:?}", e);
-                                }
-                            }
-                        }
+                        let new_handles = start_servers(new_hosts).await;
 
                         let mut current_handles = handles_clone2.lock().await;
                         *current_handles = new_handles;
@@ -105,20 +87,18 @@ async fn main() -> Result<()> {
 
     info!("Server started");
 
-    // 保持主线程运行，直到所有服务器停止
+    // 保持主线程运行，直到收到停止信号
     tokio::signal::ctrl_c().await?;
     info!("Received Ctrl+C, shutting down");
 
     // 优雅关闭所有服务器
     let mut current_handles = handles.lock().await;
-    for handle in current_handles.iter() {
-        handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
+    shutdown_servers(&mut current_handles).await;
+
+    // 停止配置监听
+    if let Err(err) = stop_tx.send(()) {
+        error!("Failed to send stop signal to config watcher: {:?}", err);
     }
-    info!("All servers have been signaled to shut down");
-    current_handles.clear();
-    let _ = stop_tx
-        .send(())
-        .map_err(|err| error!("Send stop_tx failed: {:?}", err));
 
     Ok(())
 }
