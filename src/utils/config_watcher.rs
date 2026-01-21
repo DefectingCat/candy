@@ -73,22 +73,58 @@ pub fn start_config_watcher(
                                 if let Err(e) = watcher.unwatch(&config_path) {
                                     error!("Failed to unwatch config file (ignored): {:?}", e);
                                 }
-                                if let Err(e) =
-                                    watcher.watch(&config_path, RecursiveMode::NonRecursive)
-                                {
-                                    error!("Failed to re-watch config file: {:?}", e);
-                                } else {
-                                    info!("Re-watching config file: {:?}", config_path);
+                                // 重试机制：文件可能短暂不存在，最多重试 5 次，每次间隔 100ms
+                                let mut retry_count = 0;
+                                let max_retries = 5;
+                                let retry_delay = Duration::from_millis(100);
+                                let mut watch_successful = false;
+
+                                while retry_count < max_retries {
+                                    match watcher.watch(&config_path, RecursiveMode::NonRecursive) {
+                                        Ok(_) => {
+                                            info!("Re-watching config file: {:?}", config_path);
+                                            watch_successful = true;
+                                            break;
+                                        }
+                                        Err(e) => {
+                                            error!("Failed to re-watch config file (retry {}): {:?}", retry_count + 1, e);
+                                            retry_count += 1;
+                                            std::thread::sleep(retry_delay);
+                                        }
+                                    }
+                                }
+
+                                if !watch_successful {
+                                    error!("Failed to re-watch config file after {} retries", max_retries);
                                 }
                             }
                             _ => {}
                         }
 
-                        // 重新读取配置文件
+                        // 重新读取配置文件，同样添加重试机制
                         let config_str = config_path
                             .to_str()
                             .expect("Config path is not valid UTF-8");
-                        let result = Settings::new(config_str);
+
+                        let mut retry_count = 0;
+                        let max_retries = 5;
+                        let retry_delay = Duration::from_millis(100);
+                        let result = loop {
+                            let attempt = Settings::new(config_str);
+                            match attempt {
+                                Ok(settings) => break Ok(settings),
+                                Err(e) => {
+                                    if retry_count < max_retries {
+                                        error!("Failed to read config file (retry {}): {:?}", retry_count + 1, e);
+                                        retry_count += 1;
+                                        std::thread::sleep(retry_delay);
+                                    } else {
+                                        break Err(e);
+                                    }
+                                }
+                            }
+                        };
+
                         callback(result).await;
 
                         last_event_time = now;

@@ -1,40 +1,4 @@
-use std::time::Duration;
-
-use axum_server::{Address, Handle};
-use tokio::signal;
-use tracing::{debug, info};
-
-pub async fn graceful_shutdown<A: Address>(handle: Handle<A>) {
-    let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
-
-    #[cfg(unix)]
-    let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
-    tokio::select! {
-        _ = ctrl_c => {
-        },
-        _ = terminate => {
-        },
-    }
-
-    info!("Received termination signal shutting down");
-    info!("Server shuting down");
-
-    // Signal the server to shutdown using Handle.
-    handle.graceful_shutdown(Some(Duration::from_secs(30)));
-}
+use tracing::debug;
 
 /// Parse port from host
 /// if host is localhost:8080

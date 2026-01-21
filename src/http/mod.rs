@@ -12,7 +12,6 @@ use tracing::{debug, info, warn};
 use crate::{
     config::SettingHost,
     middlewares::{add_headers, add_version, logging_route},
-    utils::graceful_shutdown,
 };
 
 pub mod error;
@@ -224,9 +223,6 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<axum_server::Handl
 
     // 生成一个任务来运行服务器
     tokio::spawn(async move {
-        // 生成一个任务来优雅地关闭服务器
-        tokio::spawn(graceful_shutdown(handle_clone.clone()));
-
         // 检查是否启用 SSL
         // 如果启用 SSL
         // 则创建 SSL 监听器
