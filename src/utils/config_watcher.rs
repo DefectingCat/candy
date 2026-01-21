@@ -7,6 +7,12 @@ use tracing::{error, info};
 use crate::config::Settings;
 use crate::error::Result;
 
+/// 配置变更回调函数类型
+pub type ConfigChangeCallback = dyn Fn(Result<Settings>) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+    + Send
+    + Sync
+    + 'static;
+
 /// 配置监听器的参数
 #[derive(Debug, Clone)]
 pub struct ConfigWatcherConfig {
@@ -80,6 +86,7 @@ pub fn start_config_watcher_with_config(
     let (stop_tx, stop_rx) = oneshot::channel();
     let config_path = config_path.as_ref().to_owned();
     let watcher_config = watcher_config.unwrap_or_default();
+    let callback = std::sync::Arc::new(callback) as std::sync::Arc<ConfigChangeCallback>;
 
     tokio::spawn(async move {
         if let Err(e) = run_watcher(config_path, callback, watcher_config, stop_rx).await {
@@ -93,12 +100,7 @@ pub fn start_config_watcher_with_config(
 /// 内部执行监听器逻辑的函数
 async fn run_watcher(
     config_path: std::path::PathBuf,
-    callback: impl Fn(
-        Result<Settings>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
-    + Send
-    + Sync
-    + 'static,
+    callback: std::sync::Arc<ConfigChangeCallback>,
     config: ConfigWatcherConfig,
     mut stop_rx: oneshot::Receiver<()>,
 ) -> Result<(), notify::Error> {
@@ -107,7 +109,6 @@ async fn run_watcher(
     let watcher = std::sync::Arc::new(std::sync::Mutex::new(Box::new(notify::recommended_watcher(
         tx,
     )?) as Box<dyn Watcher + Send>)); // 包装 watcher 并确保它是 Send 的
-    let callback = std::sync::Arc::new(callback); // 包装 callback
 
     // 初始 watch
     watcher
@@ -207,12 +208,7 @@ fn needs_re_watch(kind: EventKind) -> bool {
 async fn handle_config_change(
     config_path: &std::path::Path,
     watcher: std::sync::Arc<std::sync::Mutex<Box<dyn Watcher + Send>>>,
-    callback: std::sync::Arc<
-        dyn Fn(Result<Settings>) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
-            + Send
-            + Sync
-            + 'static,
-    >,
+    callback: std::sync::Arc<ConfigChangeCallback>,
     config: &ConfigWatcherConfig,
     event_kind: EventKind,
 ) {
