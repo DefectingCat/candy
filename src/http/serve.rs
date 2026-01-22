@@ -714,3 +714,83 @@ pub async fn empty_stream() -> anyhow::Result<ReaderStream<File>> {
         .with_context(|| "Open /dev/null failed")?;
     Ok(ReaderStream::new(empty))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::Uri;
+    use axum::extract::Path;
+
+    #[test]
+    fn test_resolve_parent_path_with_path() {
+        // 测试带有路径的情况
+        let uri = Uri::try_from("/assets/css/styles.css").unwrap();
+        let path = Some(Path("assets/css/styles.css".to_string()));
+        let result = resolve_parent_path(&uri, path.as_ref());
+        assert_eq!(result, "/");
+    }
+
+    #[test]
+    fn test_resolve_parent_path_with_subpath() {
+        // 测试带有子路径的情况
+        let uri = Uri::try_from("/docs/rust/guide.html").unwrap();
+        let path = Some(Path("guide.html".to_string()));
+        let result = resolve_parent_path(&uri, path.as_ref());
+        assert_eq!(result, "/docs/rust/");
+    }
+
+    #[test]
+    fn test_resolve_parent_path_without_path() {
+        // 测试不带路径的情况（不以/结尾）
+        let uri = Uri::try_from("/docs").unwrap();
+        let result = resolve_parent_path(&uri, None);
+        assert_eq!(result, "/docs/");
+    }
+
+    #[test]
+    fn test_resolve_parent_path_without_path_ends_with_slash() {
+        // 测试不带路径且已以/结尾的情况
+        let uri = Uri::try_from("/docs/").unwrap();
+        let result = resolve_parent_path(&uri, None);
+        assert_eq!(result, "/docs/");
+    }
+
+    #[test]
+    fn test_byte_unit_formatting() {
+        // 测试字节单位格式化
+        assert_eq!(ByteUnit(0).to_string(), "0 B");
+        assert_eq!(ByteUnit(500).to_string(), "500 B");
+        assert_eq!(ByteUnit(1024).to_string(), "1024 B");
+        assert_eq!(ByteUnit(1500).to_string(), "1.46 KB");
+        assert_eq!(ByteUnit(1024 * 1024).to_string(), "1024.00 KB");
+        assert_eq!(ByteUnit(1024 * 1024 + 500000).to_string(), "1.48 MB");
+        assert_eq!(ByteUnit(1024 * 1024 * 1024).to_string(), "1024.00 MB");
+    }
+
+    #[test]
+    fn test_check_if_none_match() {
+        // 测试 ETag 匹配
+        let req = Request::builder()
+            .header(IF_NONE_MATCH, "\"12345\"")
+            .body(Body::empty())
+            .unwrap();
+        let etag = "W/\"12345\"".to_string();
+        let response = Response::builder();
+
+        let (_res, not_modified) = check_if_none_match(req, &etag, response);
+        assert!(!not_modified); // 不匹配，因为前缀不同
+    }
+
+    #[test]
+    fn test_check_if_none_match_missing() {
+        // 测试缺失 If-None-Match 头部
+        let req = Request::builder()
+            .body(Body::empty())
+            .unwrap();
+        let etag = "W/\"12345\"".to_string();
+        let response = Response::builder();
+
+        let (_, not_modified) = check_if_none_match(req, &etag, response);
+        assert!(!not_modified);
+    }
+}

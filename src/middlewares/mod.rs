@@ -178,3 +178,50 @@ fn format_latency(latency: Duration, status: impl Display) -> String {
         format!("{status} {micros}μs")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+    use http::StatusCode;
+
+    #[test]
+    fn test_format_latency_microseconds() {
+        // 测试小于 1ms 的延迟
+        let latency = Duration::from_micros(500);
+        let result = format_latency(latency, StatusCode::OK);
+        assert_eq!(result, "200 OK 500μs");
+    }
+
+    #[test]
+    fn test_format_latency_milliseconds() {
+        // 测试大于等于 1ms 的延迟
+        let latency = Duration::from_millis(250);
+        let result = format_latency(latency, StatusCode::OK);
+        assert_eq!(result, "200 OK 250ms");
+    }
+
+    #[test]
+    fn test_format_latency_one_millisecond() {
+        // 测试正好 1ms 的延迟
+        let latency = Duration::from_millis(1);
+        let result = format_latency(latency, StatusCode::OK);
+        assert_eq!(result, "200 OK 1ms");
+    }
+
+    #[test]
+    fn test_format_latency_with_error_status() {
+        // 测试错误状态码
+        let latency = Duration::from_micros(800);
+        let result = format_latency(latency, StatusCode::NOT_FOUND);
+        assert_eq!(result, "404 Not Found 800μs");
+    }
+
+    #[test]
+    fn test_format_latency_large_value() {
+        // 测试较大的延迟值
+        let latency = Duration::from_secs(2);
+        let result = format_latency(latency, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(result, "500 Internal Server Error 2000ms");
+    }
+}
