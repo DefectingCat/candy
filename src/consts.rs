@@ -42,3 +42,61 @@ pub const DEFAULT_LOG_FOLDER: &str = "./logs";
 pub fn default_log_folder() -> String {
     DEFAULT_LOG_FOLDER.to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_constant_values() {
+        // 测试预定义常量
+        assert!(!NAME.is_empty());
+        assert!(!VERSION.is_empty());
+        assert!(!OS.is_empty());
+        assert!(!ARCH.is_empty());
+        assert!(!COMPILER.is_empty());
+        assert!(!COMMIT.is_empty());
+    }
+
+    #[test]
+    fn test_host_index() {
+        // 测试主机索引函数
+        let index = host_index();
+        assert_eq!(index.len(), 1);
+        assert_eq!(index[0], "index.html");
+    }
+
+    #[test]
+    fn test_timeout_default() {
+        // 测试默认超时函数
+        assert_eq!(timeout_default(), TIMEOUT_EFAULT);
+        assert_eq!(timeout_default(), 75);
+    }
+
+    #[test]
+    fn test_upstream_timeout_default() {
+        // 测试上游超时函数
+        assert_eq!(upstream_timeout_default(), UPSTREAM_TIMEOUT);
+        assert_eq!(upstream_timeout_default(), 5);
+    }
+
+    #[test]
+    fn test_default_disabled() {
+        // 测试默认禁用值
+        assert!(!default_disabled());
+    }
+
+    #[test]
+    fn test_default_log_level() {
+        // 测试默认日志级别
+        assert_eq!(default_log_level(), DEFAULT_LOG_LEVEL);
+        assert_eq!(default_log_level(), "info");
+    }
+
+    #[test]
+    fn test_default_log_folder() {
+        // 测试默认日志文件夹
+        assert_eq!(default_log_folder(), DEFAULT_LOG_FOLDER);
+        assert_eq!(default_log_folder(), "./logs");
+    }
+}

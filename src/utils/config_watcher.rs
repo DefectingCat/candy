@@ -204,6 +204,58 @@ fn needs_re_watch(kind: EventKind) -> bool {
     )
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use notify::EventKind;
+
+    #[test]
+    fn test_is_relevant_event() {
+        // 测试相关事件
+        assert!(is_relevant_event(&EventKind::Modify(notify::event::ModifyKind::Data(
+            notify::event::DataChange::Content
+        ))));
+        assert!(is_relevant_event(&EventKind::Modify(notify::event::ModifyKind::Name(
+            notify::event::RenameMode::To
+        ))));
+        assert!(is_relevant_event(&EventKind::Remove(notify::event::RemoveKind::File)));
+        assert!(is_relevant_event(&EventKind::Create(notify::event::CreateKind::File)));
+
+        // 测试不相关事件
+        assert!(!is_relevant_event(&EventKind::Access(notify::event::AccessKind::Close(
+            notify::event::AccessMode::Write
+        ))));
+        assert!(!is_relevant_event(&EventKind::Other));
+    }
+
+    #[test]
+    fn test_needs_re_watch() {
+        // 测试需要重新 watch 的事件
+        assert!(needs_re_watch(EventKind::Remove(notify::event::RemoveKind::File)));
+        assert!(needs_re_watch(EventKind::Modify(notify::event::ModifyKind::Name(
+            notify::event::RenameMode::To
+        ))));
+
+        // 测试不需要重新 watch 的事件
+        assert!(!needs_re_watch(EventKind::Modify(notify::event::ModifyKind::Data(
+            notify::event::DataChange::Content
+        ))));
+        assert!(!needs_re_watch(EventKind::Create(notify::event::CreateKind::File)));
+        assert!(!needs_re_watch(EventKind::Other));
+    }
+
+    #[test]
+    fn test_default_config() {
+        // 测试默认配置
+        let default_config = ConfigWatcherConfig::default();
+        assert_eq!(default_config.debounce_ms, 500);
+        assert_eq!(default_config.rewatch_delay_ms, 800);
+        assert_eq!(default_config.max_retries, 5);
+        assert_eq!(default_config.retry_delay_ms, 100);
+        assert_eq!(default_config.poll_timeout_secs, 1);
+    }
+}
+
 /// 处理配置文件变更
 async fn handle_config_change(
     config_path: &std::path::Path,
