@@ -111,10 +111,14 @@ async fn run_watcher(
     )?) as Box<dyn Watcher + Send>)); // 包装 watcher 并确保它是 Send 的
 
     // 初始 watch
-    watcher
-        .lock()
-        .unwrap()
-        .watch(&config_path, RecursiveMode::NonRecursive)?;
+    match watcher.lock() {
+        Ok(mut w) => w.watch(&config_path, RecursiveMode::NonRecursive)?,
+        Err(e) => {
+            error!("Failed to lock watcher mutex: {:?}", e);
+            let msg = format!("Failed to lock watcher mutex: {:?}", e);
+            return Err(notify::Error::generic(&msg));
+        }
+    }
     info!("Watching config file: {:?}", config_path);
 
     let mut last_event_time = Instant::now();
@@ -133,8 +137,13 @@ async fn run_watcher(
             result = {
                 let rx = rx.clone();
                 tokio::task::spawn_blocking(move || {
-                    let rx = rx.lock().unwrap(); // 获取互斥锁
-                    rx.recv_timeout(poll_timeout)
+                    match rx.lock() {
+                        Ok(rx) => rx.recv_timeout(poll_timeout),
+                        Err(e) => {
+                            error!("Failed to lock event receiver mutex: {:?}", e);
+                            Err(std::sync::mpsc::RecvTimeoutError::Disconnected)
+                        }
+                    }
                 })
             } => {
                 match result {
@@ -178,8 +187,12 @@ async fn run_watcher(
     }
 
     // 停止 watch
-    if let Err(e) = watcher.lock().unwrap().unwatch(&config_path) {
-        error!("Failed to unwatch config file: {:?}", e);
+    if let Ok(mut w) = watcher.lock() {
+        if let Err(e) = w.unwatch(&config_path) {
+            error!("Failed to unwatch config file: {:?}", e);
+        }
+    } else {
+        error!("Failed to lock watcher mutex for unwatch");
     }
 
     Ok(())
@@ -202,58 +215,6 @@ fn needs_re_watch(kind: EventKind) -> bool {
         kind,
         EventKind::Remove(_) | EventKind::Modify(notify::event::ModifyKind::Name(_))
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use notify::EventKind;
-
-    #[test]
-    fn test_is_relevant_event() {
-        // 测试相关事件
-        assert!(is_relevant_event(&EventKind::Modify(notify::event::ModifyKind::Data(
-            notify::event::DataChange::Content
-        ))));
-        assert!(is_relevant_event(&EventKind::Modify(notify::event::ModifyKind::Name(
-            notify::event::RenameMode::To
-        ))));
-        assert!(is_relevant_event(&EventKind::Remove(notify::event::RemoveKind::File)));
-        assert!(is_relevant_event(&EventKind::Create(notify::event::CreateKind::File)));
-
-        // 测试不相关事件
-        assert!(!is_relevant_event(&EventKind::Access(notify::event::AccessKind::Close(
-            notify::event::AccessMode::Write
-        ))));
-        assert!(!is_relevant_event(&EventKind::Other));
-    }
-
-    #[test]
-    fn test_needs_re_watch() {
-        // 测试需要重新 watch 的事件
-        assert!(needs_re_watch(EventKind::Remove(notify::event::RemoveKind::File)));
-        assert!(needs_re_watch(EventKind::Modify(notify::event::ModifyKind::Name(
-            notify::event::RenameMode::To
-        ))));
-
-        // 测试不需要重新 watch 的事件
-        assert!(!needs_re_watch(EventKind::Modify(notify::event::ModifyKind::Data(
-            notify::event::DataChange::Content
-        ))));
-        assert!(!needs_re_watch(EventKind::Create(notify::event::CreateKind::File)));
-        assert!(!needs_re_watch(EventKind::Other));
-    }
-
-    #[test]
-    fn test_default_config() {
-        // 测试默认配置
-        let default_config = ConfigWatcherConfig::default();
-        assert_eq!(default_config.debounce_ms, 500);
-        assert_eq!(default_config.rewatch_delay_ms, 800);
-        assert_eq!(default_config.max_retries, 5);
-        assert_eq!(default_config.retry_delay_ms, 100);
-        assert_eq!(default_config.poll_timeout_secs, 1);
-    }
 }
 
 /// 处理配置文件变更
@@ -292,41 +253,49 @@ async fn handle_config_change(
         let config_path = config_path.to_path_buf();
         let config = config.clone();
 
-        tokio::task::spawn_blocking(move || {
-            let mut watcher = watcher.lock().unwrap();
-            if let Err(e) = watcher.unwatch(&config_path) {
-                error!("Failed to unwatch config file (ignored): {:?}", e);
-            }
-
-            // 重试机制：文件可能短暂不存在
-            let mut retry_count = 0;
-            let retry_delay = std::time::Duration::from_millis(config.retry_delay_ms);
-
-            while retry_count < config.max_retries {
-                match watcher.watch(&config_path, RecursiveMode::NonRecursive) {
-                    Ok(_) => {
-                        info!("Re-watching config file: {:?}", config_path);
-                        return;
+        if let Err(e) = tokio::task::spawn_blocking(move || {
+            match watcher.lock() {
+                Ok(mut w) => {
+                    if let Err(e) = w.unwatch(&config_path) {
+                        error!("Failed to unwatch config file (ignored): {:?}", e);
                     }
-                    Err(e) => {
-                        error!(
-                            "Failed to re-watch config file (retry {}): {:?}",
-                            retry_count + 1,
-                            e
-                        );
-                        retry_count += 1;
-                        std::thread::sleep(retry_delay);
+
+                    // 重试机制：文件可能短暂不存在
+                    let mut retry_count = 0;
+                    let retry_delay = std::time::Duration::from_millis(config.retry_delay_ms);
+
+                    while retry_count < config.max_retries {
+                        match w.watch(&config_path, RecursiveMode::NonRecursive) {
+                            Ok(_) => {
+                                info!("Re-watching config file: {:?}", config_path);
+                                return;
+                            }
+                            Err(e) => {
+                                error!(
+                                    "Failed to re-watch config file (retry {}): {:?}",
+                                    retry_count + 1,
+                                    e
+                                );
+                                retry_count += 1;
+                                std::thread::sleep(retry_delay);
+                            }
+                        }
                     }
+
+                    error!(
+                        "Failed to re-watch config file after {} retries",
+                        config.max_retries
+                    );
+                }
+                Err(e) => {
+                    error!("Failed to lock watcher mutex: {:?}", e);
                 }
             }
-
-            error!(
-                "Failed to re-watch config file after {} retries",
-                config.max_retries
-            );
         })
         .await
-        .ok(); // 忽略 join 错误
+        {
+            error!("Failed to join re-watch task: {:?}", e);
+        }
     }
 
     callback(result).await;
@@ -354,5 +323,65 @@ where
             }
             Err(e) => return Err(e),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use notify::EventKind;
+
+    #[test]
+    fn test_is_relevant_event() {
+        // 测试相关事件
+        assert!(is_relevant_event(&EventKind::Modify(
+            notify::event::ModifyKind::Data(notify::event::DataChange::Content)
+        )));
+        assert!(is_relevant_event(&EventKind::Modify(
+            notify::event::ModifyKind::Name(notify::event::RenameMode::To)
+        )));
+        assert!(is_relevant_event(&EventKind::Remove(
+            notify::event::RemoveKind::File
+        )));
+        assert!(is_relevant_event(&EventKind::Create(
+            notify::event::CreateKind::File
+        )));
+
+        // 测试不相关事件
+        assert!(!is_relevant_event(&EventKind::Access(
+            notify::event::AccessKind::Close(notify::event::AccessMode::Write)
+        )));
+        assert!(!is_relevant_event(&EventKind::Other));
+    }
+
+    #[test]
+    fn test_needs_re_watch() {
+        // 测试需要重新 watch 的事件
+        assert!(needs_re_watch(EventKind::Remove(
+            notify::event::RemoveKind::File
+        )));
+        assert!(needs_re_watch(EventKind::Modify(
+            notify::event::ModifyKind::Name(notify::event::RenameMode::To)
+        )));
+
+        // 测试不需要重新 watch 的事件
+        assert!(!needs_re_watch(EventKind::Modify(
+            notify::event::ModifyKind::Data(notify::event::DataChange::Content)
+        )));
+        assert!(!needs_re_watch(EventKind::Create(
+            notify::event::CreateKind::File
+        )));
+        assert!(!needs_re_watch(EventKind::Other));
+    }
+
+    #[test]
+    fn test_default_config() {
+        // 测试默认配置
+        let default_config = ConfigWatcherConfig::default();
+        assert_eq!(default_config.debounce_ms, 500);
+        assert_eq!(default_config.rewatch_delay_ms, 800);
+        assert_eq!(default_config.max_retries, 5);
+        assert_eq!(default_config.retry_delay_ms, 100);
+        assert_eq!(default_config.poll_timeout_secs, 1);
     }
 }
