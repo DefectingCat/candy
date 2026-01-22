@@ -107,8 +107,16 @@ mod tests {
     fn test_error_code_display() {
         // 测试 ErrorCode 显示
         assert!(ErrorCode::Normal.to_string().is_empty()); // 正常情况返回空字符串
-        assert!(ErrorCode::InternalError.to_string().contains("Internal Server Error"));
-        assert!(ErrorCode::NotFound.to_string().contains("Resource Not Found"));
+        assert!(
+            ErrorCode::InternalError
+                .to_string()
+                .contains("Internal Server Error")
+        );
+        assert!(
+            ErrorCode::NotFound
+                .to_string()
+                .contains("Resource Not Found")
+        );
         assert!(ErrorCode::BadRequest.to_string().contains("Bad Request"));
     }
 

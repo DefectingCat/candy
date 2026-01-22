@@ -1,6 +1,6 @@
 use notify::{EventKind, RecursiveMode, Watcher};
 use std::path::Path;
-use tokio::sync::{oneshot, mpsc};
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::{self, Duration, Instant};
 use tracing::{error, info};
 
@@ -8,10 +8,8 @@ use crate::config::Settings;
 use crate::error::Result;
 
 /// 配置变更回调函数类型（使用 BoxFuture 简化）
-pub type ConfigChangeCallback = dyn Fn(Result<Settings>) -> futures::future::BoxFuture<'static, ()>
-    + Send
-    + Sync
-    + 'static;
+pub type ConfigChangeCallback =
+    dyn Fn(Result<Settings>) -> futures::future::BoxFuture<'static, ()> + Send + Sync + 'static;
 
 /// 配置监听器的参数
 #[derive(Debug, Clone)]
@@ -109,12 +107,14 @@ async fn run_watcher(
     )?) as Box<dyn Watcher + Send>));
 
     // 初始 watch
-    watcher.lock().map_err(|e| {
-        error!("Failed to lock watcher mutex: {:?}", e);
-        let msg = format!("Failed to lock watcher mutex: {:?}", e);
-        notify::Error::generic(&msg)
-    })?
-    .watch(&config_path, RecursiveMode::NonRecursive)?;
+    watcher
+        .lock()
+        .map_err(|e| {
+            error!("Failed to lock watcher mutex: {:?}", e);
+            let msg = format!("Failed to lock watcher mutex: {:?}", e);
+            notify::Error::generic(&msg)
+        })?
+        .watch(&config_path, RecursiveMode::NonRecursive)?;
 
     info!("Watching config file: {:?}", config_path);
 

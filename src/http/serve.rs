@@ -718,8 +718,8 @@ pub async fn empty_stream() -> anyhow::Result<ReaderStream<File>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use http::Uri;
     use axum::extract::Path;
+    use http::Uri;
 
     #[test]
     fn test_resolve_parent_path_with_path() {
@@ -784,9 +784,7 @@ mod tests {
     #[test]
     fn test_check_if_none_match_missing() {
         // 测试缺失 If-None-Match 头部
-        let req = Request::builder()
-            .body(Body::empty())
-            .unwrap();
+        let req = Request::builder().body(Body::empty()).unwrap();
         let etag = "W/\"12345\"".to_string();
         let response = Response::builder();
 

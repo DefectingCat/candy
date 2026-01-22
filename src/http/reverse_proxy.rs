@@ -190,3 +190,72 @@ fn copy_headers(from: &http::HeaderMap, to: &mut http::HeaderMap) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::HeaderValue;
+
+    #[test]
+    fn test_is_exclude_header() {
+        // 测试应该排除的头部
+        assert!(is_exclude_header(&http::header::HOST));
+        assert!(is_exclude_header(&http::header::CONNECTION));
+        assert!(is_exclude_header(&http::header::UPGRADE));
+        assert!(is_exclude_header(&http::header::PROXY_AUTHENTICATE));
+        assert!(is_exclude_header(&http::header::PROXY_AUTHORIZATION));
+        assert!(is_exclude_header(&http::HeaderName::from_static(
+            "keep-alive"
+        )));
+        assert!(is_exclude_header(&http::header::TRANSFER_ENCODING));
+        assert!(is_exclude_header(&http::header::TE));
+
+        // 测试不应该排除的头部
+        assert!(!is_exclude_header(&http::header::USER_AGENT));
+        assert!(!is_exclude_header(&http::header::CONTENT_TYPE));
+        assert!(!is_exclude_header(&http::header::ACCEPT));
+        assert!(!is_exclude_header(&http::header::AUTHORIZATION));
+        assert!(!is_exclude_header(&http::header::COOKIE));
+        assert!(!is_exclude_header(&http::header::REFERER));
+    }
+
+    #[test]
+    fn test_copy_headers() {
+        let mut from = http::HeaderMap::new();
+        from.insert(http::header::HOST, HeaderValue::from_static("example.com"));
+        from.insert(
+            http::header::USER_AGENT,
+            HeaderValue::from_static("test-agent"),
+        );
+        from.insert(
+            http::header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain"),
+        );
+        from.insert(
+            http::header::CONNECTION,
+            HeaderValue::from_static("keep-alive"),
+        );
+        from.insert(http::header::ACCEPT, HeaderValue::from_static("*/*"));
+
+        let mut to = http::HeaderMap::new();
+        copy_headers(&from, &mut to);
+
+        // 验证应该被排除的头部没有被复制
+        assert!(!to.contains_key(http::header::HOST));
+        assert!(!to.contains_key(http::header::CONNECTION));
+
+        // 验证应该被复制的头部被正确复制
+        assert_eq!(
+            to.get(http::header::USER_AGENT),
+            Some(&HeaderValue::from_static("test-agent"))
+        );
+        assert_eq!(
+            to.get(http::header::CONTENT_TYPE),
+            Some(&HeaderValue::from_static("text/plain"))
+        );
+        assert_eq!(
+            to.get(http::header::ACCEPT),
+            Some(&HeaderValue::from_static("*/*"))
+        );
+    }
+}
