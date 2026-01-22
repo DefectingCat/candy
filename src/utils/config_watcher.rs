@@ -1,14 +1,14 @@
 use notify::{EventKind, RecursiveMode, Watcher};
 use std::path::Path;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, mpsc};
 use tokio::time::{self, Duration, Instant};
 use tracing::{error, info};
 
 use crate::config::Settings;
 use crate::error::Result;
 
-/// 配置变更回调函数类型
-pub type ConfigChangeCallback = dyn Fn(Result<Settings>) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+/// 配置变更回调函数类型（使用 BoxFuture 简化）
+pub type ConfigChangeCallback = dyn Fn(Result<Settings>) -> futures::future::BoxFuture<'static, ()>
     + Send
     + Sync
     + 'static;
@@ -52,9 +52,7 @@ impl Default for ConfigWatcherConfig {
 /// 返回一个发送器，用于发送停止信号
 pub fn start_config_watcher(
     config_path: impl AsRef<Path>,
-    callback: impl Fn(
-        Result<Settings>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+    callback: impl Fn(Result<Settings>) -> futures::future::BoxFuture<'static, ()>
     + Send
     + Sync
     + 'static,
@@ -75,9 +73,7 @@ pub fn start_config_watcher(
 /// 返回一个发送器，用于发送停止信号
 pub fn start_config_watcher_with_config(
     config_path: impl AsRef<Path>,
-    callback: impl Fn(
-        Result<Settings>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+    callback: impl Fn(Result<Settings>) -> futures::future::BoxFuture<'static, ()>
     + Send
     + Sync
     + 'static,
@@ -104,21 +100,22 @@ async fn run_watcher(
     config: ConfigWatcherConfig,
     mut stop_rx: oneshot::Receiver<()>,
 ) -> Result<(), notify::Error> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    let rx = std::sync::Arc::new(std::sync::Mutex::new(rx)); // 使用 Arc+Mutex 包装 rx
+    let (tx, mut rx) = mpsc::channel(10); // 使用 tokio 异步 channel
     let watcher = std::sync::Arc::new(std::sync::Mutex::new(Box::new(notify::recommended_watcher(
-        tx,
-    )?) as Box<dyn Watcher + Send>)); // 包装 watcher 并确保它是 Send 的
+        move |res| {
+            // 将 notify 的同步回调转换为异步发送
+            let _ = tx.try_send(res);
+        },
+    )?) as Box<dyn Watcher + Send>));
 
     // 初始 watch
-    match watcher.lock() {
-        Ok(mut w) => w.watch(&config_path, RecursiveMode::NonRecursive)?,
-        Err(e) => {
-            error!("Failed to lock watcher mutex: {:?}", e);
-            let msg = format!("Failed to lock watcher mutex: {:?}", e);
-            return Err(notify::Error::generic(&msg));
-        }
-    }
+    watcher.lock().map_err(|e| {
+        error!("Failed to lock watcher mutex: {:?}", e);
+        let msg = format!("Failed to lock watcher mutex: {:?}", e);
+        notify::Error::generic(&msg)
+    })?
+    .watch(&config_path, RecursiveMode::NonRecursive)?;
+
     info!("Watching config file: {:?}", config_path);
 
     let mut last_event_time = Instant::now();
@@ -133,56 +130,39 @@ async fn run_watcher(
                 break;
             }
 
-            // 等待事件
-            result = {
-                let rx = rx.clone();
-                tokio::task::spawn_blocking(move || {
-                    match rx.lock() {
-                        Ok(rx) => rx.recv_timeout(poll_timeout),
-                        Err(e) => {
-                            error!("Failed to lock event receiver mutex: {:?}", e);
-                            Err(std::sync::mpsc::RecvTimeoutError::Disconnected)
-                        }
-                    }
-                })
-            } => {
+            // 等待事件（使用异步 channel，无需 spawn_blocking）
+            result = rx.recv() => {
                 match result {
-                    Ok(recv_result) => {
-                        match recv_result {
-                            Ok(event_result) => {
-                                match event_result {
-                                    Ok(event) => {
-                                        if is_relevant_event(&event.kind) {
-                                            let now = Instant::now();
-                                            if now.duration_since(last_event_time) > debounce_duration {
-                                                info!("Config file event: {:?}", event);
-                                                handle_config_change(
-                                                    &config_path,
-                                                    watcher.clone(),
-                                                    callback.clone(),
-                                                    &config,
-                                                    event.kind
-                                                ).await;
-                                                last_event_time = now;
-                                            }
-                                        }
-                                    },
-                                    Err(e) => error!("Watch error: {:?}", e),
+                    Some(event_result) => {
+                        match event_result {
+                            Ok(event) => {
+                                if is_relevant_event(&event.kind) {
+                                    let now = Instant::now();
+                                    if now.duration_since(last_event_time) > debounce_duration {
+                                        info!("Config file event: {:?}", event);
+                                        handle_config_change(
+                                            &config_path,
+                                            watcher.clone(),
+                                            callback.clone(),
+                                            &config,
+                                            event.kind
+                                        ).await;
+                                        last_event_time = now;
+                                    }
                                 }
                             },
-                            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                                error!("Watcher channel disconnected");
-                                break;
-                            },
-                            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                                // 超时，继续循环检查停止信号
-                                continue;
-                            },
+                            Err(e) => error!("Watch error: {:?}", e),
                         }
                     },
-                    Err(e) => error!("Task spawn error: {:?}", e),
+                    None => {
+                        error!("Watcher channel disconnected");
+                        break;
+                    },
                 }
             }
+
+            // 超时检查，防止完全阻塞
+            _ = time::sleep(poll_timeout) => continue,
         }
     }
 
@@ -247,49 +227,33 @@ async fn handle_config_change(
         ))),
     };
 
-    // 如果需要重新 watch 文件，使用 spawn_blocking 避免 MutexGuard 跨 await
+    // 如果需要重新 watch 文件，使用统一的重试逻辑
     if needs_re_watch {
         let watcher = watcher.clone();
         let config_path = config_path.to_path_buf();
         let config = config.clone();
 
         if let Err(e) = tokio::task::spawn_blocking(move || {
-            match watcher.lock() {
-                Ok(mut w) => {
-                    if let Err(e) = w.unwatch(&config_path) {
-                        error!("Failed to unwatch config file (ignored): {:?}", e);
-                    }
+            let result = retry_with_delay_sync(
+                config.max_retries,
+                std::time::Duration::from_millis(config.retry_delay_ms),
+                || {
+                    let mut w = watcher.lock().map_err(|e| {
+                        let msg = format!("Failed to lock watcher mutex: {:?}", e);
+                        notify::Error::generic(&msg)
+                    })?;
 
-                    // 重试机制：文件可能短暂不存在
-                    let mut retry_count = 0;
-                    let retry_delay = std::time::Duration::from_millis(config.retry_delay_ms);
+                    // 先尝试 unwatch（忽略错误，可能文件已经不存在）
+                    let _ = w.unwatch(&config_path);
 
-                    while retry_count < config.max_retries {
-                        match w.watch(&config_path, RecursiveMode::NonRecursive) {
-                            Ok(_) => {
-                                info!("Re-watching config file: {:?}", config_path);
-                                return;
-                            }
-                            Err(e) => {
-                                error!(
-                                    "Failed to re-watch config file (retry {}): {:?}",
-                                    retry_count + 1,
-                                    e
-                                );
-                                retry_count += 1;
-                                std::thread::sleep(retry_delay);
-                            }
-                        }
-                    }
+                    // 重新 watch
+                    w.watch(&config_path, RecursiveMode::NonRecursive)
+                },
+            );
 
-                    error!(
-                        "Failed to re-watch config file after {} retries",
-                        config.max_retries
-                    );
-                }
-                Err(e) => {
-                    error!("Failed to lock watcher mutex: {:?}", e);
-                }
+            match result {
+                Ok(_) => info!("Re-watching config file: {:?}", config_path),
+                Err(e) => error!("Failed to re-watch config file: {:?}", e),
             }
         })
         .await
@@ -301,7 +265,7 @@ async fn handle_config_change(
     callback(result).await;
 }
 
-/// 通用重试函数
+/// 异步重试函数
 async fn retry_with_delay<T, E, F>(
     max_retries: usize,
     delay: Duration,
@@ -320,6 +284,31 @@ where
                 error!("Operation failed (retry {}): {:?}", attempt + 1, e);
                 attempt += 1;
                 time::sleep(delay).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+/// 同步重试函数（用于阻塞场景）
+fn retry_with_delay_sync<T, E, F>(
+    max_retries: usize,
+    delay: std::time::Duration,
+    mut operation: F,
+) -> Result<T, E>
+where
+    F: FnMut() -> Result<T, E>,
+    E: std::fmt::Debug,
+{
+    let mut attempt = 0;
+
+    loop {
+        match operation() {
+            Ok(result) => return Ok(result),
+            Err(e) if attempt < max_retries => {
+                error!("Operation failed (retry {}): {:?}", attempt + 1, e);
+                attempt += 1;
+                std::thread::sleep(delay);
             }
             Err(e) => return Err(e),
         }
