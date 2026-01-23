@@ -1,5 +1,3 @@
-// #![feature(iterator_try_collect)]
-
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
