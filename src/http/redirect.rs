@@ -33,12 +33,7 @@ pub async fn redirect(
     let domain = domain.to_lowercase();
 
     let host_config = {
-        let port_config = HOSTS
-            .get(&port)
-            .ok_or(RouteError::BadRequest())
-            .with_context(|| {
-                format!("Hosts not found for port: {port}, host: {host}, scheme: {scheme}")
-            })?;
+        let port_config = HOSTS.get(&port).ok_or(RouteError::BadRequest())?;
 
         // 查找匹配的域名配置
         let host_config = if let Some(entry) = port_config.get(&Some(domain.clone())) {
@@ -57,9 +52,7 @@ pub async fn redirect(
             found.or_else(|| port_config.get(&None).map(|v| v.clone()))
         };
 
-        host_config
-            .ok_or(RouteError::BadRequest())
-            .with_context(|| format!("Host configuration not found for domain: {domain}"))?
+        host_config.ok_or(RouteError::BadRequest())?
     };
 
     let route_map = &host_config.route_map;
@@ -68,8 +61,7 @@ pub async fn redirect(
     let parent_path = resolve_parent_path(&req_uri, path.as_ref());
     let route_config = route_map
         .get(&parent_path)
-        .ok_or(RouteError::RouteNotFound())
-        .with_context(|| format!("route not found: {parent_path}"))?;
+        .ok_or(RouteError::RouteNotFound())?;
 
     let Some(redirect_to) = route_config.redirect_to.as_ref() else {
         return Err(RouteError::InternalError());

@@ -7,7 +7,7 @@ use axum::{
 };
 use const_format::formatcp;
 use serde_repr::*;
-use tracing::error;
+use tracing::{debug, error};
 
 #[derive(thiserror::Error, Debug)]
 pub enum RouteError {
@@ -93,6 +93,10 @@ impl IntoResponse for RouteError {
             BadRequest() => (StatusCode::NOT_FOUND, ErrorCode::BadRequest.to_string()),
             _ => (StatusCode::NOT_FOUND, ErrorCode::NotFound.to_string()),
         };
+        debug!(
+            "RouterError status_code {}, err_message {}",
+            status_code, err_message
+        );
         (status_code, err_message).into_response()
     }
 }

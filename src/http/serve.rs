@@ -46,27 +46,23 @@ pub async fn custom_page(
         host_route
             .error_page
             .as_ref()
-            .ok_or(RouteError::RouteNotFound())
-            .with_context(|| "Error page not found")?
+            .ok_or(RouteError::RouteNotFound())?
     } else {
         host_route
             .not_found_page
             .as_ref()
-            .ok_or(RouteError::RouteNotFound())
-            .with_context(|| "Not found page not found")?
+            .ok_or(RouteError::RouteNotFound())?
     };
+    debug!("custom_page path {:?}", page);
 
     let root = host_route
         .root
         .as_ref()
-        .ok_or(RouteError::InternalError())
-        .with_context(|| "Root not found")?;
+        .ok_or(RouteError::InternalError())?;
 
     let path = format!("{}/{}", root, page.page);
 
-    let status = StatusCode::from_u16(page.status)
-        .map_err(|_| RouteError::BadRequest())
-        .with_context(|| format!("Invalid status code: {}", page.status))?;
+    let status = StatusCode::from_u16(page.status).map_err(|_| RouteError::BadRequest())?;
 
     debug!("Custom page path: {:?}", path);
 
@@ -134,12 +130,7 @@ pub async fn serve(
     let domain = domain.to_lowercase();
 
     let host_config = {
-        let port_config = HOSTS
-            .get(&port)
-            .ok_or(RouteError::BadRequest())
-            .with_context(|| {
-                format!("Hosts not found for port: {port}, host: {host}, scheme: {scheme}")
-            })?;
+        let port_config = HOSTS.get(&port).ok_or(RouteError::BadRequest())?;
 
         // 查找匹配的域名配置
         let host_config = if let Some(entry) = port_config.get(&Some(domain.clone())) {
@@ -158,9 +149,7 @@ pub async fn serve(
             found.or_else(|| port_config.get(&None).map(|v| v.clone()))
         };
 
-        host_config
-            .ok_or(RouteError::BadRequest())
-            .with_context(|| format!("Host configuration not found for domain: {domain}"))?
+        host_config.ok_or(RouteError::BadRequest())?
     };
 
     let route_map = &host_config.route_map;
@@ -270,7 +259,7 @@ pub async fn serve(
                     return custom_page(host_route, request, false).await;
                 };
                 let req_path_str = req_path.to_string_lossy();
-                debug!("req_path_str: {:?}", req_path_str);
+                debug!("auto_index req_path_str: {:?}", req_path_str);
                 let host_root = &req_path_str.strip_prefix(host_root).unwrap_or(host_root);
                 let list = list_dir(&req_path_str, &req_path).await?;
                 let list_html = render_list_html(host_root, list);

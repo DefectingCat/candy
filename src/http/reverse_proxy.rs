@@ -1,7 +1,6 @@
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use anyhow::Context;
 use axum::{
     body::Body,
     extract::{Path, Request},
@@ -68,12 +67,7 @@ pub async fn serve(
     let domain = domain.to_lowercase();
 
     let host_config = {
-        let port_config = HOSTS
-            .get(&port)
-            .ok_or(RouteError::BadRequest())
-            .with_context(|| {
-                format!("Hosts not found for port: {port}, host: {host}, scheme: {scheme}")
-            })?;
+        let port_config = HOSTS.get(&port).ok_or(RouteError::BadRequest())?;
 
         // 查找匹配的域名配置
         let host_config = if let Some(entry) = port_config.get(&Some(domain.clone())) {
@@ -92,9 +86,7 @@ pub async fn serve(
             found.or_else(|| port_config.get(&None).map(|v| v.clone()))
         };
 
-        host_config
-            .ok_or(RouteError::BadRequest())
-            .with_context(|| format!("Host configuration not found for domain: {domain}"))?
+        host_config.ok_or(RouteError::BadRequest())?
     };
 
     let route_map = &host_config.route_map;
@@ -104,17 +96,14 @@ pub async fn serve(
     tracing::debug!("parent path: {:?}", parent_path);
     let proxy_config = route_map
         .get(&parent_path)
-        .ok_or(RouteError::RouteNotFound())
-        .with_context(|| format!("route not found: {parent_path}"))?;
+        .ok_or(RouteError::RouteNotFound())?;
     tracing::debug!("proxy pass: {:?}", proxy_config);
     let Some(ref proxy_pass) = proxy_config.proxy_pass else {
         return custom_page(proxy_config, req, true).await;
     };
     let uri = format!("{proxy_pass}{path_query}");
     tracing::debug!("reverse proxy uri: {:?}", &uri);
-    *req.uri_mut() = Uri::try_from(uri.clone())
-        .map_err(|_| RouteError::InternalError())
-        .with_context(|| format!("uri not found: {uri}"))?;
+    *req.uri_mut() = Uri::try_from(uri.clone()).map_err(|_| RouteError::InternalError())?;
 
     let timeout = proxy_config.proxy_timeout;
 
@@ -152,8 +141,7 @@ pub async fn serve(
         reqwest_response.headers(),
         response_builder
             .headers_mut()
-            .ok_or(RouteError::InternalError())
-            .with_context(|| "headers not found")?,
+            .ok_or(RouteError::InternalError())?,
     );
     let res = response_builder
         .body(Body::from_stream(reqwest_response.bytes_stream()))
