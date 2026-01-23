@@ -54,3 +54,7 @@
   - [x] gzip
   - [x] deflate
   - [x] br
+
+## Bug fix
+
+- [ ] Reload logger after config hot-reload
