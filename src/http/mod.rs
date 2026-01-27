@@ -19,6 +19,8 @@ pub mod error;
 pub mod serve;
 // 处理反向代理
 pub mod reverse_proxy;
+// 处理正向代理
+pub mod forward_proxy;
 // 处理 Lua 脚本
 #[cfg(feature = "lua")]
 pub mod lua;
@@ -179,6 +181,23 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<axum_server::Handl
                 .route_map
                 .insert(host_route.location.clone(), host_route.clone());
             debug!("Reverse proxy route registered: {}", wildcard_path);
+            continue;
+        }
+
+        // 正向代理
+        if host_route.forward_proxy.is_some() && host_route.forward_proxy.unwrap() {
+            router = router.route(&host_route.location, get(forward_proxy::serve));
+            let wildcard_path = format!("{}{{*path}}", host_route.location);
+            router = router.route(&wildcard_path, get(forward_proxy::serve));
+
+            if let Some(max_body_size) = host_route.max_body_size {
+                router = router.layer(DefaultBodyLimit::max(max_body_size as usize));
+            }
+
+            host_to_save
+                .route_map
+                .insert(host_route.location.clone(), host_route.clone());
+            debug!("Forward proxy route registered: {}", wildcard_path);
             continue;
         }
 

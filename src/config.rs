@@ -22,7 +22,7 @@ pub struct ErrorRoute {
 }
 
 /// 虚拟主机中的路由
-/// 可以是静态文件或反向代理
+/// 可以是静态文件、反向代理或正向代理
 #[derive(Deserialize, Clone, Debug)]
 pub struct SettingRoute {
     /// 路由位置
@@ -44,6 +44,8 @@ pub struct SettingRoute {
 
     /// 反向代理 URL
     pub proxy_pass: Option<String>,
+    /// 正向代理（设置为 true 启用）
+    pub forward_proxy: Option<bool>,
     /// 连接上游服务器超时时间（秒）
     #[serde(default = "upstream_timeout_default")]
     pub proxy_timeout: u16,
@@ -196,6 +198,7 @@ impl Settings {
                 // 验证至少有一个有效的路由配置
                 let has_valid_route = route.root.is_some()
                     || route.proxy_pass.is_some()
+                    || route.forward_proxy.is_some() && route.forward_proxy.unwrap()
                     || cfg!(feature = "lua") && route.lua_script.is_some()
                     || route.redirect_to.is_some();
 
