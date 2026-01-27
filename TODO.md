@@ -17,7 +17,7 @@
 - [x] DNS Support
 - [x] Feature flags to disable some functions
   - [x] Lua support
-- [ ] Config file hot reload
+- [x] Config file hot reload
 - [x] Cross platform compile
   - [x] x86_64-unknown-linux-gnu
   - [x] x86_64-unknown-linux-musl
@@ -37,6 +37,8 @@
 - [x] Cli
 - [x] Specific custom config location
 - [x] HTTP 2
+- [x] Lua engine
+- [ ] JavaScript engine
 - [ ] HTTP 3
 - [ ] Specify thread numbers
 - [x] Dockerization
@@ -54,7 +56,3 @@
   - [x] gzip
   - [x] deflate
   - [x] br
-
-## Bug fix
-
-- [ ] Reload logger after config hot-reload
