@@ -112,3 +112,34 @@ location = "/admin"
 redirect_to = "https://admin.example.com"
 redirect_code = 302
 
+# Example 7: Load balancing with weighted round-robin
+[[host]]
+ip = "0.0.0.0"
+port = 8084
+server_name = "loadbalance.example.com"
+
+[[host.route]]
+location = "/api"
+upstream = "backend_servers" # Reference to upstream server group
+proxy_timeout = 30          # Proxy timeout in seconds (default: 5)
+max_body_size = 1048576     # 1MB max body size
+
+# Upstream server groups configuration for load balancing
+# Multiple upstream groups can be defined
+[[upstream]]
+name = "backend_servers"    # Upstream group name (referenced in routes)
+server = [
+    { server = "192.168.1.100:8080", weight = 3 },  # Handles 3x more requests
+    { server = "192.168.1.101:8080", weight = 1 },  # Handles normal traffic
+    { server = "http://api1.example.com", weight = 2 }, # HTTP scheme is optional
+    { server = "https://api2.example.com:443", weight = 1 } # HTTPS with explicit port
+]
+
+[[upstream]]
+name = "api_servers"
+server = [
+    { server = "http://api1.example.com", weight = 2 },
+    { server = "http://api2.example.com", weight = 3 },
+    { server = "http://api3.example.com", weight = 1 }
+]
+
