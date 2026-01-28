@@ -17,6 +17,14 @@ use serde::Deserialize;
 pub struct UpstreamServer {
     /// 服务器地址（IP:端口 或 域名:端口）
     pub server: String,
+    /// 服务器权重（用于加权轮询，默认值为1）
+    #[serde(default = "default_weight")]
+    pub weight: u32,
+}
+
+/// 默认服务器权重
+fn default_weight() -> u32 {
+    1
 }
 
 /// 上游服务器组配置

@@ -19,9 +19,10 @@ use super::{
 use crate::http::serve::custom_page;
 use crate::{http::serve::resolve_parent_path, utils::parse_port_from_host};
 
-/// 轮询计数器存储
-/// 用于跟踪每个 upstream 的当前轮询索引
-static ROUND_ROBIN_COUNTERS: LazyLock<DashMap<String, AtomicUsize>> = LazyLock::new(DashMap::new);
+/// 加权轮询计数器存储
+/// 用于跟踪每个 upstream 的当前轮询权重和索引
+static WEIGHTED_ROUND_ROBIN_COUNTERS: LazyLock<DashMap<String, AtomicUsize>> =
+    LazyLock::new(DashMap::new);
 
 /// 全局 reqwest 客户端实例，用于复用连接池，提高性能
 static CLIENT: OnceLock<Client> = OnceLock::new();
@@ -115,14 +116,25 @@ pub async fn serve(
             .get(upstream_name)
             .ok_or(RouteError::InternalError())?;
 
-        // 获取轮询计数器
-        let counter = ROUND_ROBIN_COUNTERS
+        // 加权轮询选择服务器
+        let counter = WEIGHTED_ROUND_ROBIN_COUNTERS
             .entry(upstream_name.clone())
             .or_insert_with(|| AtomicUsize::new(0));
 
-        // 轮询选择服务器
-        let server_index = counter.fetch_add(1, Ordering::Relaxed) % upstream.server.len();
-        let server = &upstream.server[server_index];
+        let current_counter = counter.fetch_add(1, Ordering::Relaxed);
+        let total_weight: u32 = upstream.server.iter().map(|s| s.weight).sum();
+        let mut current_weight = current_counter % total_weight as usize;
+
+        let mut selected_index = 0;
+        for (i, server) in upstream.server.iter().enumerate() {
+            if current_weight < server.weight as usize {
+                selected_index = i;
+                break;
+            }
+            current_weight -= server.weight as usize;
+        }
+
+        let server = &upstream.server[selected_index];
 
         // 构建完整的代理 URI，确保正确的格式
         let server_addr =

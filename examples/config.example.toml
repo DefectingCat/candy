@@ -41,12 +41,15 @@ proxy_timeout = 60
 
 [[upstream]]
 name = "backend_servers"
-server = [{ server = "192.168.1.100:8080" }, { server = "192.168.1.101:8080" }]
+server = [
+    { server = "192.168.1.100:8080", weight = 3 },
+    { server = "192.168.1.101:8080", weight = 1 }
+]
 
 [[upstream]]
 name = "api_servers"
 server = [
-    { server = "http://api1.example.com" },
-    { server = "http://api2.example.com" },
-    { server = "http://api3.example.com" },
+    { server = "http://api1.example.com", weight = 2 },
+    { server = "http://api2.example.com", weight = 3 },
+    { server = "http://api3.example.com", weight = 1 }
 ]
