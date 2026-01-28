@@ -28,7 +28,7 @@
   - [x] loongarch64-unknown-linux-gnu
 - [x] HTTP redirect
 - [ ] Load balance
-- [ ] Proxy
+- [x] Proxy
 - [x] Reverse Proxy
   - [x] Connect to upstream timeout setting
   - [x] Follow http 301

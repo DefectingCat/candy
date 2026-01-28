@@ -23,3 +23,30 @@ location = "/"
 forward_proxy = true
 proxy_timeout = 30
 max_body_size = 10485760
+
+[[host]]
+ip = "0.0.0.0"
+port = 8082
+server_name = "loadbalance.example.com"
+[[host.route]]
+location = "/api"
+upstream = "backend_servers"
+proxy_timeout = 30
+max_body_size = 1048576
+
+[[host.route]]
+location = "/data"
+upstream = "api_servers"
+proxy_timeout = 60
+
+[[upstream]]
+name = "backend_servers"
+server = [{ server = "192.168.1.100:8080" }, { server = "192.168.1.101:8080" }]
+
+[[upstream]]
+name = "api_servers"
+server = [
+    { server = "http://api1.example.com" },
+    { server = "http://api2.example.com" },
+    { server = "http://api3.example.com" },
+]

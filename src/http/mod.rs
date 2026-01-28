@@ -10,9 +10,13 @@ use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer};
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    config::SettingHost,
+    config::{SettingHost, Upstream},
     middlewares::{add_headers, add_version, logging_route},
 };
+
+/// 上游服务器组配置存储
+/// 使用 upstream 名称作为键，Upstream 配置作为值
+pub static UPSTREAMS: LazyLock<DashMap<String, Upstream>> = LazyLock::new(DashMap::new);
 
 pub mod error;
 // 处理静态文件
@@ -167,8 +171,8 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<axum_server::Handl
             continue;
         }
 
-        // 反向代理
-        if host_route.proxy_pass.is_some() {
+        // 反向代理（包括 upstream 负载均衡）
+        if host_route.proxy_pass.is_some() || host_route.upstream.is_some() {
             router = router.route(&host_route.location, get(reverse_proxy::serve));
             let wildcard_path = format!("{}{{*path}}", host_route.location);
             router = router.route(&wildcard_path, get(reverse_proxy::serve));

@@ -12,6 +12,22 @@ use anyhow::Context;
 use dashmap::DashMap;
 use serde::Deserialize;
 
+/// 上游服务器配置
+#[derive(Deserialize, Clone, Debug)]
+pub struct UpstreamServer {
+    /// 服务器地址（IP:端口 或 域名:端口）
+    pub server: String,
+}
+
+/// 上游服务器组配置
+#[derive(Deserialize, Clone, Debug)]
+pub struct Upstream {
+    /// 上游服务器组名称
+    pub name: String,
+    /// 服务器列表
+    pub server: Vec<UpstreamServer>,
+}
+
 /// 错误页面路由配置
 #[derive(Deserialize, Clone, Debug)]
 pub struct ErrorRoute {
@@ -44,6 +60,8 @@ pub struct SettingRoute {
 
     /// 反向代理 URL
     pub proxy_pass: Option<String>,
+    /// 上游服务器组名称（用于负载均衡）
+    pub upstream: Option<String>,
     /// 正向代理（设置为 true 启用）
     pub forward_proxy: Option<bool>,
     /// 连接上游服务器超时时间（秒）
@@ -114,11 +132,20 @@ pub struct Settings {
     #[serde(default = "default_log_folder")]
     pub log_folder: String,
 
+    /// 上游服务器组配置
+    pub upstream: Option<Vec<Upstream>>,
+
     /// 虚拟主机列表
     pub host: Vec<SettingHost>,
 }
 
 impl Settings {
+    /// 根据名称查找上游服务器组配置
+    #[allow(dead_code)]
+    pub fn find_upstream(&self, name: &str) -> Option<&Upstream> {
+        self.upstream.as_ref()?.iter().find(|u| u.name == name)
+    }
+
     /// 从 TOML 配置文件创建 Settings 实例
     ///
     /// # 参数
@@ -148,6 +175,40 @@ impl Settings {
 
     /// 验证配置的有效性
     fn validate(&self) -> Result<()> {
+        // 验证上游服务器组配置
+        if let Some(upstreams) = &self.upstream {
+            for (i, upstream) in upstreams.iter().enumerate() {
+                if upstream.name.is_empty() {
+                    return Err(anyhow::anyhow!("Upstream {} has empty name", i).into());
+                }
+
+                if upstream.server.is_empty() {
+                    return Err(anyhow::anyhow!("Upstream {} has no servers", i).into());
+                }
+
+                for (j, server) in upstream.server.iter().enumerate() {
+                    if server.server.is_empty() {
+                        return Err(anyhow::anyhow!(
+                            "Upstream {} server {} has empty address",
+                            i,
+                            j
+                        )
+                        .into());
+                    }
+
+                    // 验证服务器地址格式 (应该包含主机和端口)
+                    if !server.server.contains(':') {
+                        return Err(anyhow::anyhow!(
+                            "Upstream {} server {} address invalid: missing port (format should be host:port)",
+                            i,
+                            j
+                        )
+                        .into());
+                    }
+                }
+            }
+        }
+
         for (i, host) in self.host.iter().enumerate() {
             // 验证 SSL 配置
             if host.ssl {
@@ -198,12 +259,31 @@ impl Settings {
                 // 验证至少有一个有效的路由配置
                 let has_valid_route = route.root.is_some()
                     || route.proxy_pass.is_some()
+                    || route.upstream.is_some()
                     || route.forward_proxy.is_some() && route.forward_proxy.unwrap()
                     || cfg!(feature = "lua") && route.lua_script.is_some()
                     || route.redirect_to.is_some();
 
                 if !has_valid_route {
-                    return Err(anyhow::anyhow!("Host {} route {} configuration invalid (requires root, proxy_pass, lua_script or redirect_to)", i, j).into());
+                    return Err(anyhow::anyhow!("Host {} route {} configuration invalid (requires root, proxy_pass, upstream, lua_script or redirect_to)", i, j).into());
+                }
+
+                // 如果配置了 upstream，验证该 upstream 存在
+                if let Some(upstream_name) = &route.upstream {
+                    if self
+                        .upstream
+                        .as_ref()
+                        .and_then(|u| u.iter().find(|x| x.name == *upstream_name))
+                        .is_none()
+                    {
+                        return Err(anyhow::anyhow!(
+                            "Host {} route {} references unknown upstream: {}",
+                            i,
+                            j,
+                            upstream_name
+                        )
+                        .into());
+                    }
                 }
             }
         }

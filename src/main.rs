@@ -40,6 +40,14 @@ async fn main() -> Result<()> {
     info!("Compiler: {}", COMPILER);
     info!("OS: {} {}", OS, ARCH);
 
+    // 初始化 upstream 配置存储
+    if let Some(upstreams) = &settings.upstream {
+        crate::http::UPSTREAMS.clear();
+        for upstream in upstreams {
+            crate::http::UPSTREAMS.insert(upstream.name.clone(), upstream.clone());
+        }
+    }
+
     // 启动初始服务器
     let mut handles = Vec::new();
     for host in settings.host {
@@ -64,10 +72,20 @@ async fn main() -> Result<()> {
 
                     // 在新的 tokio 任务中启动新服务器
                     let new_hosts = new_settings.host;
+                    let new_upstreams = new_settings.upstream;
                     let handles_clone2 = handles_clone.clone();
                     tokio::spawn(async move {
-                        // 清空全局 HOSTS 变量，确保新配置完全生效
+                        // 清空全局 HOSTS 和 UPSTREAMS 变量，确保新配置完全生效
                         crate::http::HOSTS.clear();
+                        crate::http::UPSTREAMS.clear();
+
+                        // 重新加载 upstream 配置
+                        if let Some(upstreams) = &new_upstreams {
+                            for upstream in upstreams {
+                                crate::http::UPSTREAMS
+                                    .insert(upstream.name.clone(), upstream.clone());
+                            }
+                        }
 
                         let new_handles = start_servers(new_hosts).await;
 
