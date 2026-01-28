@@ -251,10 +251,14 @@ fn is_exclude_header(name: &HeaderName) -> bool {
 /// 这确保只转发相关的头部，避免冲突或安全问题。
 /// 计算 IP 地址的哈希值，用于 IP 哈希负载均衡
 fn ip_hash(ip: &str) -> usize {
-    let mut hash = 5381;
+    let mut hash: usize = 5381;
 
     for byte in ip.as_bytes() {
-        hash = ((hash << 5) + hash) + (*byte as usize); // hash * 33 + c
+        // 使用 wrapping_add 防止溢出
+        hash = hash
+            .wrapping_shl(5)
+            .wrapping_add(hash)
+            .wrapping_add(*byte as usize);
     }
 
     hash
@@ -334,5 +338,53 @@ mod tests {
             to.get(http::header::ACCEPT),
             Some(&HeaderValue::from_static("*/*"))
         );
+    }
+
+    #[test]
+    fn test_ip_hash() {
+        // 测试相同IP地址应该返回相同的哈希值
+        let ip1 = "192.168.1.1";
+        let hash1 = ip_hash(ip1);
+        let hash2 = ip_hash(ip1);
+        assert_eq!(hash1, hash2);
+
+        // 测试不同IP地址应该返回不同的哈希值（虽然理论上可能碰撞，但概率极低）
+        let ip2 = "192.168.1.2";
+        let hash3 = ip_hash(ip2);
+        assert_ne!(hash1, hash3);
+
+        // 测试IPv6地址的哈希计算
+        let ipv6 = "::1";
+        let hash4 = ip_hash(ipv6);
+        assert!(hash4 > 0);
+
+        // 测试包含端口的IP地址（注意：IP哈希算法会包含端口部分，因为它是字符串哈希）
+        let ip_with_port1 = "192.168.1.1:8080";
+        let ip_with_port2 = "192.168.1.1:9090";
+        assert_ne!(ip_hash(ip_with_port1), ip_hash(ip_with_port2));
+    }
+
+    #[test]
+    fn test_ip_hash_distribution() {
+        // 测试IP哈希在多个IP地址间的分布情况
+        let ips = vec![
+            "192.168.1.1",
+            "192.168.1.2",
+            "192.168.1.3",
+            "192.168.1.4",
+            "192.168.1.5",
+            "192.168.1.6",
+            "192.168.1.7",
+            "192.168.1.8",
+        ];
+
+        let mut hashes = Vec::new();
+        for ip in &ips {
+            hashes.push(ip_hash(ip));
+        }
+
+        // 验证没有重复的哈希值（理论上可能有碰撞，但在这个测试集中概率极低）
+        let unique_hashes: std::collections::HashSet<_> = hashes.into_iter().collect();
+        assert_eq!(unique_hashes.len(), ips.len());
     }
 }
