@@ -16,6 +16,7 @@ use super::{
     HOSTS, UPSTREAMS,
     error::{RouteError, RouteResult},
 };
+use crate::config::LoadBalanceType;
 use crate::http::serve::custom_page;
 use crate::{http::serve::resolve_parent_path, utils::parse_port_from_host};
 
@@ -116,25 +117,55 @@ pub async fn serve(
             .get(upstream_name)
             .ok_or(RouteError::InternalError())?;
 
-        // 加权轮询选择服务器
-        let counter = WEIGHTED_ROUND_ROBIN_COUNTERS
-            .entry(upstream_name.clone())
-            .or_insert_with(|| AtomicUsize::new(0));
+        // 根据负载均衡算法选择服务器
+        let server = match upstream.method {
+            LoadBalanceType::RoundRobin => {
+                // 简单轮询算法
+                let counter = WEIGHTED_ROUND_ROBIN_COUNTERS
+                    .entry(upstream_name.clone())
+                    .or_insert_with(|| AtomicUsize::new(0));
 
-        let current_counter = counter.fetch_add(1, Ordering::Relaxed);
-        let total_weight: u32 = upstream.server.iter().map(|s| s.weight).sum();
-        let mut current_weight = current_counter % total_weight as usize;
-
-        let mut selected_index = 0;
-        for (i, server) in upstream.server.iter().enumerate() {
-            if current_weight < server.weight as usize {
-                selected_index = i;
-                break;
+                let current_counter = counter.fetch_add(1, Ordering::Relaxed);
+                let selected_index = current_counter % upstream.server.len();
+                &upstream.server[selected_index]
             }
-            current_weight -= server.weight as usize;
-        }
+            LoadBalanceType::WeightedRoundRobin => {
+                // 加权轮询算法
+                let counter = WEIGHTED_ROUND_ROBIN_COUNTERS
+                    .entry(upstream_name.clone())
+                    .or_insert_with(|| AtomicUsize::new(0));
 
-        let server = &upstream.server[selected_index];
+                let current_counter = counter.fetch_add(1, Ordering::Relaxed);
+                let total_weight: u32 = upstream.server.iter().map(|s| s.weight).sum();
+                let mut current_weight = current_counter % total_weight as usize;
+
+                let mut selected_index = 0;
+                for (i, server) in upstream.server.iter().enumerate() {
+                    if current_weight < server.weight as usize {
+                        selected_index = i;
+                        break;
+                    }
+                    current_weight -= server.weight as usize;
+                }
+                &upstream.server[selected_index]
+            }
+            LoadBalanceType::IpHash => {
+                // IP 哈希算法（会话保持）
+                // 获取客户端 IP 地址
+                let client_ip = req
+                    .headers()
+                    .get("x-forwarded-for")
+                    .and_then(|h| h.to_str().ok())
+                    .and_then(|s| s.split(',').next())
+                    .or_else(|| req.headers().get("x-real-ip").and_then(|h| h.to_str().ok()))
+                    .ok_or(RouteError::BadRequest())?;
+
+                // 计算 IP 地址的哈希值
+                let hash = ip_hash(client_ip);
+                let selected_index = hash % upstream.server.len();
+                &upstream.server[selected_index]
+            }
+        };
 
         // 构建完整的代理 URI，确保正确的格式
         let server_addr =
@@ -218,6 +249,17 @@ fn is_exclude_header(name: &HeaderName) -> bool {
 
 /// 将头部从一个 `HeaderMap` 复制到另一个，排除在 `is_exclude_header` 中指定的头部。
 /// 这确保只转发相关的头部，避免冲突或安全问题。
+/// 计算 IP 地址的哈希值，用于 IP 哈希负载均衡
+fn ip_hash(ip: &str) -> usize {
+    let mut hash = 5381;
+
+    for byte in ip.as_bytes() {
+        hash = ((hash << 5) + hash) + (*byte as usize); // hash * 33 + c
+    }
+
+    hash
+}
+
 fn copy_headers(from: &http::HeaderMap, to: &mut http::HeaderMap) {
     for (name, value) in from.iter() {
         if !is_exclude_header(name) {

@@ -143,3 +143,24 @@ server = [
     { server = "http://api3.example.com", weight = 1 }
 ]
 
+# Example 8: Load balancing with IP hash (session persistence)
+[[host]]
+ip = "0.0.0.0"
+port = 8085
+server_name = "session.example.com"
+
+[[host.route]]
+location = "/app"
+upstream = "session_servers" # Reference to upstream server group with IP hash
+proxy_timeout = 30          # Proxy timeout in seconds (default: 5)
+max_body_size = 1048576     # 1MB max body size
+
+[[upstream]]
+name = "session_servers"
+method = "ip_hash"          # Use IP hash load balancing algorithm
+server = [
+    { server = "192.168.1.102:8080", weight = 1 },
+    { server = "192.168.1.103:8080", weight = 1 },
+    { server = "192.168.1.104:8080", weight = 1 }
+]
+

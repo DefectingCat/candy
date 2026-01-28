@@ -27,6 +27,23 @@ fn default_weight() -> u32 {
     1
 }
 
+/// 负载均衡算法类型
+#[derive(Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LoadBalanceType {
+    /// 轮询算法（默认）
+    RoundRobin,
+    /// 加权轮询算法
+    WeightedRoundRobin,
+    /// IP哈希算法（会话保持）
+    IpHash,
+}
+
+/// 默认负载均衡算法
+fn default_load_balance() -> LoadBalanceType {
+    LoadBalanceType::WeightedRoundRobin
+}
+
 /// 上游服务器组配置
 #[derive(Deserialize, Clone, Debug)]
 pub struct Upstream {
@@ -34,6 +51,9 @@ pub struct Upstream {
     pub name: String,
     /// 服务器列表
     pub server: Vec<UpstreamServer>,
+    /// 负载均衡算法类型
+    #[serde(default = "default_load_balance")]
+    pub method: LoadBalanceType,
 }
 
 /// 错误页面路由配置
@@ -277,21 +297,20 @@ impl Settings {
                 }
 
                 // 如果配置了 upstream，验证该 upstream 存在
-                if let Some(upstream_name) = &route.upstream {
-                    if self
+                if let Some(upstream_name) = &route.upstream
+                    && self
                         .upstream
                         .as_ref()
                         .and_then(|u| u.iter().find(|x| x.name == *upstream_name))
                         .is_none()
-                    {
-                        return Err(anyhow::anyhow!(
-                            "Host {} route {} references unknown upstream: {}",
-                            i,
-                            j,
-                            upstream_name
-                        )
-                        .into());
-                    }
+                {
+                    return Err(anyhow::anyhow!(
+                        "Host {} route {} references unknown upstream: {}",
+                        i,
+                        j,
+                        upstream_name
+                    )
+                    .into());
                 }
             }
         }

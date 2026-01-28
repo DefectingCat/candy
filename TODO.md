@@ -18,6 +18,11 @@
 - [x] Feature flags to disable some functions
   - [x] Lua support
 - [x] Config file hot reload
+- [ ] Congigura compression method in config file
+  - [ ] zstd
+  - [ ] gzip
+  - [ ] deflate
+  - [ ] br
 - [x] Cross platform compile
   - [x] x86_64-unknown-linux-gnu
   - [x] x86_64-unknown-linux-musl
