@@ -11,7 +11,7 @@ A modern, lightweight web server written in Rust.
 ## Features
 
 - **Static file serving** - Serve static files with directory listing support
-- **Reverse proxying** - Proxy requests to backend servers
+- **Reverse proxying** - Proxy requests to backend servers with round-robin load balancing
 - **Lua scripting** - Extend functionality with Lua scripts (optional feature)
 - **SSL/TLS encryption** - Secure connections with HTTPS
 - **HTTP/2 support** - Modern protocol support for faster performance
@@ -48,27 +48,68 @@ cargo run --release
 ./target/release/candy --config path/to/config.toml
 ```
 
-## Build Commands
+## Using Makefile
+
+The project provides a Makefile to simplify common operations:
 
 ```bash
 # Build (debug)
-cargo build
+make build
 
 # Build (release)
-cargo build --release
+make release
 
-# Run
-cargo run -- --config config.toml
+# Run (debug mode)
+make run
 
-# Run tests
-cargo test
+# Run with arguments
+make run ARGS="--config path/to/config.toml"
+
+# Development mode (auto-reload)
+make dev
+
+# Run all tests
+make test
+
+# Code formatting
+make format
+
+# Code linting
+make lint
+
+# Fix common lint issues
+make fix
+
+# Check compilation
+make check
+```
+
+## Configuration Example
+
+A simple configuration example:
+
+```toml
+[server]
+listen = "0.0.0.0:8080"
+workers = 4
+log_level = "info"
+
+[virtual_hosts.default]
+root = "./html"
+index_files = ["index.html", "index.htm"]
+directory_listing = true
+
+[virtual_hosts.example]
+server_name = "example.com"
+root = "./examples/example.com"
+index_files = ["index.html"]
 ```
 
 ## Documentation
 
 - [Configuration Guide](docs/) - Detailed configuration options
-- [Examples](examples/) - Usage examples
-- [CHANGELOG](CHANGELOG.md) - Release history
+- [Examples](examples/) - Usage examples for various scenarios
+- [CHANGELOG](CHANGELOG.md) - Release history and changes
 - [TODO](TODO.md) - Planned features
 
 ## License
