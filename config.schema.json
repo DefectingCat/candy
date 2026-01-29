@@ -1,0 +1,312 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Candy Web Server Configuration",
+  "description": "Configuration schema for Candy, a modern lightweight web server written in Rust",
+  "type": "object",
+  "properties": {
+    "log_level": {
+      "description": "Logging level (trace, debug, info, warn, error)",
+      "type": "string",
+      "enum": ["trace", "debug", "info", "warn", "error"],
+      "default": "info"
+    },
+    "log_folder": {
+      "description": "Path to the folder where log files will be stored",
+      "type": "string",
+      "default": "./logs"
+    },
+    "upstream": {
+      "description": "Upstream server groups for load balancing",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Upstream"
+      }
+    },
+    "host": {
+      "description": "List of virtual hosts",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/SettingHost"
+      },
+      "minItems": 1
+    }
+  },
+  "required": ["host"],
+  "definitions": {
+    "Upstream": {
+      "description": "Upstream server group configuration for load balancing",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Name of the upstream server group (used for referencing in routes)",
+          "type": "string",
+          "minLength": 1
+        },
+        "server": {
+          "description": "List of servers in this upstream group",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/UpstreamServer"
+          },
+          "minItems": 1
+        },
+        "method": {
+          "description": "Load balancing algorithm type",
+          "type": "string",
+          "enum": ["roundrobin", "weightedroundrobin", "iphash"],
+          "default": "weightedroundrobin"
+        }
+      },
+      "required": ["name", "server"]
+    },
+    "UpstreamServer": {
+      "description": "Individual upstream server configuration",
+      "type": "object",
+      "properties": {
+        "server": {
+          "description": "Server address in format host:port",
+          "type": "string",
+          "pattern": "^[^:]+:\\d+$"
+        },
+        "weight": {
+          "description": "Server weight for weighted round-robin load balancing",
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      },
+      "required": ["server"]
+    },
+    "SettingHost": {
+      "description": "Virtual host configuration",
+      "type": "object",
+      "properties": {
+        "ip": {
+          "description": "IP address the host listens on",
+          "type": "string",
+          "format": "ipv4"
+        },
+        "port": {
+          "description": "Port number the host listens on",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "server_name": {
+          "description": "Server name (domain name) for virtual hosting",
+          "type": "string"
+        },
+        "ssl": {
+          "description": "Whether to enable SSL/TLS encryption",
+          "type": "boolean",
+          "default": false
+        },
+        "certificate": {
+          "description": "Path to the SSL certificate file (required if ssl is true)",
+          "type": "string"
+        },
+        "certificate_key": {
+          "description": "Path to the SSL certificate key file (required if ssl is true)",
+          "type": "string"
+        },
+        "timeout": {
+          "description": "HTTP keep-alive timeout in seconds",
+          "type": "integer",
+          "minimum": 1,
+          "default": 75
+        },
+        "route": {
+          "description": "List of routes for this host",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SettingRoute"
+          },
+          "minItems": 1
+        }
+      },
+      "required": ["ip", "port", "route"],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "ssl": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "required": ["certificate", "certificate_key"]
+          }
+        }
+      ]
+    },
+    "SettingRoute": {
+      "description": "Route configuration for virtual host",
+      "type": "object",
+      "properties": {
+        "location": {
+          "description": "Route location (must start with /)",
+          "type": "string",
+          "pattern": "^/.*"
+        },
+        "root": {
+          "description": "Root folder for static file serving",
+          "type": "string"
+        },
+        "auto_index": {
+          "description": "Whether to enable directory listing",
+          "type": "boolean",
+          "default": false
+        },
+        "index": {
+          "description": "List of index file names to look for",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": ["index.html"]
+        },
+        "error_page": {
+          "description": "Custom error page configuration",
+          "$ref": "#/definitions/ErrorRoute"
+        },
+        "not_found_page": {
+          "description": "Custom 404 (not found) page configuration",
+          "$ref": "#/definitions/ErrorRoute"
+        },
+        "proxy_pass": {
+          "description": "URL for reverse proxy",
+          "type": "string",
+          "format": "uri"
+        },
+        "upstream": {
+          "description": "Name of the upstream server group (for load balancing)",
+          "type": "string"
+        },
+        "forward_proxy": {
+          "description": "Whether to enable forward proxy",
+          "type": "boolean"
+        },
+        "proxy_timeout": {
+          "description": "Timeout for connecting to upstream servers in seconds",
+          "type": "integer",
+          "minimum": 1,
+          "default": 5
+        },
+        "max_body_size": {
+          "description": "Maximum request body size in bytes",
+          "type": "integer",
+          "minimum": 1
+        },
+        "headers": {
+          "description": "Custom HTTP headers to add to responses",
+          "type": "object",
+          "patternProperties": {
+            "^[A-Za-z0-9-]+$": {
+              "type": "string"
+            }
+          }
+        },
+        "lua_script": {
+          "description": "Lua script to execute for this route (requires Lua feature)",
+          "type": "string"
+        },
+        "redirect_to": {
+          "description": "Target URL for HTTP redirect",
+          "type": "string",
+          "format": "uri"
+        },
+        "redirect_code": {
+          "description": "HTTP status code for redirect",
+          "type": "integer",
+          "minimum": 300,
+          "maximum": 399
+        }
+      },
+      "required": ["location"],
+      "allOf": [
+        {
+          "description": "At least one valid route type must be specified",
+          "oneOf": [
+            {
+              "properties": {
+                "root": {
+                  "not": {
+                    "type": "null"
+                  }
+                }
+              },
+              "required": ["root"]
+            },
+            {
+              "properties": {
+                "proxy_pass": {
+                  "not": {
+                    "type": "null"
+                  }
+                }
+              },
+              "required": ["proxy_pass"]
+            },
+            {
+              "properties": {
+                "upstream": {
+                  "not": {
+                    "type": "null"
+                  }
+                }
+              },
+              "required": ["upstream"]
+            },
+            {
+              "properties": {
+                "forward_proxy": {
+                  "const": true
+                }
+              },
+              "required": ["forward_proxy"]
+            },
+            {
+              "properties": {
+                "lua_script": {
+                  "not": {
+                    "type": "null"
+                  }
+                }
+              },
+              "required": ["lua_script"]
+            },
+            {
+              "properties": {
+                "redirect_to": {
+                  "not": {
+                    "type": "null"
+                  }
+                }
+              },
+              "required": ["redirect_to"]
+            }
+          ]
+        }
+      ]
+    },
+    "ErrorRoute": {
+      "description": "Error page configuration",
+      "type": "object",
+      "properties": {
+        "status": {
+          "description": "HTTP status code",
+          "type": "integer",
+          "minimum": 400,
+          "maximum": 599
+        },
+        "page": {
+          "description": "Path to the error page",
+          "type": "string",
+          "pattern": "^/.*"
+        }
+      },
+      "required": ["status", "page"]
+    }
+  }
+}
