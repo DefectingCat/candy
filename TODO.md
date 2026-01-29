@@ -7,6 +7,7 @@
 - [x] Error page
 - [x] Custom error page with stats code
 - [x] Logging to file
+  - [ ] logrotate
 - [ ] Benches
   - [ ] Docker with oha
 - [x] Max body size
@@ -32,7 +33,12 @@
   - [x] x86_64-unknown-freebsd
   - [x] loongarch64-unknown-linux-gnu
 - [x] HTTP redirect
-- [ ] Load balance
+- [x] Load balance
+  - [x] Round Robin (Default)
+  - [x] Weighted Round Robin
+  - [x] IP Hash (ip_hash)
+  - [ ] Least Connections (least_conn)
+  - [ ] Backend Server Health Check
 - [x] Proxy
 - [x] Reverse Proxy
   - [x] Connect to upstream timeout setting

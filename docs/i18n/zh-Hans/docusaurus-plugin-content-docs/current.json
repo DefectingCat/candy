@@ -6,5 +6,9 @@
   "sidebar.tutorialSidebar.category.配置": {
     "message": "配置",
     "description": "The label for category '配置' in sidebar 'tutorialSidebar'"
+  },
+  "sidebar.tutorialSidebar.category.配置参考": {
+    "message": "配置参考",
+    "description": "The label for category '配置参考' in sidebar 'tutorialSidebar'"
   }
 }
