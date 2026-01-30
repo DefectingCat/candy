@@ -7,12 +7,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 **Candy** is a modern, lightweight web server written in Rust. Key features:
+
 - Static file serving with directory listing support
 - Reverse proxying with load balancing
 - Lua scripting (optional feature)
 - SSL/TLS encryption (HTTPS) with HTTP/2 support
 - Auto-reload config on file change
 - Multiple virtual hosts
+
+## Docs
+
+`docs/` 文件夹是使用 docusaurus 的文档项目。包管理器使用的是 `pnpm`
 
 ## Build, Lint, and Test Commands
 
@@ -149,6 +154,7 @@ src/
 Default path: `config.toml`
 
 Key sections:
+
 - `log_level`: Log verbosity (trace/debug/info/warn/error)
 - `log_folder`: Directory for log files
 - `upstream`: Array of upstream server groups (for load balancing)
