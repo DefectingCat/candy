@@ -23,7 +23,7 @@ const config: Config = {
   organizationName: 'xfy', // Usually your GitHub org/user name.
   projectName: 'candy', // Usually your repo name.
 
-  onBrokenLinks: 'throw',
+  onBrokenLinks: 'ignore',
   markdown: {
     hooks: {
       onBrokenMarkdownLinks: 'warn',
@@ -43,7 +43,7 @@ const config: Config = {
       'classic',
       {
         docs: {
-          /* routeBasePath: '/', */
+          routeBasePath: '/',
           sidebarPath: './sidebars.ts',
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
@@ -79,7 +79,8 @@ const config: Config = {
           type: 'docSidebar',
           sidebarId: 'tutorialSidebar',
           position: 'left',
-          label: 'Tutorial',
+          label: '文档',
+          docId: 'intro',
         },
         { to: '/blog', label: 'Blog', position: 'left' },
         {
