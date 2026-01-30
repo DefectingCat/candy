@@ -38,23 +38,20 @@ COPY build.rs ./
 RUN cargo build ${BUILD_FLAGS} --target ${TARGET}
 
 ################################################################################
-# 阶段2: 运行阶段 - 使用Alpine基础镜像（轻量级Linux）
+# 阶段2: 运行阶段 - 使用scratch基础镜像（最小化镜像）
 ################################################################################
-FROM alpine:latest
+FROM scratch
 
 ARG TARGET=aarch64-unknown-linux-musl
 # 从构建阶段复制编译好的二进制文件
-COPY --from=builder /app/target/${TARGET}/release/candy /usr/bin/
+COPY --from=builder /app/target/${TARGET}/release/candy /candy
 
 # 复制配置文件
 COPY config.toml /config.toml
-
-# 安装必要的依赖
-RUN apk add --no-cache libc6-compat
 
 EXPOSE 8080
 EXPOSE 8081
 
 # 入口点 - 启动Candy服务器
-ENTRYPOINT ["candy"]
+ENTRYPOINT ["/candy"]
 CMD ["--config", "/config.toml"]
