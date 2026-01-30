@@ -34,23 +34,27 @@ RUN mkdir -p src && echo 'fn main() {}' > src/main.rs && \
 COPY src/ ./src/
 COPY build.rs ./
 
-# 构建项目 - 静态链接到musl libc，确保可以在scratch中运行
-RUN RUSTFLAGS="-C target-feature=-crt-static -C link-arg=-static" cargo build ${BUILD_FLAGS} --target ${TARGET}
+# 构建项目 - 使用标准的musl链接
+RUN cargo build ${BUILD_FLAGS} --target ${TARGET}
 
 ################################################################################
-# 阶段2: 运行阶段 - 使用scratch基础镜像（完全空的镜像）
+# 阶段2: 运行阶段 - 使用Alpine基础镜像（轻量级Linux）
 ################################################################################
-FROM scratch
+FROM alpine:latest
 
 ARG TARGET=aarch64-unknown-linux-musl
 # 从构建阶段复制编译好的二进制文件
-COPY --from=builder /app/target/${TARGET}/release/candy /
+COPY --from=builder /app/target/${TARGET}/release/candy /usr/bin/
 
-EXPOSE 80
+# 复制配置文件
+COPY config.toml /config.toml
 
-# 配置环境变量（可选）
-ENV RUST_LOG="info"
+# 安装必要的依赖
+RUN apk add --no-cache libc6-compat
+
+EXPOSE 8080
+EXPOSE 8081
 
 # 入口点 - 启动Candy服务器
-ENTRYPOINT ["/candy"]
-CMD ["--help"]
+ENTRYPOINT ["candy"]
+CMD ["--config", "/config.toml"]
