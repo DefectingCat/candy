@@ -7,6 +7,8 @@ tags: [candy, rust, lua, scripting, embedding]
 
 # Candy 服务器 Lua 引擎深度解析
 
+<!-- truncate -->
+
 ## 引言
 
 在现代 Web 服务器架构中，脚本引擎的嵌入为服务器提供了强大的动态配置和扩展能力。Candy 服务器作为一款用 Rust 语言编写的现代化 Web 服务器，引入了 Lua 脚本引擎作为可选功能，允许开发者通过 Lua 脚本来实现自定义逻辑、动态配置和扩展性。

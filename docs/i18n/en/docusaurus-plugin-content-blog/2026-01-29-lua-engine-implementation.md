@@ -7,6 +7,8 @@ tags: [candy, rust, lua, scripting, embedding]
 
 # Deep Dive into Candy Server's Lua Engine
 
+<!-- truncate -->
+
 ## Introduction
 
 In modern web server architectures, embedded scripting engines provide powerful dynamic configuration and extensibility capabilities. As a modern web server written in Rust, Candy introduces the Lua scripting engine as an optional feature, allowing developers to implement custom logic, dynamic configuration, and extensibility through Lua scripts.

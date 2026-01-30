@@ -7,10 +7,6 @@
     "message": "My Site Logo",
     "description": "The alt text of navbar logo"
   },
-  "item.label.Tutorial": {
-    "message": "Tutorial",
-    "description": "Navbar item with label Tutorial"
-  },
   "item.label.Blog": {
     "message": "Blog",
     "description": "Navbar item with label Blog"
@@ -20,7 +16,7 @@
     "description": "Navbar item with label GitHub"
   },
   "item.label.文档": {
-    "message": "文档",
+    "message": "Documentation",
     "description": "Navbar item with label 文档"
   }
 }

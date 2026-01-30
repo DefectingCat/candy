@@ -7,6 +7,8 @@ tags: [candy, rust, configuration, hot-reload, async]
 
 # Config Hot Reload Mechanism in Candy Server
 
+<!-- truncate -->
+
 ## Introduction
 
 In modern server development, config hot reload is a very important feature. It allows the server to dynamically load updated configurations at runtime without restarting the entire service, significantly improving system availability and maintenance efficiency. As a modern web server written in Rust, Candy provides a powerful and stable config hot reload feature.
