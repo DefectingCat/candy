@@ -17,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Docs
 
-`docs/` 文件夹是使用 docusaurus 的文档项目。包管理器使用的是 `pnpm`
+`docs/` 文件夹是使用 docusaurus 的文档项目。包管理器使用的是 `pnpm`，`docs/docs/` 是对应的文档目录，`docs/blog/` 是对应的博客目录。
 
 ## Build, Lint, and Test Commands
 

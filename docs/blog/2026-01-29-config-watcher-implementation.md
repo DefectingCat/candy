@@ -7,9 +7,9 @@ tags: [candy, rust, configuration, hot-reload, async]
 
 # Candy 服务器配置热加载机制详解
 
-<!-- truncate -->
-
 ## 引言
+
+<!-- truncate -->
 
 在现代服务器开发中，配置热加载是一项非常重要的功能。它允许服务器在运行时动态加载更新后的配置，而不需要重启整个服务，显著提高了系统的可用性和维护效率。Candy 服务器作为一款现代化的 Rust 语言编写的 Web 服务器，提供了强大且稳定的配置热加载功能。
 
@@ -81,17 +81,18 @@ loop {
             info!("Stopping config watcher");
             break;
         }
-        
+
         result = rx.recv() => {
             // 处理文件系统事件
         }
-        
+
         _ = time::sleep(poll_timeout) => continue,
     }
 }
 ```
 
 事件循环使用 Tokio 的 `select!` 宏，实现了：
+
 - 停止信号监听
 - 文件系统事件接收
 - 超时检查（防止完全阻塞）
@@ -190,6 +191,7 @@ fn retry_with_delay_sync<T, E, F>(
 ### 2. 错误处理
 
 完善的错误处理和恢复机制，包括：
+
 - 重试机制
 - 错误日志记录
 - 异步任务错误捕获

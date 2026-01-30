@@ -7,13 +7,13 @@ tags: [candy, rust, lua, scripting, embedding]
 
 # Candy 服务器 Lua 引擎深度解析
 
-<!-- truncate -->
-
 ## 引言
 
 在现代 Web 服务器架构中，脚本引擎的嵌入为服务器提供了强大的动态配置和扩展能力。Candy 服务器作为一款用 Rust 语言编写的现代化 Web 服务器，引入了 Lua 脚本引擎作为可选功能，允许开发者通过 Lua 脚本来实现自定义逻辑、动态配置和扩展性。
 
 本文将深入分析 Candy 服务器中 Lua 引擎的实现细节，基于 `src/lua_engine.rs` 文件的代码，探讨如何在 Rust 中高效地嵌入和使用 Lua 引擎。
+
+<!-- truncate -->
 
 ## Lua 引擎架构概述
 
@@ -28,6 +28,7 @@ pub struct LuaEngine {
 ```
 
 `LuaEngine` 结构体是整个 Lua 引擎的核心，包含两个主要组件：
+
 - **Lua 虚拟机实例**：使用 `mlua` 库提供的 `Lua` 类型，负责执行 Lua 代码
 - **共享字典**：使用 `DashMap` 实现的线程安全哈希表，用于 Lua 和 Rust 之间的数据交换
 
@@ -62,6 +63,7 @@ pub fn new() -> Self {
 ```
 
 初始化过程包括：
+
 1. 创建新的 Lua 虚拟机实例
 2. 初始化共享字典
 3. 创建并配置 `candy` 全局模块
@@ -100,6 +102,7 @@ fn register_shared_api(
 ```
 
 提供了线程安全的共享字典操作：
+
 - `candy.shared.set(key, value)`：设置键值对
 - `candy.shared.get(key)`：获取值（不存在时返回空字符串）
 
@@ -131,6 +134,7 @@ fn register_version_info(module: &mlua::Table) {
 ```
 
 暴露服务器的元信息：
+
 - `candy.version`：版本号
 - `candy.name`：应用名称（Candy）
 - `candy.os`：操作系统信息
@@ -150,10 +154,10 @@ let result: String = LUA_ENGINE.lua.load(r#"
     -- 使用共享字典
     candy.shared.set('key', 'value')
     local value = candy.shared.get('key')
-    
+
     -- 记录日志
     candy.log('Key value is: ' .. value)
-    
+
     -- 返回版本信息
     return 'Candy ' .. candy.version .. ' running on ' .. candy.os .. '/' .. candy.arch
 "#).eval().unwrap();
@@ -175,7 +179,7 @@ enabled = true
 init_script = """
 function handle_request(request)
     candy.log('Received request: ' .. request.path)
-    
+
     -- 动态路由逻辑
     if request.path == '/health' then
         return {
@@ -183,7 +187,7 @@ function handle_request(request)
             body = 'OK'
         }
     end
-    
+
     return {
         status = 404,
         body = 'Not Found'
@@ -277,6 +281,7 @@ mod tests {
 ```
 
 测试覆盖了：
+
 - 引擎创建和全局变量存在性
 - 共享字典操作（设置和获取）
 - 版本信息访问
@@ -295,6 +300,7 @@ mod tests {
 ### 3. 可扩展性
 
 未来可以轻松添加更多 API，如：
+
 - 文件系统操作
 - 网络请求
 - 数据库访问

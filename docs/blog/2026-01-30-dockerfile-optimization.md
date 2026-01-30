@@ -7,13 +7,13 @@ tags: [candy, rust, docker, optimization, alpine, scratch]
 
 # 从 Alpine 到 Scratch：Candy 服务器 Docker 镜像的极致优化
 
-<!-- truncate -->
-
 ## 引言
 
 在现代容器化部署中，镜像大小和安全性是两个至关重要的因素。较小的镜像意味着更快的传输速度、更高效的存储利用率，以及减少攻击面。Candy 服务器作为一款现代化的 Rust 语言编写的 Web 服务器，我们一直在探索如何优化其 Docker 镜像。
 
 本文将详细介绍我们如何将 Candy 服务器的 Docker 镜像从 Alpine Linux 基础镜像迁移到 Scratch 基础镜像，实现了极致的轻量化和安全性提升。
+
+<!-- truncate -->
 
 ## Docker 镜像优化的重要性
 
@@ -146,11 +146,11 @@ CMD ["--config", "/config.toml"]
 ### 镜像大小比较
 
 | 基础镜像 | 镜像大小 | 优化效果 |
-|---------|---------|---------|
-| Ubuntu  | ~200MB+ | -       |
-| Debian  | ~100MB+ | -       |
-| Alpine  | ~15MB   | 显著优化 |
-| Scratch | ~5MB    | 极致优化 |
+| -------- | -------- | -------- |
+| Ubuntu   | ~200MB+  | -        |
+| Debian   | ~100MB+  | -        |
+| Alpine   | ~15MB    | 显著优化 |
+| Scratch  | ~5MB     | 极致优化 |
 
 使用 Scratch 基础镜像后，Candy 服务器的 Docker 镜像大小从约 15MB（Alpine 版本）减少到约 5MB，体积减小了约 66%。
 
