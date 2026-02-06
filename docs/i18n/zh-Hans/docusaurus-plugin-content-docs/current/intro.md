@@ -1,5 +1,6 @@
 ---
 sidebar_position: 1
+slug: /
 ---
 
 # 介绍
@@ -76,20 +77,20 @@ index = ["index.html"]
 auto_index = true
 ```
 
-2. 创建 `html` 目录并添加 `index.html` 文件：
+1. 创建 `html` 目录并添加 `index.html` 文件：
 
 ```bash
 mkdir html
 echo "<h1>Hello from Candy!</h1>" > html/index.html
 ```
 
-3. 启动服务器：
+1. 启动服务器：
 
 ```bash
 ./target/release/candy
 ```
 
-4. 在浏览器中访问：`http://localhost:8080`
+1. 在浏览器中访问：`http://localhost:8080`
 
 ### 配置文件位置
 
@@ -100,9 +101,14 @@ echo "<h1>Hello from Candy!</h1>" > html/index.html
 ### 1. 静态文件服务器
 
 ```toml
+log_level = "info"
+log_folder = "./logs"
+
 [[host]]
 ip = "0.0.0.0"
 port = 8080
+server_name = "localhost"
+
 [[host.route]]
 location = "/"
 root = "./public"
@@ -113,9 +119,14 @@ auto_index = true
 ### 2. 反向代理
 
 ```toml
+log_level = "info"
+log_folder = "./logs"
+
 [[host]]
 ip = "0.0.0.0"
 port = 8080
+server_name = "api.example.com"
+
 [[host.route]]
 location = "/api"
 proxy_pass = "http://localhost:3000"
@@ -126,19 +137,102 @@ max_body_size = 1048576
 ### 3. Lua 脚本处理
 
 ```toml
+log_level = "info"
+log_folder = "./logs"
+
 [[host]]
 ip = "0.0.0.0"
 port = 8080
+server_name = "lua.example.com"
+
 [[host.route]]
 location = "/hello"
 lua_script = "./scripts/hello.lua"
 ```
 
 `scripts/hello.lua`：
+
 ```lua
 ctx:set_status(200)
 ctx:set_header("Content-Type", "text/plain")
 ctx:set_body("Hello from Lua!")
+```
+
+### 4. 负载均衡
+
+```toml
+log_level = "info"
+log_folder = "./logs"
+
+# 上游服务器组
+[[upstream]]
+name = "backend_servers"
+method = "weightedroundrobin"
+server = [
+    { server = "192.168.1.100:8080", weight = 3 },
+    { server = "192.168.1.101:8080", weight = 1 },
+    { server = "192.168.1.102:8080", weight = 2 }
+]
+
+[[host]]
+ip = "0.0.0.0"
+port = 80
+server_name = "loadbalance.example.com"
+
+[[host.route]]
+location = "/api"
+upstream = "backend_servers"
+proxy_timeout = 10
+max_body_size = 1048576
+```
+
+### 5. HTTPS 服务器
+
+```toml
+log_level = "info"
+log_folder = "./logs"
+
+[[host]]
+ip = "0.0.0.0"
+port = 443
+server_name = "secure.example.com"
+ssl = true
+certificate = "./ssl/server.crt"
+certificate_key = "./ssl/server.key"
+
+[[host.route]]
+location = "/"
+root = "./html"
+```
+
+### 6. 多虚拟主机
+
+```toml
+log_level = "info"
+log_folder = "./logs"
+
+# 第一个虚拟主机（HTTP）
+[[host]]
+ip = "0.0.0.0"
+port = 80
+server_name = "example.com"
+
+[[host.route]]
+location = "/"
+root = "./html/example"
+
+# 第二个虚拟主机（HTTPS）
+[[host]]
+ip = "0.0.0.0"
+port = 443
+server_name = "secure.example.com"
+ssl = true
+certificate = "./ssl/server.crt"
+certificate_key = "./ssl/server.key"
+
+[[host.route]]
+location = "/"
+root = "./html/secure"
 ```
 
 ## 系统要求
@@ -159,5 +253,5 @@ Candy 可以在以下平台上运行：
 
 Candy 是一个开源项目，欢迎贡献！
 
-- **仓库地址**：https://github.com/DefectingCat/candy
+- **仓库地址**：[https://github.com/DefectingCat/candy](https://github.com/DefectingCat/candy)
 - **许可证**：MIT License

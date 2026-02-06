@@ -12,9 +12,6 @@ fix:
 	make nvm CMD="$(PACKAGE_MANAGER) i && $(PACKAGE_MANAGER) pretty"
 
 pack:
-	cp -r docs/* i18n/zh-Hans/docusaurus-plugin-content-docs/current \
-		&& make nvm CMD="$(PACKAGE_MANAGER) i && $(PACKAGE_MANAGER) build"
-
-# build:
+	make nvm CMD="$(PACKAGE_MANAGER) i && $(PACKAGE_MANAGER) build"
 
 .PHONY: all

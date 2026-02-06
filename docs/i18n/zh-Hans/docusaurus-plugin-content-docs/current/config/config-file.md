@@ -6,16 +6,40 @@ title: 配置文件
 
 ## 配置文件
 
-Candy 遵循配置文件进行配置。配置文件的格式为 TOML。
+Candy 使用 TOML 格式的配置文件，默认名称为 `config.toml`。配置文件包含全局设置、上游服务器组和虚拟主机配置。
 
 ## 全局配置
+
+### 日志配置
 
 ```toml
 log_level = "info"  # 日志级别：trace/debug/info/warn/error（默认 info）
 log_folder = "./logs"  # 日志文件夹路径（默认 ./logs）
 ```
 
-### 虚拟主机
+#### 日志级别说明
+
+- **trace**：最详细的日志，用于调试
+- **debug**：详细的调试信息
+- **info**：基本运行信息（默认）
+- **warn**：警告信息
+- **error**：错误信息
+
+### 上游服务器组配置
+
+```toml
+[[upstream]]
+name = "backend_servers"  # 服务器组名称（在路由中引用）
+method = "weightedroundrobin"  # 负载均衡算法：roundrobin/weightedroundrobin/iphash（默认 weightedroundrobin）
+server = [
+    { server = "192.168.1.100:8080", weight = 3 },  # 权重 3
+    { server = "192.168.1.101:8080", weight = 1 },  # 权重 1
+    { server = "http://api1.example.com", weight = 2 },  # 支持 HTTP 协议前缀
+    { server = "https://api2.example.com:443", weight = 1 }  # 支持 HTTPS
+]
+```
+
+### 虚拟主机配置
 
 顶层配置为虚拟主机 `host`，可以配置多个虚拟主机。
 
@@ -24,18 +48,19 @@ log_folder = "./logs"  # 日志文件夹路径（默认 ./logs）
 ip = "0.0.0.0"
 port = 80
 server_name = "example.com"  # 服务器名称（域名），支持基于域名的路由
-timeout = 15  # Connection timeout
+timeout = 15  # 连接超时（秒），默认 75 秒
 
-# 只用当 ssl = true 时，才会读取证书和密钥，并开启 SSL 支持
-# ssl = true
-# Self sign a certificate
-# sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ./html/selfsigned.key -out ./html/selfsigned.crt
-certificate = "./html/selfsigned.crt"
-certificate_key = "./html/selfsigned.key"
+# SSL/TLS 配置
+ssl = true
+# 自签名证书生成命令：
+# sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ./ssl/selfsigned.key -out ./ssl/selfsigned.crt
+certificate = "./ssl/selfsigned.crt"
+certificate_key = "./ssl/selfsigned.key"
 
 # 主机级别的自定义响应头
 [host.headers]
-X-Powered-By = "candy"
+X-Powered-By = "Candy Server"
+Cache-Control = "public, max-age=3600"
 ```
 
 ### 路由
