@@ -43,7 +43,7 @@ proxy_timeout = 60
 name = "backend_servers"
 server = [
     { server = "192.168.1.100:8080", weight = 3 },
-    { server = "192.168.1.101:8080", weight = 1 }
+    { server = "192.168.1.101:8080", weight = 1 },
 ]
 
 [[upstream]]
@@ -51,10 +51,10 @@ name = "api_servers"
 server = [
     { server = "http://api1.example.com", weight = 2 },
     { server = "http://api2.example.com", weight = 3 },
-    { server = "http://api3.example.com", weight = 1 }
+    { server = "http://api3.example.com", weight = 1 },
 ]
 
-# Example of ip_hash load balancing for session persistence
+# Example of iphash load balancing for session persistence
 [[host]]
 ip = "0.0.0.0"
 port = 8083
@@ -66,9 +66,9 @@ proxy_timeout = 30
 
 [[upstream]]
 name = "session_servers"
-method = "ip_hash"
+method = "iphash"
 server = [
     { server = "192.168.1.102:8080", weight = 1 },
     { server = "192.168.1.103:8080", weight = 1 },
-    { server = "192.168.1.104:8080", weight = 1 }
+    { server = "192.168.1.104:8080", weight = 1 },
 ]
