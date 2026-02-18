@@ -16,6 +16,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - HTTP redirect handling
 - Custom error pages
 
+## Development Rules
+
+### Important Workflow Guidelines
+
+1. **Always use Clippy for lint checks**: Before committing or finalizing any code changes, run `make lint` or `cargo clippy` to catch common mistakes and improve code quality.
+
+2. **Format code after implementing features**: Every time you finish implementing a feature or making significant code changes, run `make fix` or `cargo fix --allow-dirty --all-features && cargo fmt` to automatically fix lint issues and format the code.
+
+3. **Verify changes with tests**: Run `make test` or `cargo test` to ensure your changes don't break existing functionality.
+
 ## Build, Lint, and Test Commands
 
 ### Build

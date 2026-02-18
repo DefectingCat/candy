@@ -56,7 +56,7 @@ pub fn init_logger(log_level: &str, log_folder: &str) -> anyhow::Result<WorkerGu
                     .with(console_layer)
                     .with(file_layer);
 
-                if let Err(_) = tracing::subscriber::set_global_default(collector) {
+                if tracing::subscriber::set_global_default(collector).is_err() {
                     Ok(create_dummy_guard())
                 } else {
                     Ok(guard)
@@ -68,11 +68,8 @@ pub fn init_logger(log_level: &str, log_folder: &str) -> anyhow::Result<WorkerGu
                     .with(env_layer)
                     .with(console_layer);
 
-                if let Err(_) = tracing::subscriber::set_global_default(collector) {
-                    Ok(create_dummy_guard())
-                } else {
-                    Ok(create_dummy_guard())
-                }
+                let _ = tracing::subscriber::set_global_default(collector);
+                Ok(create_dummy_guard())
             }
         }
     } else {
@@ -81,11 +78,8 @@ pub fn init_logger(log_level: &str, log_folder: &str) -> anyhow::Result<WorkerGu
             .with(env_layer)
             .with(console_layer);
 
-        if let Err(_) = tracing::subscriber::set_global_default(collector) {
-            Ok(create_dummy_guard())
-        } else {
-            Ok(create_dummy_guard())
-        }
+        let _ = tracing::subscriber::set_global_default(collector);
+        Ok(create_dummy_guard())
     }
 }
 
