@@ -164,3 +164,23 @@ server = [
     { server = "192.168.1.104:8080", weight = 1 }
 ]
 
+# Example 9: Load balancing with Least Connections (least conn) algorithm
+[[host]]
+ip = "0.0.0.0"
+port = 8086
+server_name = "leastconn.example.com"
+
+[[host.route]]
+location = "/api"
+upstream = "leastconn_servers" # Reference to upstream server group with least connections
+proxy_timeout = 30          # Proxy timeout in seconds (default: 5)
+max_body_size = 1048576     # 1MB max body size
+
+[[upstream]]
+name = "leastconn_servers"
+method = "least_conn"       # Use least connections load balancing algorithm
+server = [
+    { server = "192.168.1.105:8080", weight = 1 },  # Server 1: weight 1
+    { server = "192.168.1.106:8080", weight = 2 },  # Server 2: weight 2 (handles more connections)
+    { server = "192.168.1.107:8080", weight = 1 }   # Server 3: weight 1
+]

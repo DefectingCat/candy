@@ -53,7 +53,7 @@
         "method": {
           "description": "Load balancing algorithm type",
           "type": "string",
-          "enum": ["roundrobin", "weightedroundrobin", "iphash"],
+          "enum": ["roundrobin", "weightedroundrobin", "iphash", "leastconn"],
           "default": "weightedroundrobin"
         }
       },

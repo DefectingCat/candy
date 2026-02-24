@@ -270,6 +270,16 @@ error_page = { status = 404, page = "/404.html" }
    make test  # 或 cargo test
    ```
 
+5. **配置文件示例**：每次新增功能时，如果需要配置文件支持，则必须在 examples/config.example_full.toml 文件中添加相应的 example 配置，同时更新 config.schema.json 文件以提供验证支持。
+
+   ```bash
+   # 查看 examples/config.example_full.toml 中的示例配置
+   cat examples/config.example_full.toml
+   
+   # 查看 config.schema.json 中的验证规则
+   cat config.schema.json
+   ```
+
 ### 函数注释要求
 
 所有 Rust 函数必须遵循以下注释格式：
@@ -398,4 +408,3 @@ make release
 ## 许可证
 
 MIT 许可证 - 详见 LICENSE 文件
-

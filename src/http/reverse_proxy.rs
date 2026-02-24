@@ -34,6 +34,12 @@ static LEAST_CONN_COUNTERS: LazyLock<DashMap<String, DashMap<usize, AtomicUsize>
 static CLIENT: OnceLock<Client> = OnceLock::new();
 
 /// 获取全局 reqwest 客户端实例
+///
+/// 该函数使用 OnceLock 确保客户端只初始化一次，提供一个静态引用以实现连接池复用。
+///
+/// # 返回值
+///
+/// 返回静态的 reqwest 客户端引用，用于发送 HTTP 请求
 fn get_client() -> &'static Client {
     CLIENT.get_or_init(|| {
         Client::builder()
@@ -346,6 +352,19 @@ pub async fn serve(
 }
 
 /// 包装响应体，在响应完成后自动减少连接计数
+///
+/// 该函数用于处理最少连接数负载均衡算法的连接计数管理。它会读取整个响应体，
+/// 确保在响应处理完成后正确减少服务器的连接计数。
+///
+/// # 参数
+///
+/// * `response` - 要包装的原始响应
+/// * `upstream_name` - 上游服务器组名称
+/// * `server_index` - 服务器在 upstream 中的索引
+///
+/// # 返回值
+///
+/// 返回包装后的响应，确保在响应完成后正确更新连接计数
 async fn wrap_response_body(
     response: Response<Body>,
     upstream_name: String,
@@ -386,8 +405,18 @@ async fn wrap_response_body(
     Response::from_parts(parts, Body::from(body_bytes))
 }
 
-/// 检查给定的头部是否应该在反向代理中被排除转发。
-/// 像 "host"、"connection" 等头部通常会被排除，以避免冲突或安全问题。
+/// 检查给定的头部是否应该在反向代理中被排除转发
+///
+/// 某些 HTTP 头部（如 "host"、"connection" 等）在代理过程中可能会导致冲突或安全问题，
+/// 因此需要被排除在转发的头部列表之外。
+///
+/// # 参数
+///
+/// * `name` - 要检查的 HTTP 头部名称
+///
+/// # 返回值
+///
+/// 如果头部应该被排除则返回 `true`，否则返回 `false`
 fn is_exclude_header(name: &HeaderName) -> bool {
     matches!(
         name.as_str(),
@@ -402,9 +431,18 @@ fn is_exclude_header(name: &HeaderName) -> bool {
     )
 }
 
-/// 将头部从一个 `HeaderMap` 复制到另一个，排除在 `is_exclude_header` 中指定的头部。
-/// 这确保只转发相关的头部，避免冲突或安全问题。
-/// 计算 IP 地址的哈希值，用于 IP 哈希负载均衡
+/// 计算 IP 地址的哈希值，用于 IP 哈希负载均衡算法
+///
+/// 该函数实现了一个简单但有效的字符串哈希算法，将 IP 地址字符串转换为哈希值，
+/// 用于在 IP 哈希负载均衡算法中选择服务器。
+///
+/// # 参数
+///
+/// * `ip` - 要计算哈希值的 IP 地址字符串（支持 IPv4 和 IPv6）
+///
+/// # 返回值
+///
+/// 返回 IP 地址的哈希值（使用 wrapping 运算防止溢出）
 fn ip_hash(ip: &str) -> usize {
     let mut hash: usize = 5381;
 
@@ -419,6 +457,15 @@ fn ip_hash(ip: &str) -> usize {
     hash
 }
 
+/// 将头部从一个 `HeaderMap` 复制到另一个，排除指定的头部
+///
+/// 该函数负责在代理请求和响应时复制 HTTP 头部，但会排除在 `is_exclude_header` 中
+/// 定义的头部，以避免冲突或安全问题。
+///
+/// # 参数
+///
+/// * `from` - 源头部映射
+/// * `to` - 目标头部映射
 fn copy_headers(from: &http::HeaderMap, to: &mut http::HeaderMap) {
     for (name, value) in from.iter() {
         if !is_exclude_header(name) {
@@ -621,4 +668,3 @@ mod tests {
         assert_eq!(selected_index, 2);
     }
 }
-
