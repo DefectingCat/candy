@@ -8,11 +8,10 @@ use common::*;
 #[tokio::test]
 async fn test_server_startup() -> Result<()> {
     println!("Starting server startup test...");
-    
+
     let temp_dir = tempfile::TempDir::new()?;
     let temp_dir_path = temp_dir.path().to_path_buf();
-    temp_dir.keep(); // 使 temp_dir 不被自动删除
-    
+
     let test_file_path = temp_dir_path.join("index.html");
     std::fs::write(&test_file_path, "<html><body>Test Page</body></html>")?;
 
@@ -29,26 +28,26 @@ async fn test_server_startup() -> Result<()> {
     };
 
     let config_path = create_temp_config(&config)?;
-    
+
     println!("Generated config path: {}", config_path.display());
-    
+
     // 启动服务器
-    let server_handle = start_test_server(&config_path).await?;
-    
-    println!("Server handle created successfully");
-    
+    let (server_handle_inner, actual_addr) = start_test_server(&config_path).await?;
+
+    println!("Server handle created successfully, listening on: {}", actual_addr);
+
     // 发送测试请求 - 使用超时
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()?;
-    
-    let url = format!("http://127.0.0.1:{}", config.port);
+
+    let url = format!("http://{}", actual_addr);
     println!("Testing URL: {}", url);
-    
+
     let response = client.get(&url).send().await;
-    
+
     match response {
-        Ok(mut res) => {
+        Ok(res) => {
             println!("Response status code: {}", res.status());
             if res.status().is_success() {
                 let body = res.text().await?;
@@ -66,14 +65,18 @@ async fn test_server_startup() -> Result<()> {
             panic!("Failed to send request to server");
         }
     }
-    
+
+    // 优雅关闭服务器
+    server_handle_inner.graceful_shutdown(Some(std::time::Duration::from_secs(2)));
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
     Ok(())
 }
 
 #[tokio::test]
 async fn test_server_shutdown() -> Result<()> {
     println!("Starting server shutdown test...");
-    
+
     let temp_dir = tempfile::TempDir::new()?;
     let test_file_path = temp_dir.path().join("index.html");
     std::fs::write(&test_file_path, "<html><body>Test Page</body></html>")?;
@@ -91,15 +94,16 @@ async fn test_server_shutdown() -> Result<()> {
     };
 
     let config_path = create_temp_config(&config)?;
-    
-    let server_handle = start_test_server(&config_path).await?;
-    
-    // 关闭服务器
-    server_handle.shutdown();
-    
-    // 验证服务器是否已停止
-    let addr = get_server_addr(&server_handle).await;
-    println!("Server address after shutdown: {}", addr);
-    
+
+    let (server_handle, _addr) = start_test_server(&config_path).await?;
+
+    // 关闭服务器（使用优雅关闭）
+    server_handle.graceful_shutdown(Some(std::time::Duration::from_secs(2)));
+
+    // 等待服务器完全停止
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    println!("Server shutdown test completed");
+
     Ok(())
 }

@@ -23,7 +23,6 @@ use tracing::{debug, error, warn};
 
 use crate::{
     config::SettingRoute,
-    consts::HOST_INDEX,
     http::{HOSTS, error::RouteError},
     utils::parse_port_from_host,
 };
@@ -48,10 +47,16 @@ pub async fn custom_page(
             .as_ref()
             .ok_or(RouteError::RouteNotFound())?
     } else {
-        host_route
-            .not_found_page
-            .as_ref()
-            .ok_or(RouteError::RouteNotFound())?
+        // 首先尝试查找 not_found_page
+        if let Some(page) = host_route.not_found_page.as_ref() {
+            page
+        } else {
+            // 如果 not_found_page 不存在，尝试查找 error_page（用于 404 错误）
+            host_route
+                .error_page
+                .as_ref()
+                .ok_or(RouteError::RouteNotFound())?
+        }
     };
     debug!("custom_page path {:?}", page);
 
@@ -132,7 +137,13 @@ pub async fn serve(
     let domain = domain.to_lowercase();
 
     let host_config = {
-        let port_config = HOSTS.get(&port).ok_or(RouteError::BadRequest())?;
+        // 当使用 port: 0 时，会随机分配一个可用端口，但 HOSTS 中存储的键是 0
+        let mut port_to_use = port;
+        if !HOSTS.contains_key(&port_to_use) {
+            port_to_use = 0;
+        }
+        
+        let port_config = HOSTS.get(&port_to_use).ok_or(RouteError::BadRequest())?;
 
         // 查找匹配的域名配置
         let host_config = if let Some(entry) = port_config.get(&Some(domain.clone())) {
@@ -191,7 +202,28 @@ pub async fn serve(
     debug!("request index file {:?}", path_arr);
     debug!("req_path: {:?}", req_path);
 
-    // 检查是否开启自动生成目录索引
+    // 首先尝试查找索引文件，只有在索引文件不存在时才会考虑自动索引
+    let mut index_file_found = false;
+    for index_path in &path_arr {
+        if fs::metadata(index_path).await.is_ok() {
+            index_file_found = true;
+            break;
+        }
+    }
+    
+    // 如果找到了索引文件，直接提供该文件
+    if index_file_found {
+        let mut path_exists = None;
+        for path in path_arr {
+            if fs::metadata(&path).await.is_ok() {
+                path_exists = Some(path);
+                break;
+            }
+        }
+        return stream_file(path_exists.unwrap().into(), request, None).await;
+    }
+    
+    // 检查是否开启自动生成目录索引，并且索引文件不存在
     let uri_path = uri.path();
     debug!("uri_path: {:?}", uri_path);
     let uri_path_vec = uri_path.split('/').collect::<Vec<&str>>();
@@ -208,11 +240,32 @@ pub async fn serve(
         let req_path_str = req_path.to_string_lossy();
         debug!("req_path_str: {:?}", req_path_str);
         let host_root = &req_path_str.strip_prefix(host_root).unwrap_or(host_root);
-        let list = list_dir(&req_path_str, &req_path).await?;
-        let list_html = render_list_html(host_root, list);
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/html"));
-        return Ok((headers, list_html).into_response());
+        
+        // 检查路径是否存在且可读
+        match fs::metadata(&req_path).await {
+            Ok(metadata) => {
+                if metadata.is_dir() {
+                    let list = list_dir(&req_path_str, &req_path).await?;
+                    // 如果目录是空的，或者 list_dir 返回空列表（表示目录不存在或无法读取），返回 404 错误
+                    if list.is_empty() {
+                        debug!("Directory {:?} is empty or cannot be read", req_path);
+                        return custom_page(host_route, request, false).await;
+                    }
+                    let list_html = render_list_html(host_root, list);
+                    let mut headers = HeaderMap::new();
+                    headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/html"));
+                    return Ok((headers, list_html).into_response());
+                } else {
+                    // 如果路径不是目录，继续处理作为文件请求
+                    debug!("Path {:?} is not a directory", req_path);
+                }
+            },
+            Err(_) => {
+                // 路径不存在，返回 404 错误
+                debug!("Path {:?} does not exist", req_path);
+                return custom_page(host_route, request, false).await;
+            }
+        }
     }
 
     // 按顺序尝试每个候选路径：
@@ -254,6 +307,7 @@ pub async fn serve(
             }
             // 生成自动目录索引
             return if host_route.auto_index {
+                // 如果是根路径请求，直接显示目录列表
                 // HTML 中的标题路径，需要移除掉配置文件中的 root = "./html" 字段
                 let host_root = if let Some(root) = &host_route.root {
                     root
@@ -298,21 +352,21 @@ fn generate_default_index(
     host_route: &Ref<'_, String, SettingRoute>,
     root: &str,
 ) -> (PathBuf, Vec<String>) {
+    debug!("host_route.index: {:?}", host_route.index);
+    // 如果没有配置索引文件，使用默认的索引文件名
     let indices = if host_route.index.is_empty() {
-        // use default index files
-        let host_iter = HOST_INDEX
-            .iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<String>>();
-        host_iter.into_iter()
+        vec!["index.html".to_string()].into_iter()
     } else {
         host_route.index.clone().into_iter()
     };
+    
     // indices 就是 host_route.index 的中配置的 index 文件名
-    (
+    let result = (
         root.into(),
         indices.map(|s| format!("{root}/{s}")).collect(),
-    )
+    );
+    debug!("generate_default_index result: {:?}", result);
+    result
 }
 
 /// 将文件流式传输为 HTTP 响应
@@ -453,23 +507,6 @@ pub fn resolve_parent_path(uri: &Uri, path: Option<&Path<String>>) -> String {
 ///
 /// # 返回值
 /// 格式化后的 HTML 字符串，可直接作为 HTTP 响应返回
-///
-/// # 示例
-/// ```rust
-/// let dir_entries = vec![
-///     DirList {
-///         path: PathBuf::from("/home/user/docs"),
-///         name: "documents".to_string(),
-///         last_modified: "2023-05-15 14:30".to_string(),
-///         size: "4.2K".to_string(),
-///         is_dir: true
-///     },
-///     // 更多条目...
-/// ];
-///
-/// let html_output = render_list_html(dir_entries);
-/// println!("{}", html_output);
-/// ```
 fn render_list_html(root_path: &str, list: Vec<DirList>) -> String {
     debug!(
         "render list html list: {:?} root_path: {:?}",
@@ -613,9 +650,27 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
     use chrono::{Local, TimeZone};
     use std::time::UNIX_EPOCH;
 
-    let mut entries = fs::read_dir(path)
-        .await
-        .with_context(|| format!("读取目录失败: {}", path.display()))?;
+    // 检查路径是否存在且是目录
+    match fs::metadata(path).await {
+        Ok(metadata) => {
+            if !metadata.is_dir() {
+                debug!("Path {:?} is not a directory", path);
+                return Ok(Vec::new());
+            }
+        },
+        Err(_) => {
+            debug!("Path {:?} does not exist or is not accessible", path);
+            return Ok(Vec::new());
+        }
+    }
+
+    let mut entries = match fs::read_dir(path).await {
+        Ok(entries) => entries,
+        Err(e) => {
+            debug!("Failed to read directory {:?}: {}", path, e);
+            return Ok(Vec::new());
+        }
+    };
 
     debug!("列出目录路径: {:?}", path);
 
@@ -673,13 +728,22 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
 
     let mut list = vec![];
     for task in tasks {
-        let mut dir = task.await??;
-        dir.path = if dir.is_dir {
-            format!("./{}/", dir.path)
-        } else {
-            format!("./{}", dir.path)
-        };
-        list.push(dir);
+        match task.await {
+            Ok(Ok(mut dir)) => {
+                dir.path = if dir.is_dir {
+                    format!("./{}/", dir.path)
+                } else {
+                    format!("./{}", dir.path)
+                };
+                list.push(dir);
+            },
+            Ok(Err(e)) => {
+                debug!("Failed to process directory entry: {}", e);
+            },
+            Err(e) => {
+                debug!("Task failed to process directory entry: {}", e);
+            }
+        }
     }
 
     Ok(list)

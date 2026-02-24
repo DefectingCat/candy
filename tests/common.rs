@@ -43,7 +43,7 @@ impl Default for TestServerConfig {
     fn default() -> Self {
         Self {
             ip: "127.0.0.1".to_string(),
-            port: 59999, // 使用固定测试端口
+            port: 0, // 使用随机可用端口
             ssl: false,
             routes: Vec::new(),
             error_pages: Vec::new(),
@@ -113,7 +113,7 @@ pub fn create_temp_config(config: &TestServerConfig) -> Result<PathBuf> {
 }
 
 /// 启动测试服务器
-pub async fn start_test_server(config_path: &PathBuf) -> Result<axum_server::Handle<SocketAddr>> {
+pub async fn start_test_server(config_path: &PathBuf) -> Result<(axum_server::Handle<SocketAddr>, SocketAddr)> {
     let _ = logging::init_logger("debug", "/dev/null").expect("Failed to init logger");
 
     let settings = Settings::new(config_path.to_str().expect("Invalid path")).expect("Failed to load config");
@@ -122,7 +122,22 @@ pub async fn start_test_server(config_path: &PathBuf) -> Result<axum_server::Han
         .await
         .expect("Failed to create server");
 
-    Ok(server_handle)
+    // 等待服务器开始监听（最多等待 1 秒）
+    let max_wait_time = std::time::Duration::from_secs(1);
+    let _start_time = std::time::Instant::now();
+    
+    // 使用超时 future 来等待服务器开始监听
+    let listen_future = server_handle.listening();
+    let timeout_future = tokio::time::sleep(max_wait_time);
+    
+    tokio::select! {
+        addr = listen_future => {
+            Ok((server_handle, addr.expect("Server failed to report listening address")))
+        },
+        _ = timeout_future => {
+            Err(anyhow::anyhow!("Server failed to start listening within {}ms", max_wait_time.as_millis()))
+        }
+    }
 }
 
 /// 获取服务器实际监听地址
