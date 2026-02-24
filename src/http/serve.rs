@@ -117,6 +117,8 @@ pub async fn serve(
         .get("host") // 注意：host 是小写的
         .and_then(|h| h.to_str().ok())
         .unwrap_or_default();
+        
+    debug!("Host header: {}", host);
 
     // parent_path is key in route map
     // which is `host_route.location`
