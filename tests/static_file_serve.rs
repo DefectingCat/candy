@@ -29,9 +29,7 @@ async fn test_static_file_serving() -> Result<()> {
     };
 
     let config_path = create_temp_config(&config)?;
-    let server_handle = start_test_server(&config_path).await?;
-
-    let server_addr = get_server_addr(&server_handle).await;
+    let (_server_handle, server_addr) = start_test_server(&config_path).await?;
 
     // 发送请求到服务器
     let response = send_test_request(server_addr, "/").await?;
@@ -65,8 +63,7 @@ async fn test_directory_listing() -> Result<()> {
     };
 
     let config_path = create_temp_config(&config)?;
-    let server_handle = start_test_server(&config_path).await?;
-    let server_addr = get_server_addr(&server_handle).await;
+    let (_server_handle, server_addr) = start_test_server(&config_path).await?;
 
     let response = send_test_request(server_addr, "/").await?;
 
@@ -95,8 +92,7 @@ async fn test_file_not_found() -> Result<()> {
     };
 
     let config_path = create_temp_config(&config)?;
-    let server_handle = start_test_server(&config_path).await?;
-    let server_addr = get_server_addr(&server_handle).await;
+    let (_server_handle, server_addr) = start_test_server(&config_path).await?;
 
     let response = send_test_request(server_addr, "/nonexistent").await?;
 
@@ -128,8 +124,7 @@ async fn test_custom_error_page() -> Result<()> {
     };
 
     let config_path = create_temp_config(&config)?;
-    let server_handle = start_test_server(&config_path).await?;
-    let server_addr = get_server_addr(&server_handle).await;
+    let (_server_handle, server_addr) = start_test_server(&config_path).await?;
 
     let response = send_test_request(server_addr, "/nonexistent").await?;
 

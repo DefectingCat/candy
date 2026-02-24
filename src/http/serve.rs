@@ -122,7 +122,7 @@ pub async fn serve(
         .get("host") // 注意：host 是小写的
         .and_then(|h| h.to_str().ok())
         .unwrap_or_default();
-        
+
     debug!("Host header: {}", host);
 
     // parent_path is key in route map
@@ -142,7 +142,7 @@ pub async fn serve(
         if !HOSTS.contains_key(&port_to_use) {
             port_to_use = 0;
         }
-        
+
         let port_config = HOSTS.get(&port_to_use).ok_or(RouteError::BadRequest())?;
 
         // 查找匹配的域名配置
@@ -210,7 +210,7 @@ pub async fn serve(
             break;
         }
     }
-    
+
     // 如果找到了索引文件，直接提供该文件
     if index_file_found {
         let mut path_exists = None;
@@ -222,7 +222,7 @@ pub async fn serve(
         }
         return stream_file(path_exists.unwrap().into(), request, None).await;
     }
-    
+
     // 检查是否开启自动生成目录索引，并且索引文件不存在
     let uri_path = uri.path();
     debug!("uri_path: {:?}", uri_path);
@@ -240,7 +240,7 @@ pub async fn serve(
         let req_path_str = req_path.to_string_lossy();
         debug!("req_path_str: {:?}", req_path_str);
         let host_root = &req_path_str.strip_prefix(host_root).unwrap_or(host_root);
-        
+
         // 检查路径是否存在且可读
         match fs::metadata(&req_path).await {
             Ok(metadata) => {
@@ -259,7 +259,7 @@ pub async fn serve(
                     // 如果路径不是目录，继续处理作为文件请求
                     debug!("Path {:?} is not a directory", req_path);
                 }
-            },
+            }
             Err(_) => {
                 // 路径不存在，返回 404 错误
                 debug!("Path {:?} does not exist", req_path);
@@ -359,7 +359,7 @@ fn generate_default_index(
     } else {
         host_route.index.clone().into_iter()
     };
-    
+
     // indices 就是 host_route.index 的中配置的 index 文件名
     let result = (
         root.into(),
@@ -657,7 +657,7 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
                 debug!("Path {:?} is not a directory", path);
                 return Ok(Vec::new());
             }
-        },
+        }
         Err(_) => {
             debug!("Path {:?} does not exist or is not accessible", path);
             return Ok(Vec::new());
@@ -736,10 +736,10 @@ async fn list_dir(host_root_str: &str, path: &PathBuf) -> anyhow::Result<Vec<Dir
                     format!("./{}", dir.path)
                 };
                 list.push(dir);
-            },
+            }
             Ok(Err(e)) => {
                 debug!("Failed to process directory entry: {}", e);
-            },
+            }
             Err(e) => {
                 debug!("Task failed to process directory entry: {}", e);
             }

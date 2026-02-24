@@ -8,7 +8,7 @@ use common::*;
 #[tokio::test]
 async fn test_simple_startup() -> Result<()> {
     println!("Starting simple server startup test...");
-    
+
     let temp_dir = tempfile::TempDir::new()?;
     let test_file_path = temp_dir.path().join("index.html");
     std::fs::write(&test_file_path, "<html><body>Test Page</body></html>")?;
@@ -26,12 +26,12 @@ async fn test_simple_startup() -> Result<()> {
     };
 
     let config_path = create_temp_config(&config)?;
-    
+
     println!("Generated config path: {}", config_path.display());
-    
-    let server_handle = start_test_server(&config_path).await?;
-    
+
+    let _server_handle = start_test_server(&config_path).await?;
+
     println!("Server handle created successfully");
-    
+
     Ok(())
 }

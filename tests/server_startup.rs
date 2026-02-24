@@ -34,7 +34,10 @@ async fn test_server_startup() -> Result<()> {
     // 启动服务器
     let (server_handle_inner, actual_addr) = start_test_server(&config_path).await?;
 
-    println!("Server handle created successfully, listening on: {}", actual_addr);
+    println!(
+        "Server handle created successfully, listening on: {}",
+        actual_addr
+    );
 
     // 发送测试请求 - 使用超时
     let client = reqwest::Client::builder()

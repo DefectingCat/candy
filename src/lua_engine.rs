@@ -15,6 +15,12 @@ pub struct LuaEngine {
     pub shared_table: Arc<DashMap<String, String>>,
 }
 
+impl Default for LuaEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LuaEngine {
     /// 创建新的 Lua 引擎实例
     ///

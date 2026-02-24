@@ -1,11 +1,12 @@
 //! 集成测试的公共辅助函数和工具
 
+#![allow(dead_code)] // 允许未使用的函数，这些是测试辅助函数
+
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use anyhow::Result;
 use tempfile::TempDir;
-
 
 use candy::config::Settings;
 use candy::http;
@@ -113,23 +114,27 @@ pub fn create_temp_config(config: &TestServerConfig) -> Result<PathBuf> {
 }
 
 /// 启动测试服务器
-pub async fn start_test_server(config_path: &PathBuf) -> Result<(axum_server::Handle<SocketAddr>, SocketAddr)> {
+pub async fn start_test_server(
+    config_path: &PathBuf,
+) -> Result<(axum_server::Handle<SocketAddr>, SocketAddr)> {
     let _ = logging::init_logger("debug", "/dev/null").expect("Failed to init logger");
 
-    let settings = Settings::new(config_path.to_str().expect("Invalid path")).expect("Failed to load config");
+    let settings =
+        Settings::new(config_path.to_str().expect("Invalid path")).expect("Failed to load config");
 
-    let server_handle = http::make_server(settings.host.into_iter().next().expect("No host config"))
-        .await
-        .expect("Failed to create server");
+    let server_handle =
+        http::make_server(settings.host.into_iter().next().expect("No host config"))
+            .await
+            .expect("Failed to create server");
 
     // 等待服务器开始监听（最多等待 1 秒）
     let max_wait_time = std::time::Duration::from_secs(1);
     let _start_time = std::time::Instant::now();
-    
+
     // 使用超时 future 来等待服务器开始监听
     let listen_future = server_handle.listening();
     let timeout_future = tokio::time::sleep(max_wait_time);
-    
+
     tokio::select! {
         addr = listen_future => {
             Ok((server_handle, addr.expect("Server failed to report listening address")))
