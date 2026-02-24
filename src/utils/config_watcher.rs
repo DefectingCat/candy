@@ -38,7 +38,7 @@ impl Default for ConfigWatcherConfig {
     }
 }
 
-/// 启动配置文件监听（简化版本，保持向后兼容）
+/// 启动配置文件监听（使用默认配置）
 ///
 /// # 参数
 ///
@@ -50,10 +50,7 @@ impl Default for ConfigWatcherConfig {
 /// 返回一个发送器，用于发送停止信号
 pub fn start_config_watcher(
     config_path: impl AsRef<Path>,
-    callback: impl Fn(Result<Settings>) -> futures::future::BoxFuture<'static, ()>
-    + Send
-    + Sync
-    + 'static,
+    callback: impl Fn(Result<Settings>) -> futures::future::BoxFuture<'static, ()> + Send + Sync + 'static,
 ) -> Result<oneshot::Sender<()>, notify::Error> {
     start_config_watcher_with_config(config_path, callback, None)
 }
@@ -64,17 +61,14 @@ pub fn start_config_watcher(
 ///
 /// * `config_path` - 配置文件路径
 /// * `callback` - 配置文件变化时的回调函数，参数为重新读取后的配置
-/// * `config` - 监听器配置参数（可选，使用默认值）
+/// * `watcher_config` - 监听器配置参数（可选，使用默认值）
 ///
 /// # 返回值
 ///
 /// 返回一个发送器，用于发送停止信号
 pub fn start_config_watcher_with_config(
     config_path: impl AsRef<Path>,
-    callback: impl Fn(Result<Settings>) -> futures::future::BoxFuture<'static, ()>
-    + Send
-    + Sync
-    + 'static,
+    callback: impl Fn(Result<Settings>) -> futures::future::BoxFuture<'static, ()> + Send + Sync + 'static,
     watcher_config: Option<ConfigWatcherConfig>,
 ) -> Result<oneshot::Sender<()>, notify::Error> {
     let (stop_tx, stop_rx) = oneshot::channel();
@@ -92,26 +86,35 @@ pub fn start_config_watcher_with_config(
 }
 
 /// 内部执行监听器逻辑的函数
+///
+/// # 参数
+///
+/// * `config_path` - 配置文件路径
+/// * `callback` - 配置文件变化时的回调函数，参数为重新读取后的配置
+/// * `config` - 监听器配置参数
+/// * `stop_rx` - 停止信号接收端
+///
+/// # 返回值
+///
+/// 返回操作结果，成功或包含错误信息
 async fn run_watcher(
     config_path: std::path::PathBuf,
     callback: std::sync::Arc<ConfigChangeCallback>,
     config: ConfigWatcherConfig,
     mut stop_rx: oneshot::Receiver<()>,
 ) -> Result<(), notify::Error> {
-    let (tx, mut rx) = mpsc::channel(10); // 使用 tokio 异步 channel
+    let (event_tx, mut event_rx) = mpsc::channel(10);
     let watcher = std::sync::Arc::new(std::sync::Mutex::new(Box::new(notify::recommended_watcher(
         move |res| {
-            // 将 notify 的同步回调转换为异步发送
-            let _ = tx.try_send(res);
+            let _ = event_tx.try_send(res);
         },
     )?) as Box<dyn Watcher + Send>));
 
-    // 初始 watch
     watcher
         .lock()
         .map_err(|e| {
-            error!("Failed to lock watcher mutex: {:?}", e);
             let msg = format!("Failed to lock watcher mutex: {:?}", e);
+            error!("{}", msg);
             notify::Error::generic(&msg)
         })?
         .watch(&config_path, RecursiveMode::NonRecursive)?;
@@ -121,79 +124,36 @@ async fn run_watcher(
     let mut last_event_time = Instant::now();
     let debounce_duration = Duration::from_millis(config.debounce_ms);
     let poll_timeout = Duration::from_secs(config.poll_timeout_secs);
-    // 是否正在处理事件的标志（使用原子操作确保线程安全）
     let is_processing = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     loop {
         tokio::select! {
-            // 检查停止信号
             _ = &mut stop_rx => {
                 info!("Stopping config watcher");
                 break;
             }
 
-            // 等待事件（使用异步 channel，无需 spawn_blocking）
-            result = rx.recv() => {
-                match result {
-                    Some(event_result) => {
-                        match event_result {
-                            Ok(event) => {
-                                if is_relevant_event(&event.kind) {
-                                    let now = Instant::now();
-                                    let is_processing_flag = is_processing.load(std::sync::atomic::Ordering::Relaxed);
-
-                                    if now.duration_since(last_event_time) > debounce_duration && !is_processing_flag {
-                                        info!("Config file event: {:?}", event);
-                                        is_processing.store(true, std::sync::atomic::Ordering::Relaxed);
-                                        last_event_time = now;
-
-                                        // 处理配置变更（使用 async block 允许继续接收其他事件，但标记为正在处理）
-                                        let config_path_clone = config_path.clone();
-                                        let watcher_clone = watcher.clone();
-                                        let callback_clone = callback.clone();
-                                        let config_clone = config.clone();
-                                        let event_kind_clone = event.kind;
-                                        let is_processing_clone = is_processing.clone();
-                                        let debounce_duration_clone = debounce_duration;
-
-                                        tokio::spawn(async move {
-                                            handle_config_change(
-                                                &config_path_clone,
-                                                watcher_clone,
-                                                callback_clone,
-                                                &config_clone,
-                                                event_kind_clone
-                                            ).await;
-
-                                            // 防抖期间忽略其他事件
-                                            time::sleep(debounce_duration_clone).await;
-                                            is_processing_clone.store(false, std::sync::atomic::Ordering::Relaxed);
-                                        });
-                                    } else {
-                                        debug!("Ignoring duplicate event within debounce window");
-                                    }
-                                }
-                            },
-                            Err(e) => error!("Watch error: {:?}", e),
-                        }
-                    },
-                    None => {
-                        error!("Watcher channel disconnected");
-                        break;
-                    },
+            result = event_rx.recv() => {
+                if let Err(e) = process_event(
+                    result,
+                    &is_processing,
+                    &mut last_event_time,
+                    debounce_duration,
+                    &config_path,
+                    &watcher,
+                    &callback,
+                    &config,
+                ).await {
+                    error!("Event processing failed: {:?}", e);
                 }
             }
 
-            // 超时检查，防止完全阻塞
             _ = time::sleep(poll_timeout) => continue,
         }
     }
 
-    // 停止 watch
     if let Ok(mut w) = watcher.lock() {
-        if let Err(e) = w.unwatch(&config_path) {
-            error!("Failed to unwatch config file: {:?}", e);
-        }
+        let _ = w.unwatch(&config_path);
     } else {
         error!("Failed to lock watcher mutex for unwatch");
     }
@@ -201,18 +161,110 @@ async fn run_watcher(
     Ok(())
 }
 
+/// 处理单个配置文件事件
+///
+/// # 参数
+///
+/// * `result` - 通知库返回的事件结果（可能包含错误）
+/// * `is_processing` - 是否正在处理事件的原子标志
+/// * `last_event_time` - 上一次处理事件的时间戳
+/// * `debounce_duration` - 防抖时间间隔
+/// * `config_path` - 配置文件路径
+/// * `watcher` - 配置文件监听器实例
+/// * `callback` - 配置变化时的回调函数
+/// * `config` - 监听器配置参数
+///
+/// # 返回值
+///
+/// 返回操作结果，成功或包含错误信息
+async fn process_event(
+    result: Option<std::result::Result<notify::Event, notify::Error>>,
+    is_processing: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+    last_event_time: &mut Instant,
+    debounce_duration: Duration,
+    config_path: &std::path::Path,
+    watcher: &std::sync::Arc<std::sync::Mutex<Box<dyn Watcher + Send>>>,
+    callback: &std::sync::Arc<ConfigChangeCallback>,
+    config: &ConfigWatcherConfig,
+) -> Result<(), notify::Error> {
+    match result {
+        Some(event_result) => {
+            match event_result {
+                Ok(event) => {
+                    if is_relevant_event(&event.kind) {
+                        let now = Instant::now();
+                        let processing_flag = is_processing.load(std::sync::atomic::Ordering::Relaxed);
+
+                        if now.duration_since(*last_event_time) > debounce_duration && !processing_flag {
+                            info!("Config file event: {:?}", event);
+                            is_processing.store(true, std::sync::atomic::Ordering::Relaxed);
+                            *last_event_time = now;
+
+                            let config_path_clone = config_path.to_path_buf();
+                            let watcher_clone = watcher.clone();
+                            let callback_clone = callback.clone();
+                            let config_clone = config.clone();
+                            let event_kind_clone = event.kind;
+                            let is_processing_clone = is_processing.clone();
+                            let debounce_duration_clone = debounce_duration;
+
+                            tokio::spawn(async move {
+                                handle_config_change(
+                                    &config_path_clone,
+                                    watcher_clone,
+                                    callback_clone,
+                                    &config_clone,
+                                    event_kind_clone,
+                                ).await;
+
+                                time::sleep(debounce_duration_clone).await;
+                                is_processing_clone.store(false, std::sync::atomic::Ordering::Relaxed);
+                            });
+                        } else {
+                            debug!("Ignoring duplicate event within debounce window");
+                        }
+                    }
+                }
+                Err(e) => error!("Watch error: {:?}", e),
+            }
+        }
+        None => {
+            error!("Watcher channel disconnected");
+            return Err(notify::Error::generic("Watcher channel disconnected"));
+        }
+    }
+
+    Ok(())
+}
+
 /// 判断事件是否与配置文件变更相关
+///
+/// # 参数
+///
+/// * `kind` - 通知库返回的事件类型
+///
+/// # 返回值
+///
+/// 返回事件是否与配置文件变更相关
 fn is_relevant_event(kind: &EventKind) -> bool {
     matches!(
         kind,
-        EventKind::Modify(notify::event::ModifyKind::Data(_)) // 文件内容变更
-        | EventKind::Modify(notify::event::ModifyKind::Name(_)) // 文件重命名
-        | EventKind::Remove(_) // 文件删除
-        | EventKind::Create(_) // 文件创建
+        EventKind::Modify(notify::event::ModifyKind::Data(_))
+        | EventKind::Modify(notify::event::ModifyKind::Name(_))
+        | EventKind::Remove(_)
+        | EventKind::Create(_)
     )
 }
 
 /// 判断是否需要重新 watch 文件
+///
+/// # 参数
+///
+/// * `kind` - 通知库返回的事件类型
+///
+/// # 返回值
+///
+/// 返回是否需要重新 watch 文件
 fn needs_re_watch(kind: EventKind) -> bool {
     matches!(
         kind,
@@ -221,6 +273,14 @@ fn needs_re_watch(kind: EventKind) -> bool {
 }
 
 /// 处理配置文件变更
+///
+/// # 参数
+///
+/// * `config_path` - 配置文件路径
+/// * `watcher` - 配置文件监听器实例
+/// * `callback` - 配置变化时的回调函数
+/// * `config` - 监听器配置参数
+/// * `event_kind` - 触发配置变更的事件类型
 async fn handle_config_change(
     config_path: &std::path::Path,
     watcher: std::sync::Arc<std::sync::Mutex<Box<dyn Watcher + Send>>>,
@@ -228,68 +288,73 @@ async fn handle_config_change(
     config: &ConfigWatcherConfig,
     event_kind: EventKind,
 ) {
-    let needs_re_watch = needs_re_watch(event_kind);
+    let needs_re_watch_flag = needs_re_watch(event_kind);
 
-    // 对于文件重命名/覆盖事件，先等待一小段时间确保文件写入完成
-    if needs_re_watch {
+    if needs_re_watch_flag {
         time::sleep(Duration::from_millis(config.rewatch_delay_ms)).await;
     }
 
-    // 重新读取配置文件，添加重试机制
-    let result = match config_path.to_str() {
-        Some(config_str) => {
-            retry_with_delay(
-                config.max_retries,
-                Duration::from_millis(config.retry_delay_ms),
-                || Settings::new(config_str),
-            )
-            .await
-        }
+    let config_result = match config_path.to_str() {
+        Some(config_str) => retry_operation(
+            config.max_retries,
+            Duration::from_millis(config.retry_delay_ms),
+            || Settings::new(config_str),
+        )
+        .await,
         None => Err(crate::error::Error::Any(anyhow::anyhow!(
             "Config path is not valid UTF-8"
         ))),
     };
 
-    // 如果需要重新 watch 文件，使用统一的重试逻辑
-    if needs_re_watch {
-        let watcher = watcher.clone();
-        let config_path = config_path.to_path_buf();
-        let config = config.clone();
+    if needs_re_watch_flag {
+        let watcher_clone = watcher.clone();
+        let config_path_clone = config_path.to_path_buf();
+        let config_clone = config.clone();
 
         if let Err(e) = tokio::task::spawn_blocking(move || {
-            let result = retry_with_delay_sync(
-                config.max_retries,
-                std::time::Duration::from_millis(config.retry_delay_ms),
+            retry_sync_operation(
+                config_clone.max_retries,
+                std::time::Duration::from_millis(config_clone.retry_delay_ms),
                 || {
-                    let mut w = watcher.lock().map_err(|e| {
+                    let mut w = watcher_clone.lock().map_err(|e| {
                         let msg = format!("Failed to lock watcher mutex: {:?}", e);
                         notify::Error::generic(&msg)
                     })?;
 
-                    // 先尝试 unwatch（忽略错误，可能文件已经不存在）
-                    let _ = w.unwatch(&config_path);
-
-                    // 重新 watch
-                    w.watch(&config_path, RecursiveMode::NonRecursive)
+                    let _ = w.unwatch(&config_path_clone);
+                    w.watch(&config_path_clone, RecursiveMode::NonRecursive)
                 },
-            );
-
-            match result {
-                Ok(_) => info!("Re-watching config file: {:?}", config_path),
-                Err(e) => error!("Failed to re-watch config file: {:?}", e),
-            }
+            )
         })
         .await
         {
             error!("Failed to join re-watch task: {:?}", e);
+        } else {
+            info!("Re-watching config file: {:?}", config_path);
         }
     }
 
-    callback(result).await;
+    callback(config_result).await;
 }
 
-/// 异步重试函数
-async fn retry_with_delay<T, E, F>(
+/// 异步重试操作
+///
+/// # 参数
+///
+/// * `max_retries` - 最大重试次数
+/// * `delay` - 重试间隔
+/// * `operation` - 需要重试的操作
+///
+/// # 类型参数
+///
+/// * `T` - 操作成功时返回的类型
+/// * `E` - 操作失败时返回的错误类型
+/// * `F` - 操作函数类型，返回 Result<T, E>
+///
+/// # 返回值
+///
+/// 返回操作结果，成功或包含错误信息
+async fn retry_operation<T, E, F>(
     max_retries: usize,
     delay: Duration,
     mut operation: F,
@@ -313,8 +378,24 @@ where
     }
 }
 
-/// 同步重试函数（用于阻塞场景）
-fn retry_with_delay_sync<T, E, F>(
+/// 同步重试操作
+///
+/// # 参数
+///
+/// * `max_retries` - 最大重试次数
+/// * `delay` - 重试间隔
+/// * `operation` - 需要重试的操作
+///
+/// # 类型参数
+///
+/// * `T` - 操作成功时返回的类型
+/// * `E` - 操作失败时返回的错误类型
+/// * `F` - 操作函数类型，返回 Result<T, E>
+///
+/// # 返回值
+///
+/// 返回操作结果，成功或包含错误信息
+fn retry_sync_operation<T, E, F>(
     max_retries: usize,
     delay: std::time::Duration,
     mut operation: F,
@@ -344,8 +425,7 @@ mod tests {
     use notify::EventKind;
 
     #[test]
-    fn test_is_relevant_event() {
-        // 测试相关事件
+    fn test_relevant_events() {
         assert!(is_relevant_event(&EventKind::Modify(
             notify::event::ModifyKind::Data(notify::event::DataChange::Content)
         )));
@@ -359,7 +439,6 @@ mod tests {
             notify::event::CreateKind::File
         )));
 
-        // 测试不相关事件
         assert!(!is_relevant_event(&EventKind::Access(
             notify::event::AccessKind::Close(notify::event::AccessMode::Write)
         )));
@@ -367,8 +446,7 @@ mod tests {
     }
 
     #[test]
-    fn test_needs_re_watch() {
-        // 测试需要重新 watch 的事件
+    fn test_needs_re_watch_events() {
         assert!(needs_re_watch(EventKind::Remove(
             notify::event::RemoveKind::File
         )));
@@ -376,7 +454,6 @@ mod tests {
             notify::event::ModifyKind::Name(notify::event::RenameMode::To)
         )));
 
-        // 测试不需要重新 watch 的事件
         assert!(!needs_re_watch(EventKind::Modify(
             notify::event::ModifyKind::Data(notify::event::DataChange::Content)
         )));
@@ -387,8 +464,7 @@ mod tests {
     }
 
     #[test]
-    fn test_default_config() {
-        // 测试默认配置
+    fn test_default_watcher_config() {
         let default_config = ConfigWatcherConfig::default();
         assert_eq!(default_config.debounce_ms, 500);
         assert_eq!(default_config.rewatch_delay_ms, 800);

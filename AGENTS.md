@@ -7,6 +7,7 @@
 ## 核心功能
 
 ### 主要特性
+
 - 静态文件服务，支持目录列表
 - 反向代理，支持负载均衡
 - Lua 脚本支持（可选功能）
@@ -18,6 +19,7 @@
 - 自定义错误页面
 
 ### 技术栈
+
 - **Web 框架**: Axum（异步、高性能）
 - **服务器**: Axum Server（HTTP/1.1 + HTTP/2）
 - **异步运行时**: Tokio
@@ -213,16 +215,19 @@ error_page = { status = 404, page = "/404.html" }
 ### 开发规则
 
 1. **代码检查**：使用 Clippy 进行 lint 检查
+
    ```bash
    make lint  # 或 cargo clippy
    ```
 
 2. **代码格式化**：使用 rustfmt 格式化代码
+
    ```bash
    make format  # 或 cargo fmt
    ```
 
 3. **自动修复**：自动修复 lint 问题并格式化
+
    ```bash
    make fix
    ```
@@ -231,6 +236,62 @@ error_page = { status = 404, page = "/404.html" }
    ```bash
    make test  # 或 cargo test
    ```
+
+### 函数注释要求
+
+所有 Rust 函数必须遵循以下注释格式：
+
+```rust
+/// 函数功能描述
+///
+/// # 参数
+///
+/// * `parameter1` - 参数1的详细描述
+/// * `parameter2` - 参数2的详细描述
+///
+/// # 类型参数（对于泛型函数）
+///
+/// * `T` - 类型参数T的详细描述
+/// * `E` - 类型参数E的详细描述
+///
+/// # 返回值
+///
+/// 详细描述返回值
+fn function_name() { ... }
+```
+
+**要求：**
+
+- 所有公共函数和内部重要函数必须有注释
+- 注释应清晰描述函数功能
+- 每个参数必须有详细说明
+- 对于泛型函数，必须解释类型参数
+- 返回值必须明确描述
+- 使用 Markdown 格式的 `# 参数`、`# 类型参数` 和 `# 返回值` 标题
+
+**示例：**
+
+```rust
+/// 处理单个配置文件事件
+///
+/// # 参数
+///
+/// * `result` - 通知库返回的事件结果（可能包含错误）
+/// * `is_processing` - 是否正在处理事件的原子标志
+/// * `last_event_time` - 上一次处理事件的时间戳
+/// * `debounce_duration` - 防抖时间间隔
+/// * `config_path` - 配置文件路径
+/// * `watcher` - 配置文件监听器实例
+/// * `callback` - 配置变化时的回调函数
+/// * `config` - 监听器配置参数
+///
+/// # 返回值
+///
+/// 返回操作结果，成功或包含错误信息
+async fn process_event(result: Option<std::result::Result<notify::Event, notify::Error>>, ...) -> Result<(), notify::Error> {
+    // 函数实现
+}
+```
 
 ### 调试
 
@@ -299,7 +360,7 @@ make release
 
 ## 联系方式
 
-项目维护者：[项目团队]
+项目维护者：rua.plus
 
 ## 许可证
 
