@@ -485,4 +485,3 @@ mod tests {
         assert_eq!(default_config.poll_timeout_secs, 1);
     }
 }
-

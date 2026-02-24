@@ -25,6 +25,11 @@ use crate::{http::serve::resolve_parent_path, utils::parse_port_from_host};
 static WEIGHTED_ROUND_ROBIN_COUNTERS: LazyLock<DashMap<String, AtomicUsize>> =
     LazyLock::new(DashMap::new);
 
+/// 服务器连接数计数器存储
+/// 用于跟踪每个 upstream 中每个服务器的当前连接数
+static LEAST_CONN_COUNTERS: LazyLock<DashMap<String, DashMap<usize, AtomicUsize>>> =
+    LazyLock::new(DashMap::new);
+
 /// 全局 reqwest 客户端实例，用于复用连接池，提高性能
 static CLIENT: OnceLock<Client> = OnceLock::new();
 
@@ -165,6 +170,51 @@ pub async fn serve(
                 let selected_index = hash % upstream.server.len();
                 &upstream.server[selected_index]
             }
+            LoadBalanceType::LeastConn => {
+                // 最少连接数算法
+                let counters = LEAST_CONN_COUNTERS
+                    .entry(upstream_name.clone())
+                    .or_default();
+
+                // 初始化服务器连接计数器（如果尚未初始化）
+                for i in 0..upstream.server.len() {
+                    counters.entry(i).or_insert_with(|| AtomicUsize::new(0));
+                }
+
+                // 找到连接数最少的服务器
+                let mut selected_index = 0;
+                let mut min_connections = usize::MAX;
+
+                for (i, server) in upstream.server.iter().enumerate() {
+                    let conn_count = counters
+                        .get(&i)
+                        .map(|v| v.load(Ordering::Relaxed))
+                        .unwrap_or(0);
+
+                    // 计算加权连接数（连接数 / 权重），用于公平比较
+                    let weighted_conn = conn_count as f64 / server.weight as f64;
+
+                    // 更新最小连接数和选中的服务器
+                    if weighted_conn < min_connections as f64 {
+                        min_connections = conn_count;
+                        selected_index = i;
+                    } else if weighted_conn == min_connections as f64 {
+                        // 如果连接数相同，则选择权重较大的服务器
+                        if server.weight > upstream.server[selected_index].weight {
+                            selected_index = i;
+                            min_connections = conn_count;
+                        }
+                    }
+                }
+
+                // 增加选中服务器的连接计数
+                counters
+                    .get_mut(&selected_index)
+                    .unwrap()
+                    .fetch_add(1, Ordering::Relaxed);
+
+                &upstream.server[selected_index]
+            }
         };
 
         // 构建完整的代理 URI，确保正确的格式
@@ -207,8 +257,58 @@ pub async fn serve(
         })?;
     forward_req = forward_req.body(bytes);
 
+    // 记录选中的服务器索引，用于在请求完成后减少连接计数
+    let selected_index = if let Some(ref upstream_name) = proxy_config.upstream
+        && let Some(upstream) = UPSTREAMS.get(upstream_name)
+        && upstream.method == LoadBalanceType::LeastConn
+    {
+        // 重新计算选中的服务器索引（因为我们需要获取索引值）
+        let counters = LEAST_CONN_COUNTERS
+            .entry(upstream_name.clone())
+            .or_default();
+
+        // 初始化服务器连接计数器（如果尚未初始化）
+        for i in 0..upstream.server.len() {
+            counters.entry(i).or_insert_with(|| AtomicUsize::new(0));
+        }
+
+        // 找到连接数最少的服务器
+        let mut selected_idx = 0;
+        let mut min_connections = usize::MAX;
+
+        for (i, server) in upstream.server.iter().enumerate() {
+            let conn_count = counters
+                .get(&i)
+                .map(|v| v.load(Ordering::Relaxed))
+                .unwrap_or(0);
+
+            let weighted_conn = conn_count as f64 / server.weight as f64;
+
+            if weighted_conn < min_connections as f64 {
+                min_connections = conn_count;
+                selected_idx = i;
+            } else if weighted_conn == min_connections as f64
+                && server.weight > upstream.server[selected_idx].weight
+            {
+                selected_idx = i;
+                min_connections = conn_count;
+            }
+        }
+
+        Some((upstream_name.clone(), selected_idx))
+    } else {
+        None
+    };
+
     // send reverse proxy request
     let reqwest_response = forward_req.send().await.map_err(|e| {
+        // 如果请求失败，减少连接计数
+        if let Some((upstream_name, idx)) = &selected_index
+            && let Some(counters) = LEAST_CONN_COUNTERS.get(upstream_name)
+            && let Some(count) = counters.get(idx)
+        {
+            count.fetch_sub(1, Ordering::Relaxed);
+        }
         tracing::error!("Failed to proxy request: {}", e);
         RouteError::BadRequest()
     })?;
@@ -224,11 +324,66 @@ pub async fn serve(
     let res = response_builder
         .body(Body::from_stream(reqwest_response.bytes_stream()))
         .map_err(|e| {
+            // 如果响应构建失败，减少连接计数
+            if let Some((upstream_name, idx)) = &selected_index
+                && let Some(counters) = LEAST_CONN_COUNTERS.get(upstream_name)
+                && let Some(count) = counters.get(idx)
+            {
+                count.fetch_sub(1, Ordering::Relaxed);
+            }
             tracing::error!("Failed to proxy request: {}", e);
             RouteError::BadRequest()
         })?;
 
-    Ok(res)
+    // 对于 least_conn 算法，我们需要在响应完成后减少连接计数
+    if let Some((upstream_name, idx)) = selected_index {
+        // 使用自定义 Body 包装器来跟踪响应完成
+        let res = wrap_response_body(res, upstream_name, idx).await;
+        Ok(res)
+    } else {
+        Ok(res)
+    }
+}
+
+/// 包装响应体，在响应完成后自动减少连接计数
+async fn wrap_response_body(
+    response: Response<Body>,
+    upstream_name: String,
+    server_index: usize,
+) -> Response<Body> {
+    let (parts, original_body) = response.into_parts();
+
+    // 读取整个响应体
+    let body_bytes = match axum::body::to_bytes(original_body, 10 * 1024 * 1024).await {
+        Ok(bytes) => {
+            // 响应完成后，减少连接计数
+            if let Some(counters) = LEAST_CONN_COUNTERS.get(&upstream_name)
+                && let Some(count) = counters.get(&server_index)
+            {
+                count.fetch_sub(1, Ordering::Relaxed);
+                tracing::debug!(
+                    "Connection count decreased for upstream {} server {}: {}",
+                    upstream_name,
+                    server_index,
+                    count.load(Ordering::Relaxed)
+                );
+            }
+            bytes
+        }
+        Err(e) => {
+            tracing::error!("Error reading response body: {}", e);
+            // 即使读取失败，也需要减少连接计数
+            if let Some(counters) = LEAST_CONN_COUNTERS.get(&upstream_name)
+                && let Some(count) = counters.get(&server_index)
+            {
+                count.fetch_sub(1, Ordering::Relaxed);
+            }
+            return Response::from_parts(parts, Body::empty());
+        }
+    };
+
+    // 重新包装响应体
+    Response::from_parts(parts, Body::from(body_bytes))
 }
 
 /// 检查给定的头部是否应该在反向代理中被排除转发。
@@ -275,6 +430,7 @@ fn copy_headers(from: &http::HeaderMap, to: &mut http::HeaderMap) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{Upstream, UpstreamServer};
     use http::HeaderValue;
 
     #[test]
@@ -387,4 +543,82 @@ mod tests {
         let unique_hashes: std::collections::HashSet<_> = hashes.into_iter().collect();
         assert_eq!(unique_hashes.len(), ips.len());
     }
+
+    #[test]
+    fn test_least_conn_counter() {
+        // 测试最少连接数算法的计数器
+        let upstream_name = "test_backend";
+
+        // 初始化上游服务器配置
+        let upstream = Upstream {
+            name: upstream_name.to_string(),
+            server: vec![
+                UpstreamServer {
+                    server: "192.168.1.100:8080".to_string(),
+                    weight: 1,
+                },
+                UpstreamServer {
+                    server: "192.168.1.101:8080".to_string(),
+                    weight: 1,
+                },
+                UpstreamServer {
+                    server: "192.168.1.102:8080".to_string(),
+                    weight: 2,
+                },
+            ],
+            method: LoadBalanceType::LeastConn,
+        };
+
+        // 初始化连接计数器
+        let counters = LEAST_CONN_COUNTERS
+            .entry(upstream_name.to_string())
+            .or_insert_with(DashMap::new);
+        for i in 0..upstream.server.len() {
+            counters.entry(i).or_insert_with(|| AtomicUsize::new(0));
+        }
+
+        // 模拟一些连接
+        counters
+            .get_mut(&0)
+            .unwrap()
+            .fetch_add(1, Ordering::Relaxed); // 服务器0: 1个连接
+        counters
+            .get_mut(&1)
+            .unwrap()
+            .fetch_add(2, Ordering::Relaxed); // 服务器1: 2个连接
+        counters
+            .get_mut(&2)
+            .unwrap()
+            .fetch_add(1, Ordering::Relaxed); // 服务器2: 1个连接 (权重2)
+
+        // 测试最少连接数算法选择服务器
+        let selected_index = {
+            let mut selected_idx = 0;
+            let mut min_connections = usize::MAX;
+
+            for (i, server) in upstream.server.iter().enumerate() {
+                let conn_count = counters
+                    .get(&i)
+                    .map(|v| v.load(Ordering::Relaxed))
+                    .unwrap_or(0);
+                let weighted_conn = conn_count as f64 / server.weight as f64;
+
+                if weighted_conn < min_connections as f64 {
+                    min_connections = conn_count;
+                    selected_idx = i;
+                } else if weighted_conn == min_connections as f64 {
+                    if server.weight > upstream.server[selected_idx].weight {
+                        selected_idx = i;
+                        min_connections = conn_count;
+                    }
+                }
+            }
+
+            selected_idx
+        };
+
+        // 服务器0 和 服务器2 都有 1 个连接，但服务器2 权重为2，所以加权连接数更低，应该选中服务器2
+        assert_eq!(selected_index, 2);
+    }
 }
+

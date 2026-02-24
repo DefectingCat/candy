@@ -37,6 +37,8 @@ pub enum LoadBalanceType {
     WeightedRoundRobin,
     /// IP哈希算法（会话保持）
     IpHash,
+    /// 最少连接数算法
+    LeastConn,
 }
 
 /// 默认负载均衡算法
