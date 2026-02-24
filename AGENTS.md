@@ -2,31 +2,37 @@
 
 ## 项目概述
 
-**Candy** 是一个用 Rust 编写的现代、轻量级 Web 服务器（版本 0.2.4）。它提供了静态文件服务、反向代理、负载均衡、Lua 脚本支持等功能，是一个高性能且易于配置的服务器解决方案。
+**Candy** 是一个用 Rust 编写的现代、轻量级 Web 服务器（版本 0.2.5）。它提供了静态文件服务、反向代理、负载均衡、Lua 脚本支持等功能，是一个高性能且易于配置的服务器解决方案。
 
 ## 核心功能
 
 ### 主要特性
 
 - 静态文件服务，支持目录列表
-- 反向代理，支持负载均衡
+- 反向代理，支持负载均衡（轮询、加权轮询、IP 哈希算法）
 - Lua 脚本支持（可选功能）
 - SSL/TLS 加密（HTTPS），支持 HTTP/2
-- 配置文件变更自动重载
+- 配置文件变更自动重载（带防抖机制）
 - 多虚拟主机支持
 - 正向代理支持
 - HTTP 重定向处理
 - 自定义错误页面
+- 配置验证和错误处理
+- 详细的调试日志和监控
+- Docker 容器化支持
 
 ### 技术栈
 
 - **Web 框架**: Axum（异步、高性能）
 - **服务器**: Axum Server（HTTP/1.1 + HTTP/2）
 - **异步运行时**: Tokio
-- **日志**: Tracing
-- **配置**: Serde + TOML
+- **日志**: Tracing（含文件日志和控制台输出）
+- **配置**: Serde + TOML（带验证和自动重载）
 - **压缩**: Axum 压缩中间件（gzip、deflate、brotli、zstd）
-- **Lua 支持**: Mlua（可选）
+- **Lua 支持**: Mlua（可选，Lua 5.4）
+- **配置监听**: Notify 库（带防抖机制）
+- **数据结构**: DashMap（并发安全哈希表）
+- **HTTP 客户端**: Reqwest（支持 HTTP/2 和多种压缩格式）
 
 ## 项目结构
 
@@ -41,26 +47,33 @@
 │   ├── http/                # HTTP 相关模块
 │   │   ├── mod.rs           # 服务器创建和路由注册
 │   │   ├── serve.rs         # 静态文件服务
-│   │   ├── reverse_proxy.rs # 反向代理实现
+│   │   ├── reverse_proxy.rs # 反向代理实现（含负载均衡）
 │   │   ├── forward_proxy.rs # 正向代理实现
 │   │   ├── redirect.rs      # 重定向处理
 │   │   ├── lua.rs           # Lua 脚本集成（可选）
 │   │   └── error.rs         # HTTP 特定错误类型
 │   ├── utils/               # 工具模块
 │   │   ├── mod.rs           # 工具模块入口
-│   │   ├── config_watcher.rs # 配置文件监听（自动重载）
+│   │   ├── config_watcher.rs # 配置文件监听（自动重载，带防抖）
 │   │   ├── logging.rs       # 日志初始化
 │   │   └── service.rs       # 服务工具
 │   ├── middlewares/         # Axum 中间件实现
 │   └── lua_engine.rs        # Lua 引擎初始化（可选特性）
 ├── examples/                # 示例配置文件
-├── docs/                    # 文档
+├── docs/                    # 文档（中文 + 英文）
 ├── assets/                  # 静态资源
-├── Cargo.toml               # Rust 项目配置
+├── Cargo.toml               # Rust 项目配置（v0.2.5）
 ├── Cargo.lock               # 依赖锁定文件
-├── Makefile                 # 构建脚本
+├── Makefile                 # 构建脚本（含 lint、format、test）
 ├── CLAUDE.md                # 开发规则和架构说明
-└── README.md                # 项目说明文档
+├── AGENTS.md                # 项目交接文档
+├── README.md                # 项目说明文档（中文）
+├── README_en.md             # 项目说明文档（英文）
+├── CHANGELOG.md             # 版本变更日志
+├── CONTRIBUTING.md          # 贡献指南（中文 + 英文）
+├── config.schema.json       # 配置文件 JSON 模式
+├── config.toml              # 默认配置文件
+└── Dockerfile               # Docker 容器化配置
 ```
 
 ## 快速上手
@@ -69,16 +82,25 @@
 
 ```bash
 # 调试构建
-make build          # 或 cargo build
-make run            # 或 cargo run
+make build
+make run
 
 # 发布构建
-make release        # cargo build --release
+make release
 
 # 代码格式化和检查
 make format         # 格式化代码
 make lint           # 运行 Clippy 检查
 make fix            # 自动修复 lint 问题并格式化
+
+# 运行测试
+make test
+
+# 检查编译错误
+make check
+
+# 开发模式（自动重载）
+make dev            # 使用 cargo watch 自动重载
 ```
 
 ### 运行服务器
@@ -157,22 +179,27 @@ error_page = { status = 404, page = "/404.html" }
 - 初始化日志系统
 - 启动服务器
 - 管理服务器生命周期（启动/停止/关闭）
-- 监听配置文件变更，自动重载
+- 监听配置文件变更，自动重载（带防抖机制）
+- 代码组织优化，辅助方法移至应用模块
+- 增强的服务器关闭处理和配置重载逻辑
 
 ### 配置管理：src/config.rs
 
 - 使用 Serde 反序列化配置
-- 配置验证逻辑
+- 严格的配置验证逻辑
 - 上游服务器和虚拟主机配置解析
 - 配置字段默认值
 - 配置验证测试
+- JSON 模式生成（config.schema.json）
+- 配置结构与文档同步
 
 ### 服务器创建：src/http/mod.rs
 
 - `make_server`：根据配置创建服务器
-- 路由注册
-- 主机和上游配置存储
+- 路由注册（支持多种路由类型）
+- 主机和上游配置存储（使用 DashMap 并发安全）
 - 服务器生命周期管理
+- 路由匹配优化
 
 ### 静态文件服务：src/http/serve.rs
 
@@ -183,10 +210,12 @@ error_page = { status = 404, page = "/404.html" }
 
 ### 反向代理：src/http/reverse_proxy.rs
 
-- 负载均衡实现
-- 支持轮询、加权轮询、IP 哈希算法
+- 负载均衡实现（轮询、加权轮询、IP 哈希）
+- 防止 IP 哈希算法溢出
 - 请求/响应头处理
 - 超时管理
+- 全面的单元测试
+- 性能优化
 
 ### 正向代理：src/http/forward_proxy.rs
 
@@ -201,8 +230,12 @@ error_page = { status = 404, page = "/404.html" }
 ### 配置监听：src/utils/config_watcher.rs
 
 - 使用 notify 库监听配置文件变化
+- 带防抖机制的配置变更检测
+- 可配置的监听参数
 - 触发服务器重启
 - 处理配置重载过程中的错误
+- 增强的可靠性和重试机制
+- 全面的单元测试
 
 ### Lua 引擎：src/lua_engine.rs（可选）
 
@@ -346,17 +379,17 @@ make release
 
 ### 当前限制
 
-- 缺少完整的集成测试
-- 文档需要进一步完善
-- 部分模块缺乏详细的单元测试
-- 配置验证逻辑可以更严格
+- 缺少完整的集成测试（已部分改进）
+- 部分模块的文档注释需要完善
+- 配置验证逻辑已大幅改进，但仍可进一步优化
 
 ### 改进方向
 
-1. **测试覆盖**：增加单元测试和集成测试
+1. **测试覆盖**：增加更多集成测试
 2. **文档完善**：为所有公共 API 添加文档注释
 3. **性能优化**：考虑使用其他异步运行时或优化内存分配
 4. **功能增强**：添加更多中间件、缓存支持、健康检查等功能
+5. **监控增强**：添加更详细的监控指标和健康检查端点
 
 ## 联系方式
 
@@ -365,3 +398,4 @@ make release
 ## 许可证
 
 MIT 许可证 - 详见 LICENSE 文件
+
