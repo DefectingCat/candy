@@ -1,10 +1,13 @@
 use std::{net::SocketAddr, sync::LazyLock, time::Duration};
 
+use std::sync::Arc;
+
 use anyhow::anyhow;
 use axum::{Router, extract::DefaultBodyLimit, middleware, routing::get};
 use axum_server::{Handle, tls_rustls::RustlsConfig};
 use dashmap::DashMap;
 use http::StatusCode;
+use tokio::sync::Mutex;
 use tower::ServiceBuilder;
 use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer};
 use tracing::{debug, error, info, warn};
@@ -44,6 +47,67 @@ pub mod redirect;
 /// }
 pub static HOSTS: LazyLock<DashMap<u16, DashMap<Option<String>, SettingHost>>> =
     LazyLock::new(DashMap::new);
+
+/// 加载上游服务器配置到全局存储
+pub fn load_upstreams(settings: &crate::config::Settings) {
+    crate::http::UPSTREAMS.clear();
+    if let Some(upstreams) = &settings.upstream {
+        for upstream in upstreams {
+            crate::http::UPSTREAMS.insert(upstream.name.clone(), upstream.clone());
+        }
+    }
+}
+
+/// 启动初始服务器实例
+pub async fn start_initial_servers(
+    settings: crate::config::Settings,
+) -> anyhow::Result<Arc<Mutex<Vec<axum_server::Handle<SocketAddr>>>>> {
+    let handles = start_servers(settings.host).await;
+    Ok(Arc::new(Mutex::new(handles)))
+}
+
+/// 处理配置文件变更的回调函数
+pub async fn handle_config_change(
+    result: crate::error::Result<crate::config::Settings>,
+    handles: Arc<Mutex<Vec<axum_server::Handle<SocketAddr>>>>,
+) {
+    match result {
+        Ok(new_settings) => {
+            info!("Config file reloaded successfully");
+            info!("Config file changed, restarting servers to apply new config...");
+
+            // 停止当前所有服务器
+            let mut current_handles = handles.lock().await;
+            shutdown_servers(&mut current_handles).await;
+
+            // 在新的 tokio 任务中启动新服务器
+            let new_hosts = new_settings.host;
+            let new_upstreams = new_settings.upstream;
+            let handles_clone = handles.clone();
+            tokio::spawn(async move {
+                // 清空全局 HOSTS 和 UPSTREAMS 变量，确保新配置完全生效
+                crate::http::HOSTS.clear();
+                crate::http::UPSTREAMS.clear();
+
+                // 重新加载 upstream 配置
+                if let Some(upstreams) = &new_upstreams {
+                    for upstream in upstreams {
+                        crate::http::UPSTREAMS.insert(upstream.name.clone(), upstream.clone());
+                    }
+                }
+
+                let new_handles = start_servers(new_hosts).await;
+
+                let mut current_handles = handles_clone.lock().await;
+                *current_handles = new_handles;
+                info!("All servers have been restarted successfully");
+            });
+        }
+        Err(e) => {
+            error!("Failed to reload config file: {:?}", e);
+        }
+    }
+}
 
 /// 优雅关闭所有服务器
 ///

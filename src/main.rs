@@ -3,19 +3,14 @@ use clap::Parser;
 use tracing::info;
 
 use crate::config::Settings;
-
-use crate::application::{
-    handle_config_change, initialize_logger, load_upstreams, shutdown_application,
-    start_initial_servers,
-};
-use crate::utils::start_config_watcher;
+use crate::http::{handle_config_change, load_upstreams, start_initial_servers};
+use crate::utils::{initialize_logger, shutdown_application, start_config_watcher};
 
 use mimalloc::MiMalloc;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-mod application;
 mod cli;
 mod config;
 mod consts;
