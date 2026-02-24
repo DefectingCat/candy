@@ -2,7 +2,7 @@ use notify::{EventKind, RecursiveMode, Watcher};
 use std::path::Path;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{self, Duration, Instant};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::config::Settings;
 use crate::error::Result;
@@ -121,6 +121,8 @@ async fn run_watcher(
     let mut last_event_time = Instant::now();
     let debounce_duration = Duration::from_millis(config.debounce_ms);
     let poll_timeout = Duration::from_secs(config.poll_timeout_secs);
+    // 是否正在处理事件的标志（使用原子操作确保线程安全）
+    let is_processing = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     loop {
         tokio::select! {
@@ -138,16 +140,37 @@ async fn run_watcher(
                             Ok(event) => {
                                 if is_relevant_event(&event.kind) {
                                     let now = Instant::now();
-                                    if now.duration_since(last_event_time) > debounce_duration {
+                                    let is_processing_flag = is_processing.load(std::sync::atomic::Ordering::Relaxed);
+
+                                    if now.duration_since(last_event_time) > debounce_duration && !is_processing_flag {
                                         info!("Config file event: {:?}", event);
-                                        handle_config_change(
-                                            &config_path,
-                                            watcher.clone(),
-                                            callback.clone(),
-                                            &config,
-                                            event.kind
-                                        ).await;
+                                        is_processing.store(true, std::sync::atomic::Ordering::Relaxed);
                                         last_event_time = now;
+
+                                        // 处理配置变更（使用 async block 允许继续接收其他事件，但标记为正在处理）
+                                        let config_path_clone = config_path.clone();
+                                        let watcher_clone = watcher.clone();
+                                        let callback_clone = callback.clone();
+                                        let config_clone = config.clone();
+                                        let event_kind_clone = event.kind;
+                                        let is_processing_clone = is_processing.clone();
+                                        let debounce_duration_clone = debounce_duration;
+
+                                        tokio::spawn(async move {
+                                            handle_config_change(
+                                                &config_path_clone,
+                                                watcher_clone,
+                                                callback_clone,
+                                                &config_clone,
+                                                event_kind_clone
+                                            ).await;
+
+                                            // 防抖期间忽略其他事件
+                                            time::sleep(debounce_duration_clone).await;
+                                            is_processing_clone.store(false, std::sync::atomic::Ordering::Relaxed);
+                                        });
+                                    } else {
+                                        debug!("Ignoring duplicate event within debounce window");
                                     }
                                 }
                             },

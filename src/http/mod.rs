@@ -149,13 +149,18 @@ pub async fn shutdown_servers(handles: &mut Vec<axum_server::Handle<SocketAddr>>
 pub async fn start_servers(hosts: Vec<SettingHost>) -> Vec<axum_server::Handle<SocketAddr>> {
     let mut handles = Vec::new();
     for host in hosts {
+        // 保存主机地址信息用于日志显示
+        let server_addr = format!("{}:{}", host.ip, host.port);
         match make_server(host).await {
             Ok(handle) => {
                 handles.push(handle);
-                info!("Server instance started");
+                info!("Server instance started on {}", server_addr);
             }
             Err(e) => {
-                error!("Failed to start server instance: {:?}", e);
+                error!(
+                    "Failed to start server instance on {}: {:?}",
+                    server_addr, e
+                );
             }
         }
     }
