@@ -66,6 +66,19 @@ static HEALTH_CHECK_TASKS: LazyLock<DashMap<String, tokio::task::JoinHandle<()>>
     LazyLock::new(DashMap::new);
 
 /// 检查服务器是否健康
+///
+/// 判断服务器是否可用，考虑连续失败次数和失败超时时间
+///
+/// # 参数
+///
+/// * `upstream_name` - 上游服务器组名称
+/// * `server_index` - 服务器在 upstream 中的索引
+/// * `max_fails` - 允许的最大连续失败次数，0 表示不进行健康检查
+/// * `fail_timeout` - 服务器标记为不可用的超时时间（秒）
+///
+/// # 返回值
+///
+/// 如果服务器健康则返回 `true`，否则返回 `false`
 fn is_server_healthy(
     upstream_name: &str,
     server_index: usize,
@@ -102,6 +115,13 @@ fn is_server_healthy(
 }
 
 /// 更新服务器健康状态（失败）
+///
+/// 当服务器请求失败时更新健康状态，增加失败计数并重置成功计数
+///
+/// # 参数
+///
+/// * `upstream_name` - 上游服务器组名称
+/// * `server_index` - 服务器在 upstream 中的索引
 fn update_server_health_failure(upstream_name: &str, server_index: usize) {
     let health_map = SERVER_HEALTH_STATES
         .entry(upstream_name.to_string())
@@ -121,6 +141,13 @@ fn update_server_health_failure(upstream_name: &str, server_index: usize) {
 }
 
 /// 更新服务器健康状态（成功）
+///
+/// 当服务器请求成功时更新健康状态，增加成功计数并重置失败计数
+///
+/// # 参数
+///
+/// * `upstream_name` - 上游服务器组名称
+/// * `server_index` - 服务器在 upstream 中的索引
 fn update_server_health_success(upstream_name: &str, server_index: usize) {
     let health_map = SERVER_HEALTH_STATES
         .entry(upstream_name.to_string())
@@ -140,6 +167,13 @@ fn update_server_health_success(upstream_name: &str, server_index: usize) {
 }
 
 /// 标记服务器为不可用
+///
+/// 将服务器标记为不健康状态，并记录标记时间
+///
+/// # 参数
+///
+/// * `upstream_name` - 上游服务器组名称
+/// * `server_index` - 服务器在 upstream 中的索引
 fn mark_server_unhealthy(upstream_name: &str, server_index: usize) {
     let health_map = SERVER_HEALTH_STATES
         .entry(upstream_name.to_string())
@@ -159,6 +193,13 @@ fn mark_server_unhealthy(upstream_name: &str, server_index: usize) {
 }
 
 /// 标记服务器为可用
+///
+/// 将服务器标记为健康状态，清除不可用标记
+///
+/// # 参数
+///
+/// * `upstream_name` - 上游服务器组名称
+/// * `server_index` - 服务器在 upstream 中的索引
 fn mark_server_healthy(upstream_name: &str, server_index: usize) {
     let health_map = SERVER_HEALTH_STATES
         .entry(upstream_name.to_string())
@@ -178,6 +219,17 @@ fn mark_server_healthy(upstream_name: &str, server_index: usize) {
 }
 
 /// 执行 HTTP 健康检查
+///
+/// 向服务器发送 HEAD 请求以检查其健康状态
+///
+/// # 参数
+///
+/// * `server` - 要检查的上游服务器配置
+/// * `health_check_config` - 健康检查配置参数
+///
+/// # 返回值
+///
+/// 如果服务器健康则返回 `true`，否则返回 `false`
 async fn perform_http_health_check(
     server: &crate::config::UpstreamServer,
     health_check_config: &crate::config::HealthCheck,
@@ -230,6 +282,14 @@ async fn perform_http_health_check(
 }
 
 /// 启动主动健康检查任务
+///
+/// 定期执行健康检查任务，根据连续成功/失败次数标记服务器健康状态
+///
+/// # 参数
+///
+/// * `upstream_name` - 上游服务器组名称
+/// * `servers` - 服务器列表
+/// * `health_check_config` - 健康检查配置参数
 async fn start_health_check_task(
     upstream_name: String,
     servers: Vec<crate::config::UpstreamServer>,
@@ -284,6 +344,12 @@ async fn start_health_check_task(
 }
 
 /// 初始化上游服务器健康检查
+///
+/// 为配置了健康检查的上游服务器启动健康检查任务
+///
+/// # 参数
+///
+/// * `upstreams` - 上游服务器组配置列表
 pub fn initialize_health_checks(upstreams: &[crate::config::Upstream]) {
     for upstream in upstreams {
         if let Some(health_check_config) = &upstream.health_check {
@@ -333,8 +399,8 @@ fn get_client() -> &'static Client {
 /// * `path` - 从请求中提取的可选路径参数。
 /// * `req` - 入站的HTTP请求。
 ///
-/// # 返回
-/// 包含代理服务器响应或错误的 `RouteResult`。
+/// # 返回值
+/// 包含代理服务器响应或错误的 `RouteResult`
 #[axum::debug_handler]
 pub async fn serve(
     req_uri: Uri,
@@ -750,10 +816,10 @@ fn ip_hash(ip: &str) -> usize {
     hash
 }
 
-/// 将头部从一个 `HeaderMap` 复制到另一个，排除指定的头部
+/// 复制 HTTP 头部，排除指定的头部
 ///
-/// 该函数负责在代理请求和响应时复制 HTTP 头部，但会排除在 `is_exclude_header` 中
-/// 定义的头部，以避免冲突或安全问题。
+/// 将头部从一个 HeaderMap 复制到另一个，但会排除在 is_exclude_header 中定义的头部，
+/// 以避免冲突或安全问题。
 ///
 /// # 参数
 ///
@@ -1112,7 +1178,7 @@ mod tests {
         // 初始化连接计数器
         let counters = LEAST_CONN_COUNTERS
             .entry(upstream_name.to_string())
-            .or_insert_with(DashMap::new);
+            .or_default();
         for i in 0..upstream.server.len() {
             counters.entry(i).or_insert_with(|| AtomicUsize::new(0));
         }
@@ -1146,11 +1212,11 @@ mod tests {
                 if weighted_conn < min_connections as f64 {
                     min_connections = conn_count;
                     selected_idx = i;
-                } else if weighted_conn == min_connections as f64 {
-                    if server.weight > upstream.server[selected_idx].weight {
-                        selected_idx = i;
-                        min_connections = conn_count;
-                    }
+                } else if weighted_conn == min_connections as f64
+                    && server.weight > upstream.server[selected_idx].weight
+                {
+                    selected_idx = i;
+                    min_connections = conn_count;
                 }
             }
 
