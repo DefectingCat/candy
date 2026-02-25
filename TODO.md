@@ -38,7 +38,7 @@
   - [x] Weighted Round Robin
   - [x] IP Hash (ip_hash)
   - [x] Least Connections (least_conn)
-  - [ ] Backend Server Health Check
+  - [x] Backend Server Health Check
 - [x] Proxy
 - [x] Reverse Proxy
   - [x] Connect to upstream timeout setting
