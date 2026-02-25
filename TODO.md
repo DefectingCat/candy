@@ -37,7 +37,7 @@
   - [x] Round Robin (Default)
   - [x] Weighted Round Robin
   - [x] IP Hash (ip_hash)
-  - [ ] Least Connections (least_conn)
+  - [x] Least Connections (least_conn)
   - [ ] Backend Server Health Check
 - [x] Proxy
 - [x] Reverse Proxy

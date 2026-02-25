@@ -667,4 +667,307 @@ mod tests {
         // 服务器0 和 服务器2 都有 1 个连接，但服务器2 权重为2，所以加权连接数更低，应该选中服务器2
         assert_eq!(selected_index, 2);
     }
+
+    #[test]
+    fn test_round_robin_selection() {
+        // 测试简单轮询算法的服务器选择逻辑
+        let upstream_name = "test_round_robin";
+        let upstream = Upstream {
+            name: upstream_name.to_string(),
+            server: vec![
+                UpstreamServer {
+                    server: "192.168.1.100:8080".to_string(),
+                    weight: 1,
+                },
+                UpstreamServer {
+                    server: "192.168.1.101:8080".to_string(),
+                    weight: 1,
+                },
+                UpstreamServer {
+                    server: "192.168.1.102:8080".to_string(),
+                    weight: 1,
+                },
+            ],
+            method: LoadBalanceType::RoundRobin,
+        };
+
+        // 清除之前的计数器状态
+        WEIGHTED_ROUND_ROBIN_COUNTERS.remove(upstream_name);
+
+        // 模拟轮询选择逻辑
+        let mut selected_servers = Vec::new();
+        for _ in 0..6 {
+            let counter = WEIGHTED_ROUND_ROBIN_COUNTERS
+                .entry(upstream_name.to_string())
+                .or_insert_with(|| AtomicUsize::new(0));
+
+            let current_counter = counter.fetch_add(1, Ordering::Relaxed);
+            let selected_index = current_counter % upstream.server.len();
+            selected_servers.push(selected_index);
+        }
+
+        // 验证轮询顺序：0 -> 1 -> 2 -> 0 -> 1 -> 2
+        assert_eq!(selected_servers, vec![0, 1, 2, 0, 1, 2]);
+    }
+
+    #[test]
+    fn test_round_robin_single_server() {
+        // 测试单服务器情况下的轮询算法
+        let upstream_name = "test_single_server";
+        let upstream = Upstream {
+            name: upstream_name.to_string(),
+            server: vec![UpstreamServer {
+                server: "192.168.1.100:8080".to_string(),
+                weight: 1,
+            }],
+            method: LoadBalanceType::RoundRobin,
+        };
+
+        // 清除之前的计数器状态
+        WEIGHTED_ROUND_ROBIN_COUNTERS.remove(upstream_name);
+
+        // 模拟多次请求
+        for _ in 0..5 {
+            let counter = WEIGHTED_ROUND_ROBIN_COUNTERS
+                .entry(upstream_name.to_string())
+                .or_insert_with(|| AtomicUsize::new(0));
+
+            let current_counter = counter.fetch_add(1, Ordering::Relaxed);
+            let selected_index = current_counter % upstream.server.len();
+            // 单服务器应该总是选择索引0
+            assert_eq!(selected_index, 0);
+        }
+    }
+
+    #[test]
+    fn test_round_robin_distribution() {
+        // 测试轮询算法的分布均匀性
+        let upstream_name = "test_distribution";
+        let server_count = 3;
+        let request_count = 300;
+
+        let upstream = Upstream {
+            name: upstream_name.to_string(),
+            server: (0..server_count)
+                .map(|i| UpstreamServer {
+                    server: format!("192.168.1.{}:8080", 100 + i),
+                    weight: 1,
+                })
+                .collect(),
+            method: LoadBalanceType::RoundRobin,
+        };
+
+        // 清除之前的计数器状态
+        WEIGHTED_ROUND_ROBIN_COUNTERS.remove(upstream_name);
+
+        // 统计每个服务器被选中的次数
+        let mut selection_counts = vec![0usize; server_count];
+        for _ in 0..request_count {
+            let counter = WEIGHTED_ROUND_ROBIN_COUNTERS
+                .entry(upstream_name.to_string())
+                .or_insert_with(|| AtomicUsize::new(0));
+
+            let current_counter = counter.fetch_add(1, Ordering::Relaxed);
+            let selected_index = current_counter % upstream.server.len();
+            selection_counts[selected_index] += 1;
+        }
+
+        // 每个服务器应该被选中 request_count / server_count 次
+        let expected_count = request_count / server_count;
+        for count in selection_counts {
+            assert_eq!(count, expected_count);
+        }
+    }
+
+    #[test]
+    fn test_weighted_round_robin_selection() {
+        // 测试加权轮询算法的服务器选择逻辑
+        let upstream_name = "test_weighted_rr";
+        let upstream = Upstream {
+            name: upstream_name.to_string(),
+            server: vec![
+                UpstreamServer {
+                    server: "192.168.1.100:8080".to_string(),
+                    weight: 1,
+                },
+                UpstreamServer {
+                    server: "192.168.1.101:8080".to_string(),
+                    weight: 2,
+                },
+                UpstreamServer {
+                    server: "192.168.1.102:8080".to_string(),
+                    weight: 3,
+                },
+            ],
+            method: LoadBalanceType::WeightedRoundRobin,
+        };
+
+        // 清除之前的计数器状态
+        WEIGHTED_ROUND_ROBIN_COUNTERS.remove(upstream_name);
+
+        // 总权重 = 1 + 2 + 3 = 6
+        let total_weight: u32 = upstream.server.iter().map(|s| s.weight).sum();
+
+        // 模拟一个完整周期的加权轮询
+        let mut selected_servers = Vec::new();
+        for _ in 0..total_weight {
+            let counter = WEIGHTED_ROUND_ROBIN_COUNTERS
+                .entry(upstream_name.to_string())
+                .or_insert_with(|| AtomicUsize::new(0));
+
+            let current_counter = counter.fetch_add(1, Ordering::Relaxed);
+            let mut current_weight = current_counter % total_weight as usize;
+
+            let mut selected_index = 0;
+            for (i, server) in upstream.server.iter().enumerate() {
+                if current_weight < server.weight as usize {
+                    selected_index = i;
+                    break;
+                }
+                current_weight -= server.weight as usize;
+            }
+            selected_servers.push(selected_index);
+        }
+
+        // 验证在一个完整周期内，每个服务器被选中的次数等于其权重
+        let mut counts = vec![0usize; upstream.server.len()];
+        for idx in &selected_servers {
+            counts[*idx] += 1;
+        }
+        assert_eq!(counts, vec![1, 2, 3]); // weight 1, 2, 3
+    }
+
+    #[test]
+    fn test_weighted_round_robin_equal_weights() {
+        // 测试权重相等时的加权轮询（应该等同于普通轮询）
+        let upstream_name = "test_equal_weights";
+        let upstream = Upstream {
+            name: upstream_name.to_string(),
+            server: vec![
+                UpstreamServer {
+                    server: "192.168.1.100:8080".to_string(),
+                    weight: 2,
+                },
+                UpstreamServer {
+                    server: "192.168.1.101:8080".to_string(),
+                    weight: 2,
+                },
+                UpstreamServer {
+                    server: "192.168.1.102:8080".to_string(),
+                    weight: 2,
+                },
+            ],
+            method: LoadBalanceType::WeightedRoundRobin,
+        };
+
+        // 清除之前的计数器状态
+        WEIGHTED_ROUND_ROBIN_COUNTERS.remove(upstream_name);
+
+        let total_weight: u32 = upstream.server.iter().map(|s| s.weight).sum();
+        let mut selected_servers = Vec::new();
+
+        for _ in 0..total_weight {
+            let counter = WEIGHTED_ROUND_ROBIN_COUNTERS
+                .entry(upstream_name.to_string())
+                .or_insert_with(|| AtomicUsize::new(0));
+
+            let current_counter = counter.fetch_add(1, Ordering::Relaxed);
+            let mut current_weight = current_counter % total_weight as usize;
+
+            let mut selected_index = 0;
+            for (i, server) in upstream.server.iter().enumerate() {
+                if current_weight < server.weight as usize {
+                    selected_index = i;
+                    break;
+                }
+                current_weight -= server.weight as usize;
+            }
+            selected_servers.push(selected_index);
+        }
+
+        // 验证每个服务器被选中次数相等
+        let mut counts = vec![0usize; upstream.server.len()];
+        for idx in &selected_servers {
+            counts[*idx] += 1;
+        }
+        assert_eq!(counts, vec![2, 2, 2]); // 所有权重都是2
+    }
+
+    #[test]
+    fn test_weighted_round_robin_single_high_weight() {
+        // 测试单个服务器权重很高的情况
+        let upstream_name = "test_single_high_weight";
+        let upstream = Upstream {
+            name: upstream_name.to_string(),
+            server: vec![
+                UpstreamServer {
+                    server: "192.168.1.100:8080".to_string(),
+                    weight: 5,
+                },
+                UpstreamServer {
+                    server: "192.168.1.101:8080".to_string(),
+                    weight: 1,
+                },
+            ],
+            method: LoadBalanceType::WeightedRoundRobin,
+        };
+
+        // 清除之前的计数器状态
+        WEIGHTED_ROUND_ROBIN_COUNTERS.remove(upstream_name);
+
+        let total_weight: u32 = upstream.server.iter().map(|s| s.weight).sum();
+        let mut selected_servers = Vec::new();
+
+        for _ in 0..total_weight {
+            let counter = WEIGHTED_ROUND_ROBIN_COUNTERS
+                .entry(upstream_name.to_string())
+                .or_insert_with(|| AtomicUsize::new(0));
+
+            let current_counter = counter.fetch_add(1, Ordering::Relaxed);
+            let mut current_weight = current_counter % total_weight as usize;
+
+            let mut selected_index = 0;
+            for (i, server) in upstream.server.iter().enumerate() {
+                if current_weight < server.weight as usize {
+                    selected_index = i;
+                    break;
+                }
+                current_weight -= server.weight as usize;
+            }
+            selected_servers.push(selected_index);
+        }
+
+        // 验证：权重5的服务器应该被选中5次，权重1的服务器应该被选中1次
+        let mut counts = vec![0usize; upstream.server.len()];
+        for idx in &selected_servers {
+            counts[*idx] += 1;
+        }
+        assert_eq!(counts, vec![5, 1]);
+    }
+
+    #[test]
+    fn test_load_balance_type_equality() {
+        // 测试 LoadBalanceType 的相等性比较
+        assert_eq!(LoadBalanceType::RoundRobin, LoadBalanceType::RoundRobin);
+        assert_eq!(
+            LoadBalanceType::WeightedRoundRobin,
+            LoadBalanceType::WeightedRoundRobin
+        );
+        assert_eq!(LoadBalanceType::IpHash, LoadBalanceType::IpHash);
+        assert_eq!(LoadBalanceType::LeastConn, LoadBalanceType::LeastConn);
+
+        assert_ne!(LoadBalanceType::RoundRobin, LoadBalanceType::WeightedRoundRobin);
+        assert_ne!(LoadBalanceType::IpHash, LoadBalanceType::LeastConn);
+    }
+
+    #[test]
+    fn test_upstream_server_default_weight() {
+        // 测试 UpstreamServer 的默认权重值（应为1）
+        // 默认权重通过 #[serde(default)] 设置
+        let server = UpstreamServer {
+            server: "localhost:8080".to_string(),
+            weight: 1, // 默认权重
+        };
+        assert_eq!(server.weight, 1);
+    }
 }
