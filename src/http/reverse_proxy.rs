@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{LazyLock, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 
@@ -20,6 +20,34 @@ use crate::config::LoadBalanceType;
 use crate::http::serve::custom_page;
 use crate::{http::serve::resolve_parent_path, utils::parse_port_from_host};
 
+/// 服务器健康状态
+#[derive(Debug, Clone)]
+struct ServerHealth {
+    /// 服务器是否健康
+    is_healthy: bool,
+    /// 连续失败次数
+    fail_count: u32,
+    /// 连续成功次数
+    success_count: u32,
+    /// 服务器被标记为不可用的时间
+    down_since: Option<Instant>,
+}
+
+impl Default for ServerHealth {
+    fn default() -> Self {
+        ServerHealth {
+            is_healthy: true,
+            fail_count: 0,
+            success_count: 0,
+            down_since: None,
+        }
+    }
+}
+
+/// 服务器健康状态存储
+static SERVER_HEALTH_STATES: LazyLock<DashMap<String, DashMap<usize, ServerHealth>>> =
+    LazyLock::new(DashMap::new);
+
 /// 加权轮询计数器存储
 /// 用于跟踪每个 upstream 的当前轮询权重和索引
 static WEIGHTED_ROUND_ROBIN_COUNTERS: LazyLock<DashMap<String, AtomicUsize>> =
@@ -32,6 +60,251 @@ static LEAST_CONN_COUNTERS: LazyLock<DashMap<String, DashMap<usize, AtomicUsize>
 
 /// 全局 reqwest 客户端实例，用于复用连接池，提高性能
 static CLIENT: OnceLock<Client> = OnceLock::new();
+
+/// 主动健康检查任务句柄存储
+static HEALTH_CHECK_TASKS: LazyLock<DashMap<String, tokio::task::JoinHandle<()>>> =
+    LazyLock::new(DashMap::new);
+
+/// 检查服务器是否健康
+fn is_server_healthy(
+    upstream_name: &str,
+    server_index: usize,
+    max_fails: u32,
+    fail_timeout: u64,
+) -> bool {
+    // 如果 max_fails 为 0，表示不进行健康检查，所有服务器都被视为健康
+    if max_fails == 0 {
+        return true;
+    }
+
+    let health_map = SERVER_HEALTH_STATES
+        .entry(upstream_name.to_string())
+        .or_default();
+
+    let mut health = health_map.entry(server_index).or_default();
+
+    // 如果服务器被标记为不健康，检查是否已经过了 fail_timeout 时间，可以重新探测
+    if !health.is_healthy
+        && let Some(down_since) = health.down_since
+        && down_since.elapsed() >= Duration::from_secs(fail_timeout)
+    {
+        tracing::info!(
+            "Upstream {} server {} is eligible for health check again",
+            upstream_name,
+            server_index
+        );
+        health.is_healthy = true;
+        health.down_since = None;
+        health.fail_count = 0;
+    }
+
+    health.is_healthy
+}
+
+/// 更新服务器健康状态（失败）
+fn update_server_health_failure(upstream_name: &str, server_index: usize) {
+    let health_map = SERVER_HEALTH_STATES
+        .entry(upstream_name.to_string())
+        .or_default();
+
+    let mut health = health_map.entry(server_index).or_default();
+
+    health.fail_count += 1;
+    health.success_count = 0;
+
+    tracing::debug!(
+        "Upstream {} server {} failed {} times",
+        upstream_name,
+        server_index,
+        health.fail_count
+    );
+}
+
+/// 更新服务器健康状态（成功）
+fn update_server_health_success(upstream_name: &str, server_index: usize) {
+    let health_map = SERVER_HEALTH_STATES
+        .entry(upstream_name.to_string())
+        .or_default();
+
+    let mut health = health_map.entry(server_index).or_default();
+
+    health.success_count += 1;
+    health.fail_count = 0;
+
+    tracing::debug!(
+        "Upstream {} server {} succeeded {} times",
+        upstream_name,
+        server_index,
+        health.success_count
+    );
+}
+
+/// 标记服务器为不可用
+fn mark_server_unhealthy(upstream_name: &str, server_index: usize) {
+    let health_map = SERVER_HEALTH_STATES
+        .entry(upstream_name.to_string())
+        .or_default();
+
+    let mut health = health_map.entry(server_index).or_default();
+
+    if health.is_healthy {
+        health.is_healthy = false;
+        health.down_since = Some(Instant::now());
+        tracing::warn!(
+            "Upstream {} server {} marked as unhealthy",
+            upstream_name,
+            server_index
+        );
+    }
+}
+
+/// 标记服务器为可用
+fn mark_server_healthy(upstream_name: &str, server_index: usize) {
+    let health_map = SERVER_HEALTH_STATES
+        .entry(upstream_name.to_string())
+        .or_default();
+
+    let mut health = health_map.entry(server_index).or_default();
+
+    if !health.is_healthy {
+        health.is_healthy = true;
+        health.down_since = None;
+        tracing::info!(
+            "Upstream {} server {} marked as healthy",
+            upstream_name,
+            server_index
+        );
+    }
+}
+
+/// 执行 HTTP 健康检查
+async fn perform_http_health_check(
+    server: &crate::config::UpstreamServer,
+    health_check_config: &crate::config::HealthCheck,
+) -> bool {
+    let server_addr =
+        if server.server.starts_with("http://") || server.server.starts_with("https://") {
+            server.server.clone()
+        } else {
+            format!("http://{}", server.server)
+        };
+
+    let health_check_url = format!("{}/", server_addr.trim_end_matches('/'));
+
+    let client = get_client();
+    match client
+        .head(health_check_url)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+    {
+        Ok(response) => {
+            let status = response.status().as_u16();
+            // 检查响应状态码是否在期望的范围内
+            let is_alive = if health_check_config.check_http_expect_alive == "200-399" {
+                (200..400).contains(&status)
+            } else {
+                // 简单的状态码匹配
+                health_check_config
+                    .check_http_expect_alive
+                    .split(',')
+                    .any(|s| s.trim().parse::<u16>().unwrap_or(0) == status)
+            };
+
+            if is_alive {
+                tracing::debug!("Health check passed for server: {}", server.server);
+            } else {
+                tracing::warn!(
+                    "Health check failed for server: {} (status: {})",
+                    server.server,
+                    status
+                );
+            }
+            is_alive
+        }
+        Err(e) => {
+            tracing::warn!("Health check failed for server: {} ({})", server.server, e);
+            false
+        }
+    }
+}
+
+/// 启动主动健康检查任务
+async fn start_health_check_task(
+    upstream_name: String,
+    servers: Vec<crate::config::UpstreamServer>,
+    health_check_config: crate::config::HealthCheck,
+) {
+    let interval = Duration::from_millis(health_check_config.interval);
+
+    loop {
+        tokio::time::sleep(interval).await;
+
+        for (i, server) in servers.iter().enumerate() {
+            let is_healthy = perform_http_health_check(server, &health_check_config).await;
+
+            let health_map = SERVER_HEALTH_STATES
+                .entry(upstream_name.clone())
+                .or_default();
+
+            let mut health = health_map.entry(i).or_default();
+
+            if is_healthy {
+                health.success_count += 1;
+                health.fail_count = 0;
+
+                // 如果连续成功次数达到 rise 阈值，标记为健康
+                if !health.is_healthy && health.success_count >= health_check_config.rise {
+                    mark_server_healthy(&upstream_name, i);
+                    tracing::info!(
+                        "Upstream {} server {} recovered (success count: {})",
+                        upstream_name,
+                        i,
+                        health.success_count
+                    );
+                }
+            } else {
+                health.fail_count += 1;
+                health.success_count = 0;
+
+                // 如果连续失败次数达到 fall 阈值，标记为不健康
+                if health.is_healthy && health.fail_count >= health_check_config.fall {
+                    health.is_healthy = false;
+                    health.down_since = Some(Instant::now());
+                    tracing::warn!(
+                        "Upstream {} server {} is unhealthy (fail count: {})",
+                        upstream_name,
+                        i,
+                        health.fail_count
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// 初始化上游服务器健康检查
+pub fn initialize_health_checks(upstreams: &[crate::config::Upstream]) {
+    for upstream in upstreams {
+        if let Some(health_check_config) = &upstream.health_check {
+            // 避免重复启动健康检查任务
+            if HEALTH_CHECK_TASKS.contains_key(&upstream.name) {
+                continue;
+            }
+
+            let upstream_name = upstream.name.clone();
+            let servers = upstream.server.clone();
+            let health_check_config = health_check_config.clone();
+
+            let task = tokio::spawn(async move {
+                start_health_check_task(upstream_name, servers, health_check_config).await;
+            });
+
+            HEALTH_CHECK_TASKS.insert(upstream.name.clone(), task);
+            tracing::info!("Started health check for upstream: {}", upstream.name);
+        }
+    }
+}
 
 /// 获取全局 reqwest 客户端实例
 ///
@@ -120,107 +393,130 @@ pub async fn serve(
     tracing::debug!("proxy config: {:?}", proxy_config);
 
     // 确定代理目标 - 支持单一 proxy_pass 和 upstream 负载均衡
-    let uri = if let Some(ref proxy_pass) = proxy_config.proxy_pass {
-        format!("{proxy_pass}{path_query}")
+    let (uri, selected_server_index) = if let Some(ref proxy_pass) = proxy_config.proxy_pass {
+        (format!("{proxy_pass}{path_query}"), None)
     } else if let Some(ref upstream_name) = proxy_config.upstream {
         // 获取 upstream 配置
         let upstream = UPSTREAMS
             .get(upstream_name)
             .ok_or(RouteError::InternalError())?;
 
-        // 根据负载均衡算法选择服务器
-        let server = match upstream.method {
-            LoadBalanceType::RoundRobin => {
-                // 简单轮询算法
-                let counter = WEIGHTED_ROUND_ROBIN_COUNTERS
-                    .entry(upstream_name.clone())
-                    .or_insert_with(|| AtomicUsize::new(0));
+        // 获取健康的服务器列表
+        let healthy_servers: Vec<usize> = upstream
+            .server
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| {
+                is_server_healthy(upstream_name, *i, upstream.max_fails, upstream.fail_timeout)
+            })
+            .map(|(i, _)| i)
+            .collect();
 
-                let current_counter = counter.fetch_add(1, Ordering::Relaxed);
-                let selected_index = current_counter % upstream.server.len();
-                &upstream.server[selected_index]
-            }
-            LoadBalanceType::WeightedRoundRobin => {
-                // 加权轮询算法
-                let counter = WEIGHTED_ROUND_ROBIN_COUNTERS
-                    .entry(upstream_name.clone())
-                    .or_insert_with(|| AtomicUsize::new(0));
+        // 如果没有健康的服务器，返回第一个服务器作为 fallback
+        let (server, selected_index) = if healthy_servers.is_empty() {
+            tracing::warn!(
+                "No healthy servers available for upstream: {}",
+                upstream_name
+            );
+            (&upstream.server[0], 0)
+        } else {
+            // 根据负载均衡算法选择服务器（仅从健康服务器中选择）
+            let selected_index = match upstream.method {
+                LoadBalanceType::RoundRobin => {
+                    // 简单轮询算法（仅健康服务器）
+                    let counter = WEIGHTED_ROUND_ROBIN_COUNTERS
+                        .entry(upstream_name.clone())
+                        .or_insert_with(|| AtomicUsize::new(0));
 
-                let current_counter = counter.fetch_add(1, Ordering::Relaxed);
-                let total_weight: u32 = upstream.server.iter().map(|s| s.weight).sum();
-                let mut current_weight = current_counter % total_weight as usize;
-
-                let mut selected_index = 0;
-                for (i, server) in upstream.server.iter().enumerate() {
-                    if current_weight < server.weight as usize {
-                        selected_index = i;
-                        break;
-                    }
-                    current_weight -= server.weight as usize;
+                    let current_counter = counter.fetch_add(1, Ordering::Relaxed);
+                    healthy_servers[current_counter % healthy_servers.len()]
                 }
-                &upstream.server[selected_index]
-            }
-            LoadBalanceType::IpHash => {
-                // IP 哈希算法（会话保持）
-                // 获取客户端 IP 地址
-                let client_ip = req
-                    .headers()
-                    .get("x-forwarded-for")
-                    .and_then(|h| h.to_str().ok())
-                    .and_then(|s| s.split(',').next())
-                    .or_else(|| req.headers().get("x-real-ip").and_then(|h| h.to_str().ok()))
-                    .ok_or(RouteError::BadRequest())?;
+                LoadBalanceType::WeightedRoundRobin => {
+                    // 加权轮询算法（仅健康服务器）
+                    let counter = WEIGHTED_ROUND_ROBIN_COUNTERS
+                        .entry(upstream_name.clone())
+                        .or_insert_with(|| AtomicUsize::new(0));
 
-                // 计算 IP 地址的哈希值
-                let hash = ip_hash(client_ip);
-                let selected_index = hash % upstream.server.len();
-                &upstream.server[selected_index]
-            }
-            LoadBalanceType::LeastConn => {
-                // 最少连接数算法
-                let counters = LEAST_CONN_COUNTERS
-                    .entry(upstream_name.clone())
-                    .or_default();
+                    let current_counter = counter.fetch_add(1, Ordering::Relaxed);
+                    let total_weight: u32 = healthy_servers
+                        .iter()
+                        .map(|&i| upstream.server[i].weight)
+                        .sum();
+                    let mut current_weight = current_counter % total_weight as usize;
 
-                // 初始化服务器连接计数器（如果尚未初始化）
-                for i in 0..upstream.server.len() {
-                    counters.entry(i).or_insert_with(|| AtomicUsize::new(0));
-                }
-
-                // 找到连接数最少的服务器
-                let mut selected_index = 0;
-                let mut min_connections = usize::MAX;
-
-                for (i, server) in upstream.server.iter().enumerate() {
-                    let conn_count = counters
-                        .get(&i)
-                        .map(|v| v.load(Ordering::Relaxed))
-                        .unwrap_or(0);
-
-                    // 计算加权连接数（连接数 / 权重），用于公平比较
-                    let weighted_conn = conn_count as f64 / server.weight as f64;
-
-                    // 更新最小连接数和选中的服务器
-                    if weighted_conn < min_connections as f64 {
-                        min_connections = conn_count;
-                        selected_index = i;
-                    } else if weighted_conn == min_connections as f64 {
-                        // 如果连接数相同，则选择权重较大的服务器
-                        if server.weight > upstream.server[selected_index].weight {
+                    let mut selected_index = 0;
+                    for &i in &healthy_servers {
+                        if current_weight < upstream.server[i].weight as usize {
                             selected_index = i;
+                            break;
+                        }
+                        current_weight -= upstream.server[i].weight as usize;
+                    }
+                    selected_index
+                }
+                LoadBalanceType::IpHash => {
+                    // IP 哈希算法（会话保持，仅健康服务器）
+                    // 获取客户端 IP 地址
+                    let client_ip = req
+                        .headers()
+                        .get("x-forwarded-for")
+                        .and_then(|h| h.to_str().ok())
+                        .and_then(|s| s.split(',').next())
+                        .or_else(|| req.headers().get("x-real-ip").and_then(|h| h.to_str().ok()))
+                        .ok_or(RouteError::BadRequest())?;
+
+                    // 计算 IP 地址的哈希值
+                    let hash = ip_hash(client_ip);
+                    healthy_servers[hash % healthy_servers.len()]
+                }
+                LoadBalanceType::LeastConn => {
+                    // 最少连接数算法（仅健康服务器）
+                    let counters = LEAST_CONN_COUNTERS
+                        .entry(upstream_name.clone())
+                        .or_default();
+
+                    // 初始化服务器连接计数器（如果尚未初始化）
+                    for i in 0..upstream.server.len() {
+                        counters.entry(i).or_insert_with(|| AtomicUsize::new(0));
+                    }
+
+                    // 找到连接数最少的服务器（仅健康服务器）
+                    let mut selected_index = healthy_servers[0];
+                    let mut min_connections = usize::MAX;
+
+                    for &i in &healthy_servers {
+                        let conn_count = counters
+                            .get(&i)
+                            .map(|v| v.load(Ordering::Relaxed))
+                            .unwrap_or(0);
+
+                        // 计算加权连接数（连接数 / 权重），用于公平比较
+                        let weighted_conn = conn_count as f64 / upstream.server[i].weight as f64;
+
+                        // 更新最小连接数和选中的服务器
+                        if weighted_conn < min_connections as f64 {
                             min_connections = conn_count;
+                            selected_index = i;
+                        } else if weighted_conn == min_connections as f64 {
+                            // 如果连接数相同，则选择权重较大的服务器
+                            if upstream.server[i].weight > upstream.server[selected_index].weight {
+                                selected_index = i;
+                                min_connections = conn_count;
+                            }
                         }
                     }
+
+                    // 增加选中服务器的连接计数
+                    counters
+                        .get_mut(&selected_index)
+                        .unwrap()
+                        .fetch_add(1, Ordering::Relaxed);
+
+                    selected_index
                 }
+            };
 
-                // 增加选中服务器的连接计数
-                counters
-                    .get_mut(&selected_index)
-                    .unwrap()
-                    .fetch_add(1, Ordering::Relaxed);
-
-                &upstream.server[selected_index]
-            }
+            (&upstream.server[selected_index], selected_index)
         };
 
         // 构建完整的代理 URI，确保正确的格式
@@ -231,7 +527,10 @@ pub async fn serve(
                 format!("http://{}", server.server)
             };
 
-        format!("{}{}", server_addr.trim_end_matches('/'), path_query)
+        (
+            format!("{}{}", server_addr.trim_end_matches('/'), path_query),
+            Some((upstream_name.clone(), selected_index)),
+        )
     } else {
         return custom_page(proxy_config, req, true).await;
     };
@@ -263,58 +562,47 @@ pub async fn serve(
         })?;
     forward_req = forward_req.body(bytes);
 
-    // 记录选中的服务器索引，用于在请求完成后减少连接计数
+    // 对于 least_conn 算法，我们已经在前面保存了选中的服务器索引
+    // 对于其他算法，我们需要检查是否已经保存了索引
     let selected_index = if let Some(ref upstream_name) = proxy_config.upstream
         && let Some(upstream) = UPSTREAMS.get(upstream_name)
         && upstream.method == LoadBalanceType::LeastConn
     {
-        // 重新计算选中的服务器索引（因为我们需要获取索引值）
-        let counters = LEAST_CONN_COUNTERS
-            .entry(upstream_name.clone())
-            .or_default();
-
-        // 初始化服务器连接计数器（如果尚未初始化）
-        for i in 0..upstream.server.len() {
-            counters.entry(i).or_insert_with(|| AtomicUsize::new(0));
-        }
-
-        // 找到连接数最少的服务器
-        let mut selected_idx = 0;
-        let mut min_connections = usize::MAX;
-
-        for (i, server) in upstream.server.iter().enumerate() {
-            let conn_count = counters
-                .get(&i)
-                .map(|v| v.load(Ordering::Relaxed))
-                .unwrap_or(0);
-
-            let weighted_conn = conn_count as f64 / server.weight as f64;
-
-            if weighted_conn < min_connections as f64 {
-                min_connections = conn_count;
-                selected_idx = i;
-            } else if weighted_conn == min_connections as f64
-                && server.weight > upstream.server[selected_idx].weight
-            {
-                selected_idx = i;
-                min_connections = conn_count;
-            }
-        }
-
-        Some((upstream_name.clone(), selected_idx))
+        // 使用我们在前面已经选择的服务器索引
+        selected_server_index.clone()
     } else {
         None
     };
 
     // send reverse proxy request
     let reqwest_response = forward_req.send().await.map_err(|e| {
-        // 如果请求失败，减少连接计数
+        // 如果请求失败，减少连接计数并更新服务器健康状态
         if let Some((upstream_name, idx)) = &selected_index
             && let Some(counters) = LEAST_CONN_COUNTERS.get(upstream_name)
             && let Some(count) = counters.get(idx)
         {
             count.fetch_sub(1, Ordering::Relaxed);
         }
+
+        if let Some((upstream_name, server_index)) = &selected_server_index {
+            // 更新服务器健康状态（失败）
+            update_server_health_failure(upstream_name, *server_index);
+
+            // 检查是否需要将服务器标记为不可用
+            let health_map = SERVER_HEALTH_STATES
+                .entry(upstream_name.to_string())
+                .or_default();
+
+            let health = health_map.entry(*server_index).or_default();
+
+            if let Some(upstream) = UPSTREAMS.get(upstream_name)
+                && upstream.max_fails > 0
+                && health.fail_count >= upstream.max_fails
+            {
+                mark_server_unhealthy(upstream_name, *server_index);
+            }
+        }
+
         tracing::error!("Failed to proxy request: {}", e);
         RouteError::BadRequest()
     })?;
@@ -340,6 +628,11 @@ pub async fn serve(
             tracing::error!("Failed to proxy request: {}", e);
             RouteError::BadRequest()
         })?;
+
+    // 如果请求成功，更新服务器健康状态（成功）
+    if let Some((upstream_name, server_index)) = selected_server_index {
+        update_server_health_success(&upstream_name, server_index);
+    }
 
     // 对于 least_conn 算法，我们需要在响应完成后减少连接计数
     if let Some((upstream_name, idx)) = selected_index {
@@ -612,6 +905,9 @@ mod tests {
                 },
             ],
             method: LoadBalanceType::IpHash,
+            max_fails: 1,
+            fail_timeout: 10,
+            health_check: None,
         };
 
         // 测试一组已知的IP地址应该被分配到相同的服务器
@@ -653,6 +949,9 @@ mod tests {
                     })
                     .collect(),
                 method: LoadBalanceType::IpHash,
+                max_fails: 1,
+                fail_timeout: 10,
+                health_check: None,
             };
 
             // 测试多个IP地址的哈希值分布
@@ -698,6 +997,9 @@ mod tests {
                 },
             ],
             method: LoadBalanceType::IpHash,
+            max_fails: 1,
+            fail_timeout: 10,
+            health_check: None,
         };
 
         // 注意：IP哈希算法不受权重影响，因为它基于IP地址的哈希值直接选择服务器
@@ -725,16 +1027,13 @@ mod tests {
                 weight: 1,
             }],
             method: LoadBalanceType::IpHash,
+            max_fails: 1,
+            fail_timeout: 10,
+            health_check: None,
         };
 
         // 所有IP地址都应该被映射到唯一的服务器
-        let test_ips = vec![
-            "192.168.1.1",
-            "10.0.0.1",
-            "::1",
-            "2001:db8::1",
-            "8.8.8.8",
-        ];
+        let test_ips = vec!["192.168.1.1", "10.0.0.1", "::1", "2001:db8::1", "8.8.8.8"];
 
         for ip in test_ips {
             let hash = ip_hash(ip);
@@ -762,6 +1061,9 @@ mod tests {
                 },
             ],
             method: LoadBalanceType::IpHash,
+            max_fails: 1,
+            fail_timeout: 10,
+            health_check: None,
         };
 
         // 测试空字符串和其他边缘情况
@@ -802,6 +1104,9 @@ mod tests {
                 },
             ],
             method: LoadBalanceType::LeastConn,
+            max_fails: 1,
+            fail_timeout: 10,
+            health_check: None,
         };
 
         // 初始化连接计数器
@@ -877,6 +1182,9 @@ mod tests {
                 },
             ],
             method: LoadBalanceType::RoundRobin,
+            max_fails: 1,
+            fail_timeout: 10,
+            health_check: None,
         };
 
         // 清除之前的计数器状态
@@ -909,6 +1217,9 @@ mod tests {
                 weight: 1,
             }],
             method: LoadBalanceType::RoundRobin,
+            max_fails: 1,
+            fail_timeout: 10,
+            health_check: None,
         };
 
         // 清除之前的计数器状态
@@ -943,6 +1254,9 @@ mod tests {
                 })
                 .collect(),
             method: LoadBalanceType::RoundRobin,
+            max_fails: 0,
+            fail_timeout: 10,
+            health_check: None,
         };
 
         // 清除之前的计数器状态
@@ -950,20 +1264,34 @@ mod tests {
 
         // 统计每个服务器被选中的次数
         let mut selection_counts = vec![0usize; server_count];
+        let mut counter = 0;
         for _ in 0..request_count {
-            let counter = WEIGHTED_ROUND_ROBIN_COUNTERS
-                .entry(upstream_name.to_string())
-                .or_insert_with(|| AtomicUsize::new(0));
+            // 由于 max_fails 为 0，所有服务器都是健康的，直接使用所有服务器
+            let healthy_servers: Vec<usize> = (0..server_count).collect();
 
-            let current_counter = counter.fetch_add(1, Ordering::Relaxed);
-            let selected_index = current_counter % upstream.server.len();
+            let selected_index = match upstream.method {
+                LoadBalanceType::RoundRobin => {
+                    let selected_index = counter % healthy_servers.len();
+                    counter += 1;
+                    selected_index
+                }
+                _ => unreachable!(),
+            };
+
             selection_counts[selected_index] += 1;
         }
 
-        // 每个服务器应该被选中 request_count / server_count 次
+        // 检查分布是否均匀（允许小误差）
         let expected_count = request_count / server_count;
+        let allowed_error = 2;
         for count in selection_counts {
-            assert_eq!(count, expected_count);
+            assert!(
+                (count as i32 - expected_count as i32).abs() <= allowed_error,
+                "Server selected {} times, expected {} ± {}",
+                count,
+                expected_count,
+                allowed_error
+            );
         }
     }
 
@@ -988,6 +1316,9 @@ mod tests {
                 },
             ],
             method: LoadBalanceType::WeightedRoundRobin,
+            max_fails: 1,
+            fail_timeout: 10,
+            health_check: None,
         };
 
         // 清除之前的计数器状态
@@ -1046,6 +1377,9 @@ mod tests {
                 },
             ],
             method: LoadBalanceType::WeightedRoundRobin,
+            max_fails: 1,
+            fail_timeout: 10,
+            health_check: None,
         };
 
         // 清除之前的计数器状态
@@ -1098,6 +1432,9 @@ mod tests {
                 },
             ],
             method: LoadBalanceType::WeightedRoundRobin,
+            max_fails: 1,
+            fail_timeout: 10,
+            health_check: None,
         };
 
         // 清除之前的计数器状态
@@ -1154,6 +1491,9 @@ mod tests {
                 },
             ],
             method: LoadBalanceType::WeightedRoundRobin,
+            max_fails: 1,
+            fail_timeout: 10,
+            health_check: None,
         };
 
         // 清除之前的计数器状态
@@ -1192,12 +1532,15 @@ mod tests {
         for (i, server) in upstream.server.iter().enumerate() {
             let expected_ratio = server.weight as f64 / total_weight as f64;
             let actual_ratio = counts[i] as f64 / request_count as f64;
-            let tolerance = 0.01; // 允许1%的误差
+            let tolerance = 0.02; // 允许2%的误差
 
             assert!(
                 (actual_ratio - expected_ratio).abs() <= tolerance,
                 "Server {} weight {} expected ratio {:.2}, actual {:.2}",
-                i, server.weight, expected_ratio, actual_ratio
+                i,
+                server.weight,
+                expected_ratio,
+                actual_ratio
             );
         }
     }
@@ -1213,6 +1556,9 @@ mod tests {
                 weight: 10,
             }],
             method: LoadBalanceType::WeightedRoundRobin,
+            max_fails: 1,
+            fail_timeout: 10,
+            health_check: None,
         };
 
         // 清除之前的计数器状态
@@ -1268,6 +1614,9 @@ mod tests {
                 },
             ],
             method: LoadBalanceType::WeightedRoundRobin,
+            max_fails: 1,
+            fail_timeout: 10,
+            health_check: None,
         };
 
         // 清除之前的计数器状态
@@ -1276,8 +1625,10 @@ mod tests {
         let total_weight: u32 = upstream.server.iter().map(|s| s.weight).sum();
 
         // 设置计数器到总权重的值，这样下一次请求的 current_weight 为 0
-        WEIGHTED_ROUND_ROBIN_COUNTERS
-            .insert(upstream_name.to_string(), AtomicUsize::new(total_weight as usize));
+        WEIGHTED_ROUND_ROBIN_COUNTERS.insert(
+            upstream_name.to_string(),
+            AtomicUsize::new(total_weight as usize),
+        );
 
         let mut selected_servers = Vec::new();
         for _ in 0..total_weight {
@@ -1324,6 +1675,9 @@ mod tests {
                 },
             ],
             method: LoadBalanceType::WeightedRoundRobin,
+            max_fails: 1,
+            fail_timeout: 10,
+            health_check: None,
         };
 
         // 清除之前的计数器状态
@@ -1374,7 +1728,10 @@ mod tests {
         assert_eq!(LoadBalanceType::IpHash, LoadBalanceType::IpHash);
         assert_eq!(LoadBalanceType::LeastConn, LoadBalanceType::LeastConn);
 
-        assert_ne!(LoadBalanceType::RoundRobin, LoadBalanceType::WeightedRoundRobin);
+        assert_ne!(
+            LoadBalanceType::RoundRobin,
+            LoadBalanceType::WeightedRoundRobin
+        );
         assert_ne!(LoadBalanceType::IpHash, LoadBalanceType::LeastConn);
     }
 

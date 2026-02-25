@@ -46,6 +46,60 @@ fn default_load_balance() -> LoadBalanceType {
     LoadBalanceType::WeightedRoundRobin
 }
 
+/// 主动健康检查配置
+#[derive(Deserialize, Clone, Debug, Default)]
+#[allow(dead_code)]
+pub struct HealthCheck {
+    /// 健康检查间隔（毫秒），默认3000ms
+    #[serde(default = "default_health_check_interval")]
+    pub interval: u64,
+    /// 连续失败次数阈值，达到该次数标记为down，默认3次
+    #[serde(default = "default_health_check_fall")]
+    pub fall: u32,
+    /// 连续成功次数阈值，达到该次数标记为up，默认2次
+    #[serde(default = "default_health_check_rise")]
+    pub rise: u32,
+    /// 健康检查协议类型，默认http
+    #[serde(default = "default_health_check_type")]
+    pub r#type: String,
+    /// 发送的HTTP探测包内容，默认"HEAD / HTTP/1.0\r\n\r\n"
+    #[serde(default = "default_health_check_send")]
+    pub check_http_send: String,
+    /// 期望返回的HTTP状态码，默认"200-399"
+    #[serde(default = "default_health_check_expect")]
+    pub check_http_expect_alive: String,
+}
+
+/// 默认健康检查间隔（毫秒）
+fn default_health_check_interval() -> u64 {
+    3000
+}
+
+/// 默认健康检查连续失败次数
+fn default_health_check_fall() -> u32 {
+    3
+}
+
+/// 默认健康检查连续成功次数
+fn default_health_check_rise() -> u32 {
+    2
+}
+
+/// 默认健康检查类型
+fn default_health_check_type() -> String {
+    "http".to_string()
+}
+
+/// 默认健康检查发送内容
+fn default_health_check_send() -> String {
+    "HEAD / HTTP/1.0\r\n\r\n".to_string()
+}
+
+/// 默认健康检查期望状态码范围
+fn default_health_check_expect() -> String {
+    "200-399".to_string()
+}
+
 /// 上游服务器组配置
 #[derive(Deserialize, Clone, Debug)]
 pub struct Upstream {
@@ -56,6 +110,24 @@ pub struct Upstream {
     /// 负载均衡算法类型
     #[serde(default = "default_load_balance")]
     pub method: LoadBalanceType,
+    /// 被动健康检查：在fail_timeout时间内允许的最大失败次数，默认1次，0表示不检查
+    #[serde(default = "default_max_fails")]
+    pub max_fails: u32,
+    /// 被动健康检查：失败超时时间（秒），也是服务器不可用的持续时间，默认10秒
+    #[serde(default = "default_fail_timeout")]
+    pub fail_timeout: u64,
+    /// 主动健康检查配置
+    pub health_check: Option<HealthCheck>,
+}
+
+/// 默认最大失败次数
+fn default_max_fails() -> u32 {
+    1
+}
+
+/// 默认失败超时时间（秒）
+fn default_fail_timeout() -> u64 {
+    10
 }
 
 /// 错误页面路由配置

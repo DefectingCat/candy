@@ -55,6 +55,8 @@ pub fn load_upstreams(settings: &crate::config::Settings) {
         for upstream in upstreams {
             crate::http::UPSTREAMS.insert(upstream.name.clone(), upstream.clone());
         }
+        // 初始化健康检查
+        crate::http::reverse_proxy::initialize_health_checks(upstreams);
     }
 }
 
@@ -94,6 +96,8 @@ pub async fn handle_config_change(
                     for upstream in upstreams {
                         crate::http::UPSTREAMS.insert(upstream.name.clone(), upstream.clone());
                     }
+                    // 初始化健康检查
+                    crate::http::reverse_proxy::initialize_health_checks(upstreams);
                 }
 
                 let new_handles = start_servers(new_hosts).await;
