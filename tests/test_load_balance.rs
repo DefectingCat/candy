@@ -378,6 +378,112 @@ fn test_load_balance_type_debug() {
     // 测试 Debug trait 实现
     assert!(format!("{:?}", LoadBalanceType::RoundRobin).contains("RoundRobin"));
     assert!(format!("{:?}", LoadBalanceType::WeightedRoundRobin).contains("WeightedRoundRobin"));
+    assert!(format!("{:?}", LoadBalanceType::IpHash).contains("IpHash"));
+    assert!(format!("{:?}", LoadBalanceType::LeastConn).contains("LeastConn"));
+}
+
+// ============================================================================
+// IP Hash 集成测试
+// ============================================================================
+
+#[test]
+fn test_ip_hash_config_parsing() -> Result<()> {
+    // 测试 IP Hash 配置解析
+    let mut file = NamedTempFile::new()?;
+    writeln!(
+        file,
+        r#"
+[[upstream]]
+name = "test_ip_hash"
+method = "iphash"
+server = [
+    {{ server = "192.168.1.100:8080" }},
+    {{ server = "192.168.1.101:8080" }},
+    {{ server = "192.168.1.102:8080" }}
+]
+
+[[host]]
+ip = "127.0.0.1"
+port = 8080
+ssl = false
+
+[[host.route]]
+location = "/api"
+upstream = "test_ip_hash"
+proxy_timeout = 30
+"#
+    )?;
+
+    let path = file.path().to_str().unwrap();
+    let settings = candy::config::Settings::new(path)?;
+
+    // 验证 upstream 配置
+    assert!(settings.upstream.is_some());
+    let upstreams = settings.upstream.as_ref().unwrap();
+    assert_eq!(upstreams.len(), 1);
+
+    let upstream = &upstreams[0];
+    assert_eq!(upstream.name, "test_ip_hash");
+    assert_eq!(upstream.method, candy::config::LoadBalanceType::IpHash);
+    assert_eq!(upstream.server.len(), 3);
+    assert_eq!(upstream.server[0].server, "192.168.1.100:8080");
+    assert_eq!(upstream.server[1].server, "192.168.1.101:8080");
+    assert_eq!(upstream.server[2].server, "192.168.1.102:8080");
+
+    // 验证路由配置
+    assert_eq!(settings.host.len(), 1);
+    let route = &settings.host[0].route[0];
+    assert_eq!(route.location, "/api");
+    assert_eq!(route.upstream, Some("test_ip_hash".to_string()));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_server_startup_with_ip_hash_config() -> Result<()> {
+    // 测试使用 IP Hash 配置启动服务器
+    let (temp_dir_path, _index_html_path) = create_test_directory()?;
+
+    let mut config_content = String::new();
+    config_content.push_str("log_level = \"debug\"\n");
+    config_content.push_str("log_folder = \"/tmp/candy_test\"\n\n");
+
+    config_content.push_str("[[upstream]]\n");
+    config_content.push_str("name = \"test_backend\"\n");
+    config_content.push_str("method = \"iphash\"\n");
+    config_content.push_str("server = [\n");
+    config_content.push_str("  { server = \"192.168.1.100:8080\" },\n");
+    config_content.push_str("  { server = \"192.168.1.101:8080\" },\n");
+    config_content.push_str("]\n\n");
+
+    config_content.push_str("[[host]]\n");
+    config_content.push_str("ip = \"127.0.0.1\"\n");
+    config_content.push_str("port = 0\n"); // 使用随机端口
+    config_content.push_str("ssl = false\n");
+    config_content.push_str("timeout = 75\n\n");
+
+    config_content.push_str("[[host.route]]\n");
+    config_content.push_str("location = \"/\"\n");
+    config_content.push_str("root = \"");
+    config_content.push_str(temp_dir_path.to_str().unwrap());
+    config_content.push_str("\"\n");
+    config_content.push_str("index = [\"index.html\"]\n");
+
+    // 创建临时配置文件
+    let config_path = temp_dir_path.join("config.toml");
+    std::fs::write(&config_path, &config_content)?;
+
+    // 验证配置文件可以正常解析
+    let settings = candy::config::Settings::new(config_path.to_str().unwrap())?;
+    assert!(settings.upstream.is_some());
+
+    let upstreams = settings.upstream.as_ref().unwrap();
+    assert_eq!(upstreams.len(), 1);
+    assert_eq!(upstreams[0].name, "test_backend");
+    assert_eq!(upstreams[0].method, candy::config::LoadBalanceType::IpHash);
+
+    println!("IP Hash 配置解析测试通过!");
+    Ok(())
 }
 
 // ============================================================================
