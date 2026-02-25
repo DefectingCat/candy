@@ -72,3 +72,22 @@ server = [
     { server = "192.168.1.103:8080", weight = 1 },
     { server = "192.168.1.104:8080", weight = 1 },
 ]
+
+# Example of active health check configuration
+[[upstream]]
+name = "health_check_servers"
+method = "weighted_round_robin"
+server = [
+    { server = "192.168.1.105:8080", weight = 2 },
+    { server = "192.168.1.106:8080", weight = 1 },
+    { server = "192.168.1.107:8080", weight = 3 },
+]
+# Health check configuration
+health_check = {
+    interval = 3000,
+    fall = 3,
+    rise = 2,
+    type = "http",
+    check_http_send = "HEAD / HTTP/1.0\r\n\r\n",
+    check_http_expect_alive = "200-399"
+}
