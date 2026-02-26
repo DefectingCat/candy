@@ -9,14 +9,11 @@ build:
 release:
 	$(CARGO) build --release
 
-dev:
-	$(CARGO) watch -x run
-
 run:
 	$(CARGO) run
 
 test:
-	$(CARGO) test -- --test-threads=1
+	$(CARGO) test
 
 clean:
 	$(CARGO) clean

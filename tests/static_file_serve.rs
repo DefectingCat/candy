@@ -3,12 +3,14 @@
 use std::fs;
 
 use anyhow::Result;
+use serial_test::serial;
 use tempfile::TempDir;
 
 mod common;
 use common::*;
 
 #[tokio::test]
+#[serial]
 async fn test_static_file_serving() -> Result<()> {
     // 创建临时目录和测试文件
     let temp_dir = TempDir::new()?;
@@ -43,6 +45,7 @@ async fn test_static_file_serving() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_directory_listing() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
@@ -76,6 +79,7 @@ async fn test_directory_listing() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_file_not_found() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
@@ -102,6 +106,7 @@ async fn test_file_not_found() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_custom_error_page() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let error_page_path = temp_dir.path().join("404.html");

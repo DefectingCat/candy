@@ -1,13 +1,13 @@
 use std::{net::SocketAddr, sync::LazyLock, time::Duration};
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::anyhow;
 use axum::{Router, extract::DefaultBodyLimit, middleware, routing::get};
 use axum_server::{Handle, tls_rustls::RustlsConfig};
 use dashmap::DashMap;
 use http::StatusCode;
-use tokio::sync::Mutex;
+use tokio::sync::Mutex as AsyncMutex;
 use tower::ServiceBuilder;
 use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer};
 use tracing::{debug, error, info, warn};
@@ -20,6 +20,30 @@ use crate::{
 /// 上游服务器组配置存储
 /// 使用 upstream 名称作为键，Upstream 配置作为值
 pub static UPSTREAMS: LazyLock<DashMap<String, Upstream>> = LazyLock::new(DashMap::new);
+
+/// 全局互斥锁，用于保护服务器启动过程的原子性
+/// 这在测试场景中特别重要，确保多个测试不会互相干扰
+#[allow(dead_code)]
+static SERVER_START_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+/// 清除所有全局状态
+///
+/// 此函数主要用于测试场景，确保测试之间的隔离。
+/// 在多线程测试中，应该在每个测试开始时调用此函数来清除之前测试遗留的状态。
+#[allow(dead_code)]
+pub fn clear_global_state() {
+    UPSTREAMS.clear();
+    HOSTS.clear();
+}
+
+/// 获取服务器启动锁
+///
+/// 用于保护服务器启动过程，确保清理全局状态和加载新配置的原子性。
+/// 返回一个 MutexGuard，当 guard 被 drop 时锁自动释放。
+#[allow(dead_code)]
+pub fn acquire_server_start_lock() -> std::sync::MutexGuard<'static, ()> {
+    SERVER_START_MUTEX.lock().unwrap()
+}
 
 pub mod error;
 // 处理静态文件
@@ -63,15 +87,15 @@ pub fn load_upstreams(settings: &crate::config::Settings) {
 /// 启动初始服务器实例
 pub async fn start_initial_servers(
     settings: crate::config::Settings,
-) -> anyhow::Result<Arc<Mutex<Vec<axum_server::Handle<SocketAddr>>>>> {
+) -> anyhow::Result<Arc<AsyncMutex<Vec<axum_server::Handle<SocketAddr>>>>> {
     let handles = start_servers(settings.host).await;
-    Ok(Arc::new(Mutex::new(handles)))
+    Ok(Arc::new(AsyncMutex::new(handles)))
 }
 
 /// 处理配置文件变更的回调函数
 pub async fn handle_config_change(
     result: crate::error::Result<crate::config::Settings>,
-    handles: Arc<Mutex<Vec<axum_server::Handle<SocketAddr>>>>,
+    handles: Arc<AsyncMutex<Vec<axum_server::Handle<SocketAddr>>>>,
 ) {
     match result {
         Ok(new_settings) => {

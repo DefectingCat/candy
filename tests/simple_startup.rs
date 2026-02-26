@@ -1,11 +1,13 @@
 //! 简单的服务器启动测试
 
 use anyhow::Result;
+use serial_test::serial;
 
 mod common;
 use common::*;
 
 #[tokio::test]
+#[serial]
 async fn test_simple_startup() -> Result<()> {
     println!("Starting simple server startup test...");
 

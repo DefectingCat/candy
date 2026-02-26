@@ -1,11 +1,13 @@
 //! 服务器启动测试
 
 use anyhow::Result;
+use serial_test::serial;
 
 mod common;
 use common::*;
 
 #[tokio::test]
+#[serial]
 async fn test_server_startup() -> Result<()> {
     println!("Starting server startup test...");
 
@@ -77,6 +79,7 @@ async fn test_server_startup() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_server_shutdown() -> Result<()> {
     println!("Starting server shutdown test...");
 

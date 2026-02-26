@@ -1,6 +1,7 @@
 //! 基本服务测试
 
 use anyhow::Result;
+use serial_test::serial;
 
 mod common;
 use common::*;
@@ -9,6 +10,7 @@ mod test_fixtures;
 use test_fixtures::*;
 
 #[tokio::test]
+#[serial]
 async fn test_basic_server() -> Result<()> {
     println!("测试基本服务器功能...");
 

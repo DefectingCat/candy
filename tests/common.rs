@@ -117,7 +117,11 @@ pub fn create_temp_config(config: &TestServerConfig) -> Result<PathBuf> {
 pub async fn start_test_server(
     config_path: &PathBuf,
 ) -> Result<(axum_server::Handle<SocketAddr>, SocketAddr)> {
-    let _ = logging::init_logger("debug", "/dev/null").expect("Failed to init logger");
+    // 清理全局状态，确保测试隔离
+    http::clear_global_state();
+    
+    // 初始化 logger（幂等操作，可以多次调用）
+    let _ = logging::init_logger("debug", "/dev/null");
 
     let settings =
         Settings::new(config_path.to_str().expect("Invalid path")).expect("Failed to load config");
