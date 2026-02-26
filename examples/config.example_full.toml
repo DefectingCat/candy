@@ -5,6 +5,14 @@
 log_level = "info"    # trace, debug, info, warn, error (default: info)
 log_folder = "./logs" # Log files directory (default: ./logs)
 
+# Compression settings (optional, all algorithms enabled by default)
+# [compression]
+# gzip = true      # Enable gzip compression (default: true)
+# deflate = true   # Enable deflate compression (default: true)
+# br = true        # Enable brotli compression (default: true)
+# zstd = true      # Enable zstd compression (default: true)
+# level = 6        # Compression level: 1 (fastest) to 9 (best), default: 6
+
 # Virtual host configuration
 # Each [[host]] block defines a separate virtual host
 

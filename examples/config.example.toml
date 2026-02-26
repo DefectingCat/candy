@@ -1,3 +1,11 @@
+# Compression settings (optional, all algorithms enabled by default)
+# [compression]
+# gzip = true      # Enable gzip compression
+# deflate = true   # Enable deflate compression
+# br = true        # Enable brotli compression
+# zstd = true      # Enable zstd compression
+# level = 6        # Compression level: 1 (fastest) to 9 (best)
+
 [[host]]
 ip = "0.0.0.0"
 port = 80
