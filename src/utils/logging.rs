@@ -19,12 +19,6 @@ fn create_dummy_guard() -> WorkerGuard {
     dummy_guard
 }
 
-/// 检查 logger 是否已初始化
-#[allow(dead_code)]
-pub fn is_logger_initialized() -> bool {
-    LOGGER_INITIALIZED.get().is_some()
-}
-
 /// 尝试初始化 Logger（如果尚未初始化）
 ///
 /// 此函数是线程安全的，可以多次调用。
