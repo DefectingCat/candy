@@ -126,10 +126,12 @@ pub async fn start_test_server(
     let settings =
         Settings::new(config_path.to_str().expect("Invalid path")).expect("Failed to load config");
 
-    let server_handle =
-        http::make_server(settings.host.into_iter().next().expect("No host config"))
-            .await
-            .expect("Failed to create server");
+    let server_handle = http::make_server(
+        settings.host.into_iter().next().expect("No host config"),
+        settings.compression,
+    )
+    .await
+    .expect("Failed to create server");
 
     // 等待服务器开始监听（最多等待 1 秒）
     let max_wait_time = std::time::Duration::from_secs(1);

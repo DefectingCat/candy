@@ -9,11 +9,11 @@ use dashmap::DashMap;
 use http::StatusCode;
 use tokio::sync::Mutex;
 use tower::ServiceBuilder;
-use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer};
+use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer, CompressionLevel};
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    config::{SettingHost, Upstream},
+    config::{CompressionConfig, SettingHost, Upstream},
     middlewares::{add_headers, add_version, logging_route},
 };
 
@@ -74,7 +74,8 @@ pub fn load_upstreams(settings: &crate::config::Settings) {
 pub async fn start_initial_servers(
     settings: crate::config::Settings,
 ) -> anyhow::Result<Arc<Mutex<Vec<axum_server::Handle<SocketAddr>>>>> {
-    let handles = start_servers(settings.host).await;
+    let compression = settings.compression.clone();
+    let handles = start_servers(settings.host, compression).await;
     Ok(Arc::new(Mutex::new(handles)))
 }
 
@@ -95,6 +96,7 @@ pub async fn handle_config_change(
             // 在新的 tokio 任务中启动新服务器
             let new_hosts = new_settings.host;
             let new_upstreams = new_settings.upstream;
+            let new_compression = new_settings.compression;
             let handles_clone = handles.clone();
             tokio::spawn(async move {
                 // 清空全局 HOSTS 和 UPSTREAMS 变量，确保新配置完全生效
@@ -110,7 +112,7 @@ pub async fn handle_config_change(
                     crate::http::reverse_proxy::initialize_health_checks(upstreams);
                 }
 
-                let new_handles = start_servers(new_hosts).await;
+                let new_handles = start_servers(new_hosts, new_compression).await;
 
                 let mut current_handles = handles_clone.lock().await;
                 *current_handles = new_handles;
@@ -152,6 +154,7 @@ pub async fn shutdown_servers(handles: &mut Vec<axum_server::Handle<SocketAddr>>
 /// # 参数
 ///
 /// * `hosts` - 配置文件中定义的所有主机的列表，每个主机包含完整的服务器配置
+/// * `compression` - 压缩配置，用于配置响应压缩
 ///
 /// # 返回值
 ///
@@ -160,12 +163,15 @@ pub async fn shutdown_servers(handles: &mut Vec<axum_server::Handle<SocketAddr>>
 /// # 错误处理
 ///
 /// 单个服务器启动失败会被捕获并记录为错误日志，不会影响其他服务器的启动
-pub async fn start_servers(hosts: Vec<SettingHost>) -> Vec<axum_server::Handle<SocketAddr>> {
+pub async fn start_servers(
+    hosts: Vec<SettingHost>,
+    compression: CompressionConfig,
+) -> Vec<axum_server::Handle<SocketAddr>> {
     let mut handles = Vec::new();
     for host in hosts {
         // 保存主机地址信息用于日志显示
         let server_addr = format!("{}:{}", host.ip, host.port);
-        match make_server(host).await {
+        match make_server(host, compression.clone()).await {
             Ok(handle) => {
                 handles.push(handle);
                 info!("Server instance started on {}", server_addr);
@@ -181,7 +187,10 @@ pub async fn start_servers(hosts: Vec<SettingHost>) -> Vec<axum_server::Handle<S
     handles
 }
 
-pub async fn make_server(host: SettingHost) -> anyhow::Result<axum_server::Handle<SocketAddr>> {
+pub async fn make_server(
+    host: SettingHost,
+    compression: CompressionConfig,
+) -> anyhow::Result<axum_server::Handle<SocketAddr>> {
     debug!("make_server start with host: {:?}", host);
     let mut router = Router::new();
     let host_to_save = host.clone();
@@ -321,6 +330,21 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<axum_server::Handl
         HOSTS.insert(host.port, domain_map);
     }
 
+    // 根据配置构建压缩层
+    let compression_level = match compression.level {
+        1 => CompressionLevel::Fastest,
+        2..=8 => CompressionLevel::Precise(compression.level as i32),
+        9 => CompressionLevel::Best,
+        _ => CompressionLevel::Default,
+    };
+
+    let compression_layer = CompressionLayer::new()
+        .gzip(compression.gzip)
+        .deflate(compression.deflate)
+        .br(compression.br)
+        .zstd(compression.zstd)
+        .quality(compression_level);
+
     router = router.layer(
         ServiceBuilder::new()
             .layer(middleware::from_fn(add_version))
@@ -329,7 +353,7 @@ pub async fn make_server(host: SettingHost) -> anyhow::Result<axum_server::Handl
                 StatusCode::SERVICE_UNAVAILABLE,
                 Duration::from_secs(host.timeout.into()),
             ))
-            .layer(CompressionLayer::new()),
+            .layer(compression_layer),
     );
 
     router = logging_route(router);

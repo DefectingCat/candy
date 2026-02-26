@@ -15,6 +15,46 @@
       "type": "string",
       "default": "./logs"
     },
+    "compression": {
+      "description": "Compression configuration for HTTP responses",
+      "type": "object",
+      "properties": {
+        "gzip": {
+          "description": "Enable gzip compression",
+          "type": "boolean",
+          "default": true
+        },
+        "deflate": {
+          "description": "Enable deflate compression",
+          "type": "boolean",
+          "default": true
+        },
+        "br": {
+          "description": "Enable brotli compression",
+          "type": "boolean",
+          "default": true
+        },
+        "zstd": {
+          "description": "Enable zstd compression",
+          "type": "boolean",
+          "default": true
+        },
+        "level": {
+          "description": "Compression level (1-9). 1 = fastest, 9 = best compression",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9,
+          "default": 6
+        }
+      },
+      "default": {
+        "gzip": true,
+        "deflate": true,
+        "br": true,
+        "zstd": true,
+        "level": 6
+      }
+    },
     "upstream": {
       "description": "Upstream server groups for load balancing",
       "type": "array",

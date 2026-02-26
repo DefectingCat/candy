@@ -43,6 +43,15 @@ pub fn default_log_folder() -> String {
     DEFAULT_LOG_FOLDER.to_string()
 }
 
+// default compression settings
+pub fn default_compression_enabled() -> bool {
+    true
+}
+
+pub fn default_compression_level() -> u8 {
+    6 // tower-http default is typically around 6 (middle ground)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,6 +1,7 @@
 use crate::{
     consts::{
-        default_disabled, default_log_folder, default_log_level, host_index, timeout_default,
+        default_compression_enabled, default_compression_level, default_disabled,
+        default_log_folder, default_log_level, host_index, timeout_default,
         upstream_timeout_default,
     },
     error::Result,
@@ -139,6 +140,39 @@ pub struct ErrorRoute {
     pub page: String,
 }
 
+/// 压缩配置
+#[derive(Deserialize, Clone, Debug)]
+pub struct CompressionConfig {
+    /// 是否启用 gzip 压缩
+    #[serde(default = "default_compression_enabled")]
+    pub gzip: bool,
+    /// 是否启用 deflate 压缩
+    #[serde(default = "default_compression_enabled")]
+    pub deflate: bool,
+    /// 是否启用 brotli 压缩
+    #[serde(default = "default_compression_enabled")]
+    pub br: bool,
+    /// 是否启用 zstd 压缩
+    #[serde(default = "default_compression_enabled")]
+    pub zstd: bool,
+    /// 压缩级别 (1-9)，级别越高压缩率越高但速度越慢
+    /// 1 = 最快压缩，9 = 最佳压缩，默认 6
+    #[serde(default = "default_compression_level")]
+    pub level: u8,
+}
+
+impl Default for CompressionConfig {
+    fn default() -> Self {
+        Self {
+            gzip: true,
+            deflate: true,
+            br: true,
+            zstd: true,
+            level: 6,
+        }
+    }
+}
+
 /// 虚拟主机中的路由
 /// 可以是静态文件、反向代理或正向代理
 #[derive(Deserialize, Clone, Debug)]
@@ -233,6 +267,10 @@ pub struct Settings {
     /// 日志文件夹路径
     #[serde(default = "default_log_folder")]
     pub log_folder: String,
+
+    /// 压缩配置
+    #[serde(default)]
+    pub compression: CompressionConfig,
 
     /// 上游服务器组配置
     pub upstream: Option<Vec<Upstream>>,
