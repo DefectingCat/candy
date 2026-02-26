@@ -217,6 +217,18 @@ pub struct SettingRoute {
     pub redirect_to: Option<String>,
     /// HTTP 重定向状态码
     pub redirect_code: Option<u16>,
+
+    // --- 路由级别压缩配置 ---
+    /// 是否启用 gzip 压缩（路由级别，覆盖全局配置）
+    pub gzip: Option<bool>,
+    /// 是否启用 deflate 压缩（路由级别，覆盖全局配置）
+    pub deflate: Option<bool>,
+    /// 是否启用 brotli 压缩（路由级别，覆盖全局配置）
+    pub br: Option<bool>,
+    /// 是否启用 zstd 压缩（路由级别，覆盖全局配置）
+    pub zstd: Option<bool>,
+    /// 压缩级别 1-9（路由级别，覆盖全局配置）
+    pub level: Option<u8>,
 }
 
 /// 主机路由映射

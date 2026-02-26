@@ -261,6 +261,28 @@
           "type": "integer",
           "minimum": 300,
           "maximum": 399
+        },
+        "gzip": {
+          "description": "Enable gzip compression for this route (overrides global setting)",
+          "type": "boolean"
+        },
+        "deflate": {
+          "description": "Enable deflate compression for this route (overrides global setting)",
+          "type": "boolean"
+        },
+        "br": {
+          "description": "Enable brotli compression for this route (overrides global setting)",
+          "type": "boolean"
+        },
+        "zstd": {
+          "description": "Enable zstd compression for this route (overrides global setting)",
+          "type": "boolean"
+        },
+        "level": {
+          "description": "Compression level for this route (1-9). 1 = fastest, 9 = best compression (overrides global setting)",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
         }
       },
       "required": ["location"],

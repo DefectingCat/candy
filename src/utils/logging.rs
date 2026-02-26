@@ -1,5 +1,5 @@
-use std::sync::OnceLock;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 use anyhow::Context;
 use tracing_appender::non_blocking::WorkerGuard;

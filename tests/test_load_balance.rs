@@ -215,7 +215,10 @@ proxy_timeout = 30
     // 验证第一个 upstream (API 服务器)
     let api_upstream = &upstreams[0];
     assert_eq!(api_upstream.name, "api_servers");
-    assert_eq!(api_upstream.method, candy::config::LoadBalanceType::RoundRobin);
+    assert_eq!(
+        api_upstream.method,
+        candy::config::LoadBalanceType::RoundRobin
+    );
     assert_eq!(api_upstream.server.len(), 2);
 
     // 验证第二个 upstream (静态服务器)
@@ -344,9 +347,11 @@ fn test_load_balance_type_serde() -> Result<()> {
     use candy::config::LoadBalanceType;
 
     // 测试通过完整 TOML 配置反序列化（小写下划线格式）
-    let config: toml::Value = toml::from_str(r#"
+    let config: toml::Value = toml::from_str(
+        r#"
 method = "roundrobin"
-"#)?;
+"#,
+    )?;
     assert_eq!(config["method"].as_str(), Some("roundrobin"));
 
     // 测试 LoadBalanceType 的 Deserialize 实现
@@ -531,7 +536,10 @@ async fn test_server_startup_with_round_robin_config() -> Result<()> {
     let upstreams = settings.upstream.as_ref().unwrap();
     assert_eq!(upstreams.len(), 1);
     assert_eq!(upstreams[0].name, "test_backend");
-    assert_eq!(upstreams[0].method, candy::config::LoadBalanceType::RoundRobin);
+    assert_eq!(
+        upstreams[0].method,
+        candy::config::LoadBalanceType::RoundRobin
+    );
 
     println!("Round Robin 配置解析测试通过!");
     Ok(())

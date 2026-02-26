@@ -38,6 +38,15 @@ auto_index = true # Enable directory listing (default: false)
 proxy_timeout = 5 # Proxy timeout (only for proxy_pass, default: 5)
 max_body_size = 1048576 # Max request body size in bytes (optional)
 
+# Route-level compression settings (optional, override global [compression] settings)
+# If any compression field is set for a route, it will use route-specific compression
+# instead of global settings. Fields not specified will fall back to global settings.
+# gzip = true       # Enable/disable gzip compression for this route (optional)
+# deflate = false   # Enable/disable deflate compression for this route (optional)
+# br = true         # Enable/disable brotli compression for this route (optional)
+# zstd = true       # Enable/disable zstd compression for this route (optional)
+# level = 6         # Compression level: 1 (fastest) to 9 (best) (optional)
+
 # Custom error page
 [host.route.error_page]
 status = 500       # HTTP status code

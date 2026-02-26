@@ -9,11 +9,11 @@ use dashmap::DashMap;
 use http::StatusCode;
 use tokio::sync::Mutex;
 use tower::ServiceBuilder;
-use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer, CompressionLevel};
+use tower_http::{CompressionLevel, compression::CompressionLayer, timeout::TimeoutLayer};
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    config::{CompressionConfig, SettingHost, Upstream},
+    config::{CompressionConfig, SettingHost, SettingRoute, Upstream},
     middlewares::{add_headers, add_version, logging_route},
 };
 
@@ -68,6 +68,53 @@ pub fn load_upstreams(settings: &crate::config::Settings) {
         // 初始化健康检查
         crate::http::reverse_proxy::initialize_health_checks(upstreams);
     }
+}
+
+/// 构建压缩层
+///
+/// 根据路由配置和全局配置构建压缩层。路由级别配置优先于全局配置。
+///
+/// # 参数
+/// * `route` - 路由配置
+/// * `global` - 全局压缩配置
+///
+/// # 返回值
+/// 返回构建好的压缩层
+fn build_compression_layer(route: &SettingRoute, global: &CompressionConfig) -> CompressionLayer {
+    // 使用路由配置或回退到全局配置
+    let gzip = route.gzip.unwrap_or(global.gzip);
+    let deflate = route.deflate.unwrap_or(global.deflate);
+    let br = route.br.unwrap_or(global.br);
+    let zstd = route.zstd.unwrap_or(global.zstd);
+    let level = route.level.unwrap_or(global.level);
+
+    let compression_level = match level {
+        1 => CompressionLevel::Fastest,
+        2..=8 => CompressionLevel::Precise(level as i32),
+        9 => CompressionLevel::Best,
+        _ => CompressionLevel::Default,
+    };
+
+    CompressionLayer::new()
+        .gzip(gzip)
+        .deflate(deflate)
+        .br(br)
+        .zstd(zstd)
+        .quality(compression_level)
+}
+
+/// 检查路由是否有自定义压缩配置
+fn route_has_custom_compression(route: &SettingRoute) -> bool {
+    route.gzip.is_some()
+        || route.deflate.is_some()
+        || route.br.is_some()
+        || route.zstd.is_some()
+        || route.level.is_some()
+}
+
+/// 检查主机是否有任何路由使用了自定义压缩配置
+fn host_has_any_custom_compression(host: &SettingHost) -> bool {
+    host.route.iter().any(route_has_custom_compression)
 }
 
 /// 启动初始服务器实例
@@ -195,6 +242,9 @@ pub async fn make_server(
     let mut router = Router::new();
     let host_to_save = host.clone();
 
+    // 检查是否有任何路由使用了自定义压缩配置
+    let any_route_has_custom_compression = host_has_any_custom_compression(&host);
+
     // 辅助函数：注册路由（处理带/不带斜杠的路径）
     let register_route = |router: Router,
                           location: &str,
@@ -234,8 +284,13 @@ pub async fn make_server(
     for host_route in &host.route {
         // HTTP 重定向
         if host_route.redirect_to.is_some() {
-            let (new_router, route_path) =
-                register_route(router, &host_route.location, get(redirect::redirect));
+            let handler = if any_route_has_custom_compression {
+                get(redirect::redirect).layer(build_compression_layer(host_route, &compression))
+            } else {
+                get(redirect::redirect)
+            };
+
+            let (new_router, route_path) = register_route(router, &host_route.location, handler);
             router = new_router;
 
             // 将路由路径保存到映射中
@@ -244,7 +299,12 @@ pub async fn make_server(
                 .insert(route_path.clone(), host_route.clone());
 
             let wildcard_path = format!("{route_path}{{*path}}");
-            router = router.route(&wildcard_path, get(serve::serve));
+            let wildcard_handler = if any_route_has_custom_compression {
+                get(serve::serve).layer(build_compression_layer(host_route, &compression))
+            } else {
+                get(serve::serve)
+            };
+            router = router.route(&wildcard_path, wildcard_handler);
             debug!("HTTP redirect wildcard route registered: {}", wildcard_path);
             continue;
         }
@@ -252,9 +312,20 @@ pub async fn make_server(
         // Lua 脚本
         #[cfg(feature = "lua")]
         if host_route.lua_script.is_some() {
-            router = router.route(&host_route.location, get(lua::lua));
+            let handler = if any_route_has_custom_compression {
+                get(lua::lua).layer(build_compression_layer(host_route, &compression))
+            } else {
+                get(lua::lua)
+            };
+
+            router = router.route(&host_route.location, handler);
             let wildcard_path = format!("{}{{*path}}", host_route.location);
-            router = router.route(&wildcard_path, get(lua::lua));
+            let wildcard_handler = if any_route_has_custom_compression {
+                get(lua::lua).layer(build_compression_layer(host_route, &compression))
+            } else {
+                get(lua::lua)
+            };
+            router = router.route(&wildcard_path, wildcard_handler);
 
             host_to_save
                 .route_map
@@ -265,9 +336,16 @@ pub async fn make_server(
 
         // 反向代理（包括 upstream 负载均衡）
         if host_route.proxy_pass.is_some() || host_route.upstream.is_some() {
-            router = router.route(&host_route.location, get(reverse_proxy::serve));
+            let mut handler: axum::routing::MethodRouter = get(reverse_proxy::serve);
+
+            // 应用路由级别压缩配置
+            if any_route_has_custom_compression {
+                handler = handler.layer(build_compression_layer(host_route, &compression));
+            }
+
+            router = router.route(&host_route.location, handler.clone());
             let wildcard_path = format!("{}{{*path}}", host_route.location);
-            router = router.route(&wildcard_path, get(reverse_proxy::serve));
+            router = router.route(&wildcard_path, handler);
 
             if let Some(max_body_size) = host_route.max_body_size {
                 router = router.layer(DefaultBodyLimit::max(max_body_size as usize));
@@ -276,15 +354,22 @@ pub async fn make_server(
             host_to_save
                 .route_map
                 .insert(host_route.location.clone(), host_route.clone());
-            debug!("Reverse proxy route registered: {}", wildcard_path);
+            debug!("Reverse proxy route registered: {}", host_route.location);
             continue;
         }
 
         // 正向代理
         if host_route.forward_proxy.is_some() && host_route.forward_proxy.unwrap() {
-            router = router.route(&host_route.location, get(forward_proxy::serve));
+            let mut handler: axum::routing::MethodRouter = get(forward_proxy::serve);
+
+            // 应用路由级别压缩配置
+            if any_route_has_custom_compression {
+                handler = handler.layer(build_compression_layer(host_route, &compression));
+            }
+
+            router = router.route(&host_route.location, handler.clone());
             let wildcard_path = format!("{}{{*path}}", host_route.location);
-            router = router.route(&wildcard_path, get(forward_proxy::serve));
+            router = router.route(&wildcard_path, handler);
 
             if let Some(max_body_size) = host_route.max_body_size {
                 router = router.layer(DefaultBodyLimit::max(max_body_size as usize));
@@ -293,7 +378,7 @@ pub async fn make_server(
             host_to_save
                 .route_map
                 .insert(host_route.location.clone(), host_route.clone());
-            debug!("Forward proxy route registered: {}", wildcard_path);
+            debug!("Forward proxy route registered: {}", host_route.location);
             continue;
         }
 
@@ -307,8 +392,13 @@ pub async fn make_server(
             router = router.layer(DefaultBodyLimit::max(max_body_size as usize));
         }
 
-        let (new_router, route_path) =
-            register_route(router, &host_route.location, get(serve::serve));
+        let handler = if any_route_has_custom_compression {
+            get(serve::serve).layer(build_compression_layer(host_route, &compression))
+        } else {
+            get(serve::serve)
+        };
+
+        let (new_router, route_path) = register_route(router, &host_route.location, handler);
         router = new_router;
 
         host_to_save
@@ -316,7 +406,13 @@ pub async fn make_server(
             .insert(route_path.clone(), host_route.clone());
 
         let wildcard_path = format!("{route_path}{{*path}}");
-        router = router.route(&wildcard_path, get(serve::serve));
+        // 为 wildcard 路由也应用相同的压缩配置
+        let wildcard_handler = if any_route_has_custom_compression {
+            get(serve::serve).layer(build_compression_layer(host_route, &compression))
+        } else {
+            get(serve::serve)
+        };
+        router = router.route(&wildcard_path, wildcard_handler);
         debug!("Static file wildcard route registered: {}", wildcard_path);
     }
 
@@ -330,20 +426,25 @@ pub async fn make_server(
         HOSTS.insert(host.port, domain_map);
     }
 
-    // 根据配置构建压缩层
-    let compression_level = match compression.level {
-        1 => CompressionLevel::Fastest,
-        2..=8 => CompressionLevel::Precise(compression.level as i32),
-        9 => CompressionLevel::Best,
-        _ => CompressionLevel::Default,
-    };
+    // 如果没有任何路由使用自定义压缩配置，则应用全局压缩层
+    // 否则每个路由已经应用了自己的压缩层
+    if !any_route_has_custom_compression {
+        let compression_level = match compression.level {
+            1 => CompressionLevel::Fastest,
+            2..=8 => CompressionLevel::Precise(compression.level as i32),
+            9 => CompressionLevel::Best,
+            _ => CompressionLevel::Default,
+        };
 
-    let compression_layer = CompressionLayer::new()
-        .gzip(compression.gzip)
-        .deflate(compression.deflate)
-        .br(compression.br)
-        .zstd(compression.zstd)
-        .quality(compression_level);
+        let compression_layer = CompressionLayer::new()
+            .gzip(compression.gzip)
+            .deflate(compression.deflate)
+            .br(compression.br)
+            .zstd(compression.zstd)
+            .quality(compression_level);
+
+        router = router.layer(compression_layer);
+    }
 
     router = router.layer(
         ServiceBuilder::new()
@@ -352,8 +453,7 @@ pub async fn make_server(
             .layer(TimeoutLayer::with_status_code(
                 StatusCode::SERVICE_UNAVAILABLE,
                 Duration::from_secs(host.timeout.into()),
-            ))
-            .layer(compression_layer),
+            )),
     );
 
     router = logging_route(router);

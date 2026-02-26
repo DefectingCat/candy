@@ -14,6 +14,12 @@ port = 80
 location = "/"
 # static file path
 root = "./html"
+# Route-level compression settings (optional, override global settings)
+# gzip = false    # Disable gzip for this route
+# deflate = false # Disable deflate for this route
+# br = true       # Enable brotli for this route
+# zstd = true     # Enable zstd for this route
+# level = 9       # Use best compression for this route
 
 [[host]]
 ip = "0.0.0.0"
@@ -91,11 +97,4 @@ server = [
     { server = "192.168.1.107:8080", weight = 3 },
 ]
 # Health check configuration
-health_check = {
-    interval = 3000,
-    fall = 3,
-    rise = 2,
-    type = "http",
-    check_http_send = "HEAD / HTTP/1.0\r\n\r\n",
-    check_http_expect_alive = "200-399"
-}
+health_check = { interval = 3000, fall = 3, rise = 2, type = "http", check_http_send = "HEAD / HTTP/1.0\r\n\r\n", check_http_expect_alive = "200-399" }

@@ -119,7 +119,7 @@ pub async fn start_test_server(
 ) -> Result<(axum_server::Handle<SocketAddr>, SocketAddr)> {
     // 清理全局状态，确保测试隔离
     http::clear_global_state();
-    
+
     // 初始化 logger（幂等操作，可以多次调用）
     let _ = logging::init_logger("debug", "/dev/null");
 
