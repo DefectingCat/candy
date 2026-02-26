@@ -43,34 +43,86 @@ struct RequestContext {
 
 impl UserData for RequestContext {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        // 获取请求路径
-        methods.add_method("get_path", |_, this, ()| {
-            Ok(this.req.uri.path().to_string())
+        // 元方法：实现属性访问 (cd.status)
+        // 注意：需要同时处理常量字段和动态属性
+        methods.add_meta_method("__index", |_, this, key: String| {
+            match key.as_str() {
+                // 动态属性
+                "status" => Ok(this.res.status),
+                // HTTP 方法常量
+                "HTTP_GET" => Ok(0u16),
+                "HTTP_HEAD" => Ok(1u16),
+                "HTTP_PUT" => Ok(2u16),
+                "HTTP_POST" => Ok(3u16),
+                "HTTP_DELETE" => Ok(4u16),
+                "HTTP_OPTIONS" => Ok(5u16),
+                "HTTP_MKCOL" => Ok(6u16),
+                "HTTP_COPY" => Ok(7u16),
+                "HTTP_MOVE" => Ok(8u16),
+                "HTTP_PROPFIND" => Ok(9u16),
+                "HTTP_PROPPATCH" => Ok(10u16),
+                "HTTP_LOCK" => Ok(11u16),
+                "HTTP_UNLOCK" => Ok(12u16),
+                "HTTP_PATCH" => Ok(13u16),
+                "HTTP_TRACE" => Ok(14u16),
+                // HTTP 状态码常量 - 1xx
+                "HTTP_CONTINUE" => Ok(100u16),
+                "HTTP_SWITCHING_PROTOCOLS" => Ok(101u16),
+                // HTTP 状态码常量 - 2xx
+                "HTTP_OK" => Ok(200u16),
+                "HTTP_CREATED" => Ok(201u16),
+                "HTTP_ACCEPTED" => Ok(202u16),
+                "HTTP_NO_CONTENT" => Ok(204u16),
+                "HTTP_PARTIAL_CONTENT" => Ok(206u16),
+                // HTTP 状态码常量 - 3xx
+                "HTTP_SPECIAL_RESPONSE" => Ok(300u16),
+                "HTTP_MOVED_PERMANENTLY" => Ok(301u16),
+                "HTTP_MOVED_TEMPORARILY" => Ok(302u16),
+                "HTTP_SEE_OTHER" => Ok(303u16),
+                "HTTP_NOT_MODIFIED" => Ok(304u16),
+                "HTTP_TEMPORARY_REDIRECT" => Ok(307u16),
+                // HTTP 状态码常量 - 4xx
+                "HTTP_BAD_REQUEST" => Ok(400u16),
+                "HTTP_UNAUTHORIZED" => Ok(401u16),
+                "HTTP_PAYMENT_REQUIRED" => Ok(402u16),
+                "HTTP_FORBIDDEN" => Ok(403u16),
+                "HTTP_NOT_FOUND" => Ok(404u16),
+                "HTTP_NOT_ALLOWED" => Ok(405u16),
+                "HTTP_NOT_ACCEPTABLE" => Ok(406u16),
+                "HTTP_REQUEST_TIMEOUT" => Ok(408u16),
+                "HTTP_CONFLICT" => Ok(409u16),
+                "HTTP_GONE" => Ok(410u16),
+                "HTTP_UPGRADE_REQUIRED" => Ok(426u16),
+                "HTTP_TOO_MANY_REQUESTS" => Ok(429u16),
+                "HTTP_CLOSE" => Ok(444u16),
+                "HTTP_ILLEGAL" => Ok(451u16),
+                // HTTP 状态码常量 - 5xx
+                "HTTP_INTERNAL_SERVER_ERROR" => Ok(500u16),
+                "HTTP_METHOD_NOT_IMPLEMENTED" => Ok(501u16),
+                "HTTP_BAD_GATEWAY" => Ok(502u16),
+                "HTTP_SERVICE_UNAVAILABLE" => Ok(503u16),
+                "HTTP_GATEWAY_TIMEOUT" => Ok(504u16),
+                "HTTP_VERSION_NOT_SUPPORTED" => Ok(505u16),
+                "HTTP_INSUFFICIENT_STORAGE" => Ok(507u16),
+                _ => Err(mlua::Error::external(anyhow!(
+                    "attempt to index unknown field: {}",
+                    key
+                ))),
+            }
         });
 
-        // 获取请求方法
-        methods.add_method("get_method", |_, this, ()| Ok(this.req.method.to_string()));
-
-        // 设置响应状态码
-        methods.add_method_mut("set_status", |_, this, status: u16| {
-            this.res.status = status;
-            Ok(())
-        });
-
-        // 设置响应内容
-        methods.add_method_mut("set_body", |_, this, body: String| {
-            this.res.body = format!("{}{}", this.res.body, body);
-            Ok(())
-        });
-
-        // 设置响应头
-        methods.add_method_mut("set_header", |_, this, (key, value): (String, String)| {
-            this.res.headers.insert(
-                HeaderName::from_str(&key).map_err(|err| anyhow!("header name error: {err}"))?,
-                HeaderValue::from_str(&value)
-                    .map_err(|err| anyhow!("header value error: {err}"))?,
-            );
-            Ok(())
+        // 元方法：实现属性设置 (cd.status = 200)
+        methods.add_meta_method_mut("__newindex", |_, this, (key, value): (String, u16)| {
+            match key.as_str() {
+                "status" => {
+                    this.res.status = value;
+                    Ok(())
+                }
+                _ => Err(mlua::Error::external(anyhow!(
+                    "attempt to set unknown field: {}",
+                    key
+                ))),
+            }
         });
     }
 }
@@ -134,7 +186,7 @@ pub async fn lua(
         .with_context(|| format!("Failed to read lua script file: {lua_script}",))?;
     lua.globals()
         .set(
-            "ctx",
+            "cd",
             RequestContext {
                 req: CandyRequest {
                     method,
@@ -156,7 +208,7 @@ pub async fn lua(
         RouteError::InternalError()
     })?;
     // 获取修改后的上下文并返回响应
-    let ctx: UserDataRef<RequestContext> = lua.globals().get("ctx").map_err(|err| {
+    let ctx: UserDataRef<RequestContext> = lua.globals().get("cd").map_err(|err| {
         error!("Lua script {lua_script} exec error: {err}");
         RouteError::InternalError()
     })?;

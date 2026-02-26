@@ -49,6 +49,7 @@
 - [x] Specific custom config location
 - [x] HTTP 2
 - [x] Lua engine
+  - [ ] `cd` global variable
 - [ ] JavaScript engine
 - [ ] HTTP 3
 - [ ] Specify thread numbers
