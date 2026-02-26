@@ -827,4 +827,246 @@ mod tests {
         let result = Settings::new(path);
         assert!(result.is_err());
     }
+
+    // ========== CompressionConfig Tests ==========
+
+    #[test]
+    fn test_compression_config_default() {
+        let config = CompressionConfig::default();
+
+        assert!(config.gzip);
+        assert!(config.deflate);
+        assert!(config.br);
+        assert!(config.zstd);
+        assert_eq!(config.level, 6);
+    }
+
+    #[test]
+    fn test_compression_config_default_values() {
+        // 测试 serde 默认值函数
+        assert!(default_compression_enabled());
+        assert_eq!(default_compression_level(), 6);
+    }
+
+    #[test]
+    fn test_compression_config_deserialize_default() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(
+            file,
+            r#"
+            [[host]]
+            ip = "127.0.0.1"
+            port = 8080
+
+            [[host.route]]
+            location = "/"
+            root = "/var/www"
+            "#,
+        )
+        .unwrap();
+
+        let path = file.path().to_str().unwrap();
+        let settings = Settings::new(path).unwrap();
+
+        // 验证压缩配置使用默认值
+        let compression = &settings.compression;
+        assert!(compression.gzip);
+        assert!(compression.deflate);
+        assert!(compression.br);
+        assert!(compression.zstd);
+        assert_eq!(compression.level, 6);
+    }
+
+    #[test]
+    fn test_compression_config_deserialize_custom() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(
+            file,
+            r#"
+            [compression]
+            gzip = false
+            deflate = true
+            br = false
+            zstd = true
+            level = 9
+
+            [[host]]
+            ip = "127.0.0.1"
+            port = 8080
+
+            [[host.route]]
+            location = "/"
+            root = "/var/www"
+            "#,
+        )
+        .unwrap();
+
+        let path = file.path().to_str().unwrap();
+        let settings = Settings::new(path).unwrap();
+
+        let compression = &settings.compression;
+        assert!(!compression.gzip);
+        assert!(compression.deflate);
+        assert!(!compression.br);
+        assert!(compression.zstd);
+        assert_eq!(compression.level, 9);
+    }
+
+    #[test]
+    fn test_compression_config_partial_deserialize() {
+        // 部分字段使用默认值
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(
+            file,
+            r#"
+            [compression]
+            gzip = false
+            level = 3
+
+            [[host]]
+            ip = "127.0.0.1"
+            port = 8080
+
+            [[host.route]]
+            location = "/"
+            root = "/var/www"
+            "#,
+        )
+        .unwrap();
+
+        let path = file.path().to_str().unwrap();
+        let settings = Settings::new(path).unwrap();
+
+        let compression = &settings.compression;
+        assert!(!compression.gzip);
+        assert!(compression.deflate); // 使用默认值
+        assert!(compression.br); // 使用默认值
+        assert!(compression.zstd); // 使用默认值
+        assert_eq!(compression.level, 3);
+    }
+
+    #[test]
+    fn test_compression_config_level_boundaries() {
+        // 测试压缩级别边界值
+        for level in [1u8, 5, 9] {
+            let mut file = NamedTempFile::new().unwrap();
+            writeln!(
+                file,
+                r#"
+                [compression]
+                level = {}
+
+                [[host]]
+                ip = "127.0.0.1"
+                port = 8080
+
+                [[host.route]]
+                location = "/"
+                root = "/var/www"
+                "#,
+                level
+            )
+            .unwrap();
+
+            let path = file.path().to_str().unwrap();
+            let settings = Settings::new(path).unwrap();
+            assert_eq!(settings.compression.level, level);
+        }
+    }
+
+    #[test]
+    fn test_compression_config_all_disabled() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(
+            file,
+            r#"
+            [compression]
+            gzip = false
+            deflate = false
+            br = false
+            zstd = false
+            level = 1
+
+            [[host]]
+            ip = "127.0.0.1"
+            port = 8080
+
+            [[host.route]]
+            location = "/"
+            root = "/var/www"
+            "#,
+        )
+        .unwrap();
+
+        let path = file.path().to_str().unwrap();
+        let settings = Settings::new(path).unwrap();
+
+        let compression = &settings.compression;
+        assert!(!compression.gzip);
+        assert!(!compression.deflate);
+        assert!(!compression.br);
+        assert!(!compression.zstd);
+        assert_eq!(compression.level, 1);
+    }
+
+    #[test]
+    fn test_route_level_compression_config() {
+        // 测试路由级别的压缩配置
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(
+            file,
+            r#"
+            [compression]
+            gzip = true
+            level = 6
+
+            [[host]]
+            ip = "127.0.0.1"
+            port = 8080
+
+            [[host.route]]
+            location = "/api"
+            root = "/var/www"
+            gzip = false
+            level = 9
+            "#,
+        )
+        .unwrap();
+
+        let path = file.path().to_str().unwrap();
+        let settings = Settings::new(path).unwrap();
+
+        // 验证全局压缩配置
+        assert!(settings.compression.gzip);
+        assert_eq!(settings.compression.level, 6);
+
+        // 验证路由级别的压缩配置
+        let route = &settings.host[0].route[0];
+        assert_eq!(route.location, "/api");
+        assert_eq!(route.gzip, Some(false));
+        assert_eq!(route.level, Some(9));
+    }
+
+    #[test]
+    fn test_compression_config_clone_debug() {
+        let config = CompressionConfig {
+            gzip: true,
+            deflate: false,
+            br: true,
+            zstd: false,
+            level: 8,
+        };
+
+        let cloned = config.clone();
+        assert_eq!(config.gzip, cloned.gzip);
+        assert_eq!(config.deflate, cloned.deflate);
+        assert_eq!(config.br, cloned.br);
+        assert_eq!(config.zstd, cloned.zstd);
+        assert_eq!(config.level, cloned.level);
+
+        // 测试 Debug trait
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("CompressionConfig"));
+        assert!(debug_str.contains("gzip"));
+    }
 }
