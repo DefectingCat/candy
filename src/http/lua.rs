@@ -75,17 +75,129 @@ struct CandyRequest {
     raw_header: String,
     /// 请求行（如 "GET /t HTTP/1.1"）
     request_line: String,
+    /// 请求体（原始字节）
+    body: Arc<Mutex<Option<Vec<u8>>>>,
 }
 
 /// 请求的可变状态，使用 Arc<Mutex<>> 共享
+/// URL 编码（简单实现，编码特殊字符）
+fn url_encode(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
+            ' ' => "+".to_string(),
+            _ => format!("%{:02X}", c as u8),
+        })
+        .collect()
+}
+
+/// URL 解码
+fn url_decode(s: &str) -> Result<String, mlua::Error> {
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '+' => result.push(' '),
+            '%' => {
+                let hex: String = chars.by_ref().take(2).collect();
+                if hex.len() != 2 {
+                    return Err(mlua::Error::external(anyhow!("Invalid percent encoding")));
+                }
+                let byte = u8::from_str_radix(&hex, 16)
+                    .map_err(|e| mlua::Error::external(anyhow!("Invalid hex: {}", e)))?;
+                result.push(byte as char);
+            }
+            _ => result.push(c),
+        }
+    }
+    Ok(result)
+}
+
+/// 解析查询字符串为 key-value pairs
+/// 无值参数 (如 ?foo&bar) 使用 "true" 作为值
+/// 空键参数被丢弃
+fn parse_query(query: &str) -> Vec<(String, String)> {
+    if query.is_empty() {
+        return Vec::new();
+    }
+    query
+        .split('&')
+        .filter_map(|pair| {
+            if pair.is_empty() {
+                return None;
+            }
+            let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+            let key = url_decode(k).ok()?;
+            // 丢弃空键参数
+            if key.is_empty() {
+                return None;
+            }
+            let value = if v.is_empty() && !pair.contains('=') {
+                // 无值参数 (如 ?foo) 使用 "true"
+                String::new()
+            } else {
+                url_decode(v).ok()?
+            };
+            Some((key, value))
+        })
+        .collect()
+}
+
+/// 查询参数，保持顺序和重复键
+#[derive(Clone, Debug, Default)]
+struct UriArgs(Vec<(String, String)>);
+
+impl UriArgs {
+    fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    /// 从查询字符串解析
+    fn from_query(query: &str) -> Self {
+        Self(parse_query(query))
+    }
+
+    /// 构建查询字符串
+    fn to_query(&self) -> String {
+        self.0
+            .iter()
+            .map(|(k, v)| {
+                if v.is_empty() {
+                    url_encode(k)
+                } else {
+                    format!("{}={}", url_encode(k), url_encode(v))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("&")
+    }
+}
+
 #[derive(Clone, Debug)]
 struct CandyReqState {
     /// 请求方法 (GET, POST, etc.)
     method: String,
-    /// 当前 URI（可被 set_uri 修改）
-    uri: String,
+    /// 当前 URI 路径部分（不含查询参数）
+    uri_path: String,
+    /// 查询参数
+    uri_args: UriArgs,
+    /// POST 参数（application/x-www-form-urlencoded）
+    post_args: Option<UriArgs>,
     /// 是否需要重新路由（jump 标志）
     jump: bool,
+    /// 请求头（可变）
+    headers: Arc<Mutex<HeaderMap>>,
+}
+
+impl CandyReqState {
+    /// 构建完整的 URI 字符串
+    fn build_uri(&self) -> String {
+        if self.uri_args.0.is_empty() {
+            self.uri_path.clone()
+        } else {
+            format!("{}?{}", self.uri_path, self.uri_args.to_query())
+        }
+    }
 }
 
 /// 请求操作对象，提供 is_internal 等方法
@@ -100,7 +212,9 @@ struct CandyReq {
     raw_header: String,
     /// 请求行（如 "GET /t HTTP/1.1"）
     request_line: String,
-    /// 可变状态
+    /// 请求体（原始字节）
+    body: Arc<Mutex<Option<Vec<u8>>>>,
+    /// 可变状态（包含请求头）
     state: Arc<Mutex<CandyReqState>>,
 }
 
@@ -125,9 +239,10 @@ impl CandyHeaders {
 
     /// 获取所有 headers 作为 Lua table
     fn get_headers_table(&self, lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
-        let headers = self.headers.lock().map_err(|e| {
-            mlua::Error::external(anyhow!("Failed to lock headers: {}", e))
-        })?;
+        let headers = self
+            .headers
+            .lock()
+            .map_err(|e| mlua::Error::external(anyhow!("Failed to lock headers: {}", e)))?;
 
         let table = lua.create_table()?;
         for (name, value) in headers.iter() {
@@ -180,16 +295,12 @@ impl UserData for CandyReq {
         methods.add_method("is_internal", |_, this, ()| Ok(this.is_internal));
 
         // start_time(): 返回请求开始时间（秒，包含毫秒小数）
-        methods.add_method("start_time", |lua, this, ()| {
-            lua.pack(this.start_time)
-        });
+        methods.add_method("start_time", |lua, this, ()| lua.pack(this.start_time));
 
         // http_version(): 返回 HTTP 版本号
-        methods.add_method("http_version", |lua, this, ()| {
-            match this.http_version {
-                Some(v) => lua.pack(v),
-                None => Ok(mlua::Value::Nil),
-            }
+        methods.add_method("http_version", |lua, this, ()| match this.http_version {
+            Some(v) => lua.pack(v),
+            None => Ok(mlua::Value::Nil),
         });
 
         // raw_header(no_request_line?): 返回原始请求头
@@ -207,9 +318,10 @@ impl UserData for CandyReq {
 
         // get_method(): 返回请求方法名称
         methods.add_method("get_method", |lua, this, ()| {
-            let state = this.state.lock().map_err(|e| {
-                mlua::Error::external(anyhow!("Failed to lock state: {}", e))
-            })?;
+            let state = this
+                .state
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
             lua.pack(state.method.clone())
         });
 
@@ -239,36 +351,393 @@ impl UserData for CandyReq {
                     )));
                 }
             };
-            let mut state = this.state.lock().map_err(|e| {
-                mlua::Error::external(anyhow!("Failed to lock state: {}", e))
-            })?;
+            let mut state = this
+                .state
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
             state.method = method.to_string();
             Ok(())
         });
 
-        // get_uri(): 返回当前 URI
+        // get_uri(): 返回当前 URI（完整路径+查询参数）
         methods.add_method("get_uri", |lua, this, ()| {
-            let state = this.state.lock().map_err(|e| {
-                mlua::Error::external(anyhow!("Failed to lock state: {}", e))
-            })?;
-            lua.pack(state.uri.clone())
+            let state = this
+                .state
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+            lua.pack(state.build_uri())
         });
 
         // set_uri(uri, jump?): 设置当前 URI
-        // jump=true 时标记需要重新路由（类似 nginx rewrite ... last）
+        // 会解析 URI 中的查询参数
         methods.add_method_mut("set_uri", |_, this, (uri, jump): (String, Option<bool>)| {
             if uri.is_empty() {
                 return Err(mlua::Error::external(anyhow!(
                     "uri argument must be a non-empty string"
                 )));
             }
-            let mut state = this.state.lock().map_err(|e| {
-                mlua::Error::external(anyhow!("Failed to lock state: {}", e))
-            })?;
-            state.uri = uri;
+            let mut state = this
+                .state
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+            // 解析 URI，分离路径和查询参数
+            match uri.split_once('?') {
+                Some((path, query)) => {
+                    state.uri_path = path.to_string();
+                    state.uri_args = UriArgs::from_query(query);
+                }
+                None => {
+                    state.uri_path = uri;
+                    state.uri_args = UriArgs::new();
+                }
+            }
             state.jump = jump.unwrap_or(false);
             Ok(())
         });
+
+        // get_uri_args(max_args?): 返回查询参数
+        // 多值参数返回数组，无值参数返回 true
+        // 默认 max_args=100，max_args=0 表示无限制
+        methods.add_method("get_uri_args", |lua, this, max_args: Option<usize>| {
+            let state = this
+                .state
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+
+            let limit = max_args.unwrap_or(100);
+            let table = lua.create_table()?;
+            let mut count = 0;
+
+            for (k, v) in &state.uri_args.0 {
+                if limit > 0 && count >= limit {
+                    break;
+                }
+                count += 1;
+
+                if table.contains_key(k.clone())? {
+                    let existing: mlua::Value = table.get(k.clone())?;
+                    match existing {
+                        mlua::Value::String(s) => {
+                            let arr = lua.create_table()?;
+                            arr.set(1, s)?;
+                            arr.set(2, v.clone())?;
+                            table.set(k.clone(), arr)?;
+                        }
+                        mlua::Value::Boolean(b) => {
+                            let arr = lua.create_table()?;
+                            arr.set(1, b)?;
+                            arr.set(2, v.clone())?;
+                            table.set(k.clone(), arr)?;
+                        }
+                        mlua::Value::Table(t) => {
+                            let len = t.len()?;
+                            t.set(len + 1, v.clone())?;
+                        }
+                        _ => {}
+                    }
+                } else if v.is_empty() {
+                    table.set(k.clone(), true)?;
+                } else {
+                    table.set(k.clone(), v.clone())?;
+                }
+            }
+            Ok(table)
+        });
+
+        // set_uri_args(args): 设置查询参数
+        // args 可以是字符串 "a=1&b=2" 或 table {a=1, b="hello"}
+        methods.add_method_mut("set_uri_args", |_, this, args: mlua::Value| {
+            let mut state = this
+                .state
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+
+            state.uri_args = match args {
+                mlua::Value::String(s) => {
+                    let query = s.to_str()?;
+                    UriArgs::from_query(&query)
+                }
+                mlua::Value::Table(t) => {
+                    let mut uri_args = UriArgs::new();
+                    for pair in t.pairs::<mlua::Value, mlua::Value>() {
+                        let (k, v) = pair.map_err(|e| {
+                            mlua::Error::external(anyhow!("Invalid uri_args table: {}", e))
+                        })?;
+                        match (k, v) {
+                            (mlua::Value::String(key), mlua::Value::String(val)) => {
+                                let key_str = key.to_str()?.to_string();
+                                let val_str = val.to_str()?.to_string();
+                                uri_args.0.push((key_str, val_str));
+                            }
+                            (mlua::Value::String(key), mlua::Value::Table(arr)) => {
+                                let key_str = key.to_str()?.to_string();
+                                for i in 1..=arr.len()? {
+                                    if let mlua::Value::String(v) = arr.get(i)? {
+                                        uri_args.0.push((key_str.clone(), v.to_str()?.to_string()));
+                                    }
+                                }
+                            }
+                            (mlua::Value::Number(key), mlua::Value::String(val)) => {
+                                let key_str = key.to_string();
+                                let val_str = val.to_str()?.to_string();
+                                uri_args.0.push((key_str, val_str));
+                            }
+                            _ => {}
+                        }
+                    }
+                    uri_args
+                }
+                mlua::Value::Nil => UriArgs::new(),
+                _ => {
+                    return Err(mlua::Error::external(anyhow!(
+                        "args must be a string, table, or nil"
+                    )));
+                }
+            };
+            Ok(())
+        });
+
+        // read_body(): 读取请求体
+        // 在 Candy 中，请求体在请求进入时已经读取并存储
+        // 此方法返回已存储的请求体字符串
+        methods.add_method("read_body", |lua, this, ()| {
+            let body = this
+                .body
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock body: {}", e)))?;
+            match body.as_ref() {
+                Some(bytes) => {
+                    let s = String::from_utf8_lossy(bytes);
+                    lua.pack(s.into_owned())
+                }
+                None => lua.pack(""),
+            }
+        });
+
+        // get_body_data(): 获取原始请求体数据
+        methods.add_method("get_body_data", |lua, this, ()| {
+            let body = this
+                .body
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock body: {}", e)))?;
+            match body.as_ref() {
+                Some(bytes) => lua.create_string(bytes.as_slice()).map(mlua::Value::String),
+                None => Ok(mlua::Value::Nil),
+            }
+        });
+
+        // get_post_args(max_args?): 解析 POST 参数
+        // 仅支持 application/x-www-form-urlencoded
+        // 多值参数返回数组，无值参数返回 true
+        methods.add_method("get_post_args", |lua, this, max_args: Option<usize>| {
+            let mut state = this
+                .state
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+
+            // 如果尚未解析 POST 参数，则解析
+            if state.post_args.is_none() {
+                let body = this
+                    .body
+                    .lock()
+                    .map_err(|e| mlua::Error::external(anyhow!("Failed to lock body: {}", e)))?;
+                match body.as_ref() {
+                    Some(bytes) => {
+                        let body_str = String::from_utf8_lossy(bytes);
+                        state.post_args = Some(UriArgs::from_query(&body_str));
+                    }
+                    None => {
+                        state.post_args = Some(UriArgs::new());
+                    }
+                }
+            }
+
+            let post_args = state.post_args.as_ref().unwrap();
+            let limit = max_args.unwrap_or(100);
+            let table = lua.create_table()?;
+            let mut count = 0;
+
+            for (k, v) in &post_args.0 {
+                if limit > 0 && count >= limit {
+                    break;
+                }
+                count += 1;
+
+                if table.contains_key(k.clone())? {
+                    let existing: mlua::Value = table.get(k.clone())?;
+                    match existing {
+                        mlua::Value::String(s) => {
+                            let arr = lua.create_table()?;
+                            arr.set(1, s)?;
+                            arr.set(2, v.clone())?;
+                            table.set(k.clone(), arr)?;
+                        }
+                        mlua::Value::Boolean(b) => {
+                            let arr = lua.create_table()?;
+                            arr.set(1, b)?;
+                            arr.set(2, v.clone())?;
+                            table.set(k.clone(), arr)?;
+                        }
+                        mlua::Value::Table(t) => {
+                            let len = t.len()?;
+                            t.set(len + 1, v.clone())?;
+                        }
+                        _ => {}
+                    }
+                } else if v.is_empty() {
+                    table.set(k.clone(), true)?;
+                } else {
+                    table.set(k.clone(), v.clone())?;
+                }
+            }
+            Ok(table)
+        });
+
+        // get_headers(max_headers?, raw?): 返回请求头 table
+        // max_headers 默认 100，raw=false 时 key 为小写
+        methods.add_method(
+            "get_headers",
+            |lua, this, (max_headers, raw): (Option<usize>, Option<bool>)| {
+                let state = this
+                    .state
+                    .lock()
+                    .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+                let headers = state
+                    .headers
+                    .lock()
+                    .map_err(|e| mlua::Error::external(anyhow!("Failed to lock headers: {}", e)))?;
+
+                let limit = max_headers.unwrap_or(100);
+                let preserve_case = raw.unwrap_or(false);
+                let table = lua.create_table()?;
+                let mut count = 0;
+
+                for (name, value) in headers.iter() {
+                    if limit > 0 && count >= limit {
+                        break;
+                    }
+                    count += 1;
+
+                    let key = if preserve_case {
+                        name.as_str().to_string()
+                    } else {
+                        name.as_str().to_lowercase()
+                    };
+
+                    if let Ok(v) = value.to_str() {
+                        if table.contains_key(key.clone())? {
+                            let existing: mlua::Value = table.get(key.clone())?;
+                            match existing {
+                                mlua::Value::String(s) => {
+                                    let arr = lua.create_table()?;
+                                    arr.set(1, s)?;
+                                    arr.set(2, v)?;
+                                    table.set(key.clone(), arr)?;
+                                }
+                                mlua::Value::Table(t) => {
+                                    let len = t.len()?;
+                                    t.set(len + 1, v)?;
+                                }
+                                _ => {}
+                            }
+                        } else {
+                            table.set(key.clone(), v)?;
+                        }
+                    }
+                }
+
+                // 如果不是 raw 模式，添加 __index 元方法支持多种查找方式
+                if !preserve_case {
+                    let metatable = lua.create_table()?;
+                    let headers_clone = headers.clone();
+                    metatable.set(
+                        "__index",
+                        lua.create_function(move |lua, (t, key): (mlua::Table, String)| {
+                            // 先尝试直接查找
+                            if t.contains_key(key.clone())? {
+                                return t.get(key);
+                            }
+                            // 尝试转换为小写并替换下划线
+                            let normalized = key.to_lowercase().replace('_', "-");
+                            if t.contains_key(normalized.clone())? {
+                                return t.get(normalized);
+                            }
+                            // 尝试原始 header 名称查找
+                            let lower_key = key.to_lowercase();
+                            for (name, _) in headers_clone.iter() {
+                                if name.as_str().to_lowercase() == lower_key
+                                    || name.as_str().to_lowercase().replace('-', "_") == lower_key
+                                {
+                                    let values: Vec<String> = headers_clone
+                                        .get_all(name)
+                                        .iter()
+                                        .filter_map(|v| v.to_str().ok().map(|s| s.to_string()))
+                                        .collect();
+                                    if values.len() == 1 {
+                                        return Ok(mlua::Value::String(
+                                            lua.create_string(&values[0])?,
+                                        ));
+                                    } else if values.len() > 1 {
+                                        let arr = lua.create_table()?;
+                                        for (i, v) in values.iter().enumerate() {
+                                            arr.set(i + 1, v.clone())?;
+                                        }
+                                        return Ok(mlua::Value::Table(arr));
+                                    }
+                                }
+                            }
+                            Ok(mlua::Value::Nil)
+                        })?,
+                    )?;
+                    table.set_metatable(Some(metatable))?;
+                }
+
+                Ok(table)
+            },
+        );
+
+        // clear_header(header_name): 清除指定的请求头
+        methods.add_method_mut("clear_header", |_, this, header_name: String| {
+            let state = this
+                .state
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+            let mut headers = state
+                .headers
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock headers: {}", e)))?;
+
+            // 支持大小写不敏感查找
+            let normalized = header_name.to_lowercase().replace('_', "-");
+            if let Ok(header_name) = HeaderName::try_from(normalized.as_str()) {
+                headers.remove(&header_name);
+            }
+            Ok(())
+        });
+
+        // set_header(header_name, header_value): 设置请求头
+        methods.add_method_mut(
+            "set_header",
+            |_, this, (header_name, header_value): (String, String)| {
+                let state = this
+                    .state
+                    .lock()
+                    .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+                let mut headers = state
+                    .headers
+                    .lock()
+                    .map_err(|e| mlua::Error::external(anyhow!("Failed to lock headers: {}", e)))?;
+
+                let normalized = header_name.to_lowercase().replace('_', "-");
+                let header_name = HeaderName::try_from(normalized.as_str())
+                    .map_err(|e| mlua::Error::external(anyhow!("Invalid header name: {}", e)))?;
+                let header_value = HeaderValue::from_str(&header_value)
+                    .map_err(|e| mlua::Error::external(anyhow!("Invalid header value: {}", e)))?;
+
+                headers.insert(header_name, header_value);
+                Ok(())
+            },
+        );
     }
 }
 
@@ -278,9 +747,10 @@ impl UserData for CandyHeaders {
         // 支持 cd.header["Content-Type"] 和 cd.header.content_type
         methods.add_meta_method("__index", |lua, this, key: String| {
             let normalized = Self::normalize_header_name(&key);
-            let headers = this.headers.lock().map_err(|e| {
-                mlua::Error::external(anyhow!("Failed to lock headers: {}", e))
-            })?;
+            let headers = this
+                .headers
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock headers: {}", e)))?;
 
             // 查找 header (大小写不敏感)
             let header_name = HeaderName::try_from(normalized.as_str())
@@ -310,49 +780,58 @@ impl UserData for CandyHeaders {
         // cd.header["Content-Type"] = "text/plain"
         // cd.header["Set-Cookie"] = {"a=1", "b=2"}
         // cd.header["X-My-Header"] = nil  -- 删除
-        methods.add_meta_method_mut("__newindex", |_lua, this, (key, value): (String, mlua::Value)| {
-            let normalized = Self::normalize_header_name(&key);
-            let header_name = HeaderName::try_from(normalized.as_str())
-                .map_err(|e| mlua::Error::external(anyhow!("Invalid header name: {}", e)))?;
+        methods.add_meta_method_mut(
+            "__newindex",
+            |_lua, this, (key, value): (String, mlua::Value)| {
+                let normalized = Self::normalize_header_name(&key);
+                let header_name = HeaderName::try_from(normalized.as_str())
+                    .map_err(|e| mlua::Error::external(anyhow!("Invalid header name: {}", e)))?;
 
-            let mut headers = this.headers.lock().map_err(|e| {
-                mlua::Error::external(anyhow!("Failed to lock headers: {}", e))
-            })?;
+                let mut headers = this
+                    .headers
+                    .lock()
+                    .map_err(|e| mlua::Error::external(anyhow!("Failed to lock headers: {}", e)))?;
 
-            // 先移除已有的值
-            headers.remove(&header_name);
+                // 先移除已有的值
+                headers.remove(&header_name);
 
-            match value {
-                mlua::Value::Nil => {
-                    // 删除 header，已经 remove 了，不需要额外操作
-                }
-                mlua::Value::String(s) => {
-                    let val = s.to_str()?;
-                    let header_value = HeaderValue::from_str(&val)
-                        .map_err(|e| mlua::Error::external(anyhow!("Invalid header value: {}", e)))?;
-                    headers.append(header_name.clone(), header_value);
-                }
-                mlua::Value::Table(t) => {
-                    // 多值 header
-                    for pair in t.pairs::<i32, mlua::String>() {
-                        let (_, v) = pair.map_err(|e| {
-                            mlua::Error::external(anyhow!("Invalid header value in table: {}", e))
+                match value {
+                    mlua::Value::Nil => {
+                        // 删除 header，已经 remove 了，不需要额外操作
+                    }
+                    mlua::Value::String(s) => {
+                        let val = s.to_str()?;
+                        let header_value = HeaderValue::from_str(&val).map_err(|e| {
+                            mlua::Error::external(anyhow!("Invalid header value: {}", e))
                         })?;
-                        let val = v.to_str()?;
-                        let header_value = HeaderValue::from_str(&val)
-                            .map_err(|e| mlua::Error::external(anyhow!("Invalid header value: {}", e)))?;
                         headers.append(header_name.clone(), header_value);
                     }
+                    mlua::Value::Table(t) => {
+                        // 多值 header
+                        for pair in t.pairs::<i32, mlua::String>() {
+                            let (_, v) = pair.map_err(|e| {
+                                mlua::Error::external(anyhow!(
+                                    "Invalid header value in table: {}",
+                                    e
+                                ))
+                            })?;
+                            let val = v.to_str()?;
+                            let header_value = HeaderValue::from_str(&val).map_err(|e| {
+                                mlua::Error::external(anyhow!("Invalid header value: {}", e))
+                            })?;
+                            headers.append(header_name.clone(), header_value);
+                        }
+                    }
+                    _ => {
+                        return Err(mlua::Error::external(anyhow!(
+                            "Header value must be string, table, or nil"
+                        )));
+                    }
                 }
-                _ => {
-                    return Err(mlua::Error::external(anyhow!(
-                        "Header value must be string, table, or nil"
-                    )));
-                }
-            }
 
-            Ok(())
-        });
+                Ok(())
+            },
+        );
     }
 }
 
@@ -402,6 +881,7 @@ impl UserData for RequestContext {
                         http_version: this.req.http_version,
                         raw_header: this.req.raw_header.clone(),
                         request_line: this.req.request_line.clone(),
+                        body: this.req.body.clone(),
                         state: this.req_state.clone(),
                     })
                     .map(mlua::Value::UserData)
@@ -412,7 +892,8 @@ impl UserData for RequestContext {
                         let now = SystemTime::now()
                             .duration_since(UNIX_EPOCH)
                             .map_err(|e| mlua::Error::external(anyhow!("Time error: {}", e)))?;
-                        let secs = now.as_secs() as f64 + now.subsec_nanos() as f64 / 1_000_000_000.0;
+                        let secs =
+                            now.as_secs() as f64 + now.subsec_nanos() as f64 / 1_000_000_000.0;
                         lua.pack(secs)
                     })?;
                     Ok(mlua::Value::Function(now_func))
@@ -515,8 +996,9 @@ impl UserData for RequestContext {
         });
 
         // 元方法：实现属性设置 (cd.status = 200)
-        methods.add_meta_method_mut("__newindex", |_, this, (key, value): (String, u16)| {
-            match key.as_str() {
+        methods.add_meta_method_mut(
+            "__newindex",
+            |_, this, (key, value): (String, u16)| match key.as_str() {
                 "status" => {
                     this.res.status = value;
                     Ok(())
@@ -525,8 +1007,8 @@ impl UserData for RequestContext {
                     "attempt to set unknown field: {}",
                     key
                 ))),
-            }
-        });
+            },
+        );
     }
 }
 
@@ -541,10 +1023,64 @@ pub async fn lua(
         .get("host") // 注意：host 是小写的
         .and_then(|h| h.to_str().ok())
         .unwrap_or_default();
-    let port = parse_port_from_host(host, scheme).ok_or(RouteError::BadRequest())?;
-    // 解析域名
+
+    // 解析域名（提前计算，避免借用冲突）
     let (domain, _) = host.split_once(':').unwrap_or((host, ""));
     let domain = domain.to_lowercase();
+
+    let port = parse_port_from_host(host, scheme).ok_or(RouteError::BadRequest())?;
+
+    // 提取请求方法（在消费 req 之前）
+    let method = req.method().to_string();
+
+    // 解析 HTTP 版本号
+    let http_version = match req.version() {
+        http::Version::HTTP_09 => Some(0.9),
+        http::Version::HTTP_10 => Some(1.0),
+        http::Version::HTTP_11 => Some(1.1),
+        http::Version::HTTP_2 => Some(2.0),
+        http::Version::HTTP_3 => Some(3.0),
+        _ => None,
+    };
+
+    // 构建请求行所需信息
+    let http_version_str = match req.version() {
+        http::Version::HTTP_09 => "HTTP/0.9",
+        http::Version::HTTP_10 => "HTTP/1.0",
+        http::Version::HTTP_11 => "HTTP/1.1",
+        http::Version::HTTP_2 => "HTTP/2.0",
+        http::Version::HTTP_3 => "HTTP/3.0",
+        _ => "HTTP/1.1",
+    };
+    let request_line = format!(
+        "{} {} {}",
+        method,
+        req_uri
+            .path_and_query()
+            .map(|pq| pq.as_str())
+            .unwrap_or("/"),
+        http_version_str
+    );
+
+    // 构建原始请求头字符串
+    let raw_header = {
+        let mut headers_str = String::new();
+        for (name, value) in req.headers() {
+            if let Ok(v) = value.to_str() {
+                headers_str.push_str(&format!("{}: {}\r\n", name, v));
+            }
+        }
+        headers_str
+    };
+
+    // 克隆请求头（用于 get_headers）
+    let req_headers = req.headers().clone();
+
+    // 收集请求体（用于 POST 参数解析）
+    let body_bytes = axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024) // 限制 10MB
+        .await
+        .map_err(|e| RouteError::Any(anyhow!("Failed to read body: {}", e)))?;
+    let req_body = Arc::new(Mutex::new(Some(body_bytes.to_vec())));
 
     let host_config = {
         let port_config = HOSTS.get(&port).ok_or(RouteError::BadRequest())?;
@@ -581,52 +1117,6 @@ pub async fn lua(
         .as_ref()
         .ok_or(RouteError::InternalError())?;
 
-    let method = req.method().to_string();
-
-    // 解析 HTTP 版本号
-    let http_version = match req.version() {
-        http::Version::HTTP_09 => Some(0.9),
-        http::Version::HTTP_10 => Some(1.0),
-        http::Version::HTTP_11 => Some(1.1),
-        http::Version::HTTP_2 => Some(2.0),
-        http::Version::HTTP_3 => Some(3.0),
-        _ => None,
-    };
-
-    // 构建 HTTP 版本字符串
-    let http_version_str = match req.version() {
-        http::Version::HTTP_09 => "HTTP/0.9",
-        http::Version::HTTP_10 => "HTTP/1.0",
-        http::Version::HTTP_11 => "HTTP/1.1",
-        http::Version::HTTP_2 => "HTTP/2.0",
-        http::Version::HTTP_3 => "HTTP/3.0",
-        _ => "HTTP/1.1",
-    };
-
-    // 构建请求行
-    let request_line = format!(
-        "{} {} {}",
-        method,
-        req_uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/"),
-        http_version_str
-    );
-
-    // 构建原始请求头字符串
-    let raw_header = {
-        let mut headers_str = String::new();
-        for (name, value) in req.headers() {
-            if let Ok(v) = value.to_str() {
-                headers_str.push_str(&format!("{}: {}\r\n", name, v));
-            }
-        }
-        headers_str
-    };
-
-    let lua = &LUA_ENGINE.lua;
-    let script = fs::read_to_string(lua_script)
-        .await
-        .with_context(|| format!("Failed to read lua script file: {lua_script}",))?;
-
     // 计算请求开始时间
     let start_time = {
         let now = SystemTime::now()
@@ -635,11 +1125,27 @@ pub async fn lua(
         now.as_secs() as f64 + now.subsec_nanos() as f64 / 1_000_000_000.0
     };
 
+    let lua = &LUA_ENGINE.lua;
+    let script = fs::read_to_string(lua_script)
+        .await
+        .with_context(|| format!("Failed to read lua script file: {lua_script}",))?;
+
     // 创建请求的可变状态
+    let (uri_path, uri_args) = req_uri
+        .path_and_query()
+        .map(|pq| {
+            let (path, query) = pq.as_str().split_once('?').unwrap_or((pq.as_str(), ""));
+            (path.to_string(), UriArgs::from_query(query))
+        })
+        .unwrap_or_else(|| ("/".to_string(), UriArgs::new()));
+
     let req_state = Arc::new(Mutex::new(CandyReqState {
-        method: method.clone(),
-        uri: req_uri.path_and_query().map(|pq| pq.to_string()).unwrap_or_default(),
+        method,
+        uri_path,
+        uri_args,
+        post_args: None,
         jump: false,
+        headers: Arc::new(Mutex::new(req_headers)),
     }));
 
     lua.globals()
@@ -651,6 +1157,7 @@ pub async fn lua(
                     http_version,
                     raw_header,
                     request_line,
+                    body: req_body,
                 },
                 res: CandyResponse {
                     status: 200,
