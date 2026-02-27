@@ -8,6 +8,37 @@ use super::{
     utils::UriArgs,
 };
 
+// Helper function to recursively convert Lua table to string
+fn table_to_string_impl(lua: &mlua::Lua, table: &mlua::Table) -> mlua::Result<String> {
+    let mut result = String::new();
+    
+    for pair in table.pairs::<mlua::Value, mlua::Value>() {
+        let (_, value) = pair?;
+        
+        match value {
+            mlua::Value::Nil => result.push_str("nil"),
+            mlua::Value::Boolean(b) => result.push_str(if b { "true" } else { "false" }),
+            mlua::Value::Number(n) => result.push_str(&n.to_string()),
+            mlua::Value::Integer(i) => result.push_str(&i.to_string()),
+            mlua::Value::String(s) => result.push_str(&s.to_str()?),
+            mlua::Value::Table(t) => {
+                // Recursively handle nested tables
+                result.push_str(&table_to_string_impl(lua, &t)?);
+            }
+            mlua::Value::UserData(ud) => {
+                let s = format!("{:?}", ud);
+                result.push_str(&s);
+            }
+            _ => {
+                let s = format!("{:?}", value);
+                result.push_str(&s);
+            }
+        }
+    }
+    
+    Ok(result)
+}
+
 impl UserData for CandyResp {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         // get_headers(): 返回所有响应头的 table
@@ -302,6 +333,49 @@ impl UserData for CandyReq {
             // 在内存实现中无需额外操作
             // 在基于文件的实现中，这里会刷新缓冲区到临时文件
             Ok(())
+        });
+
+        // print(...): 输出数据到响应体
+        // 连接所有参数并发送到 HTTP 客户端
+        // 返回 1 表示成功，或返回 nil 和错误描述字符串
+        methods.add_method_mut("print", |lua, this, args: mlua::MultiValue| {
+            let mut state = this
+                .state
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+            
+            // 构建输出字符串
+            let mut output = String::new();
+            
+            for value in args {
+                match value {
+                    mlua::Value::Nil => output.push_str("nil"),
+                    mlua::Value::Boolean(b) => output.push_str(if b { "true" } else { "false" }),
+                    mlua::Value::Number(n) => output.push_str(&n.to_string()),
+                    mlua::Value::Integer(i) => output.push_str(&i.to_string()),
+                    mlua::Value::String(s) => output.push_str(&s.to_str()?),
+                    mlua::Value::Table(t) => {
+                        // 递归处理嵌套表 - 简单实现
+                        output.push_str(&table_to_string_impl(lua, &t)?);
+                    }
+                    mlua::Value::UserData(ud) => {
+                        // 尝试获取用户数据的字符串表示
+                        let s = format!("{:?}", ud);
+                        output.push_str(&s);
+                    }
+                    _ => {
+                        // 其他类型转换为字符串
+                        let s = format!("{:?}", value);
+                        output.push_str(&s);
+                    }
+                }
+            }
+            
+            // 将输出追加到缓冲区
+            state.output_buffer.push_str(&output);
+            
+            // 返回成功状态 1
+            Ok(1)
         });
 
         // get_body_file(): 获取请求体临时文件名
@@ -943,6 +1017,9 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: headers.clone(),
+                redirect_uri: None,
+                redirect_status: None,
+                output_buffer: String::new(),
             }));
 
             CandyReq {
@@ -1062,6 +1139,9 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: headers.clone(),
+                redirect_uri: None,
+                redirect_status: None,
+                output_buffer: String::new(),
             }));
 
             RequestContext {
@@ -1219,6 +1299,9 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
+                redirect_uri: None,
+                redirect_status: None,
+                output_buffer: String::new(),
             };
 
             let uri = state.build_uri();
@@ -1238,6 +1321,9 @@ mod tests {
                 ])),
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
+                redirect_uri: None,
+                redirect_status: None,
+                output_buffer: String::new(),
             };
 
             assert!(state.post_args.is_some());
@@ -1298,6 +1384,9 @@ mod tests {
                 post_args: None,
                 jump: true, // Should trigger re-routing
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
+                redirect_uri: None,
+                redirect_status: None,
+                output_buffer: String::new(),
             };
 
             assert!(state.jump);

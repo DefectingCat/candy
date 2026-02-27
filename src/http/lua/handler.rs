@@ -157,6 +157,9 @@ pub async fn lua(
         post_args: None,
         jump: false,
         headers: Arc::new(Mutex::new(req_headers)),
+        redirect_uri: None,
+        redirect_status: None,
+        output_buffer: String::new(),
     }));
 
     lua.globals()
@@ -194,8 +197,20 @@ pub async fn lua(
     })?;
     let res = ctx.res.clone();
 
+    // 检查请求状态中的输出缓冲区（来自 print 调用）
+    let output_buffer = {
+        let state = ctx
+            .req_state
+            .lock()
+            .map_err(|_| RouteError::InternalError())?;
+        state.output_buffer.clone()
+    };
+
+    // 合并原始响应体和 print 输出
+    let final_body = format!("{}{}", res.body, output_buffer);
+
     let mut response = Response::builder();
-    let body = Body::from(res.body);
+    let body = Body::from(final_body);
     response = response.status(res.status);
 
     // 添加响应头

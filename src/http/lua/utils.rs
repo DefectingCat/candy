@@ -568,7 +568,7 @@ mod tests {
             let original = "a=1&b=hello+world&c=test";
             let args = UriArgs::from_query(original);
             let query = args.to_query();
-            
+
             // Parse again
             let args2 = UriArgs::from_query(&query);
             assert_eq!(args.0.len(), args2.0.len());
@@ -593,13 +593,13 @@ mod tests {
                 ("name".to_string(), "John Doe".to_string()),
                 ("city".to_string(), "New York".to_string()),
             ];
-            
+
             // Build query string
             let query = UriArgs(original_params).to_query();
-            
+
             // Parse it back
             let parsed = UriArgs::from_query(&query);
-            
+
             assert_eq!(parsed.0.len(), 2);
             assert_eq!(parsed.0[0].0, "name");
             assert_eq!(parsed.0[1].0, "city");
@@ -610,7 +610,7 @@ mod tests {
             // Test that days_to_ymd works correctly across multiple years
             for days in [0, 100, 365, 730, 1000, 5000, 10000, 20000] {
                 let (year, month, day) = days_to_ymd(days);
-                
+
                 // Basic sanity checks
                 assert!(year >= 1970);
                 assert!((1..=12).contains(&month));
@@ -638,9 +638,7 @@ mod tests {
 
         #[test]
         fn test_uri_args_unicode_roundtrip() {
-            let args = UriArgs(vec![
-                ("中文".to_string(), "测试".to_string()),
-            ]);
+            let args = UriArgs(vec![("中文".to_string(), "测试".to_string())]);
             let query = args.to_query();
             let parsed = UriArgs::from_query(&query);
             assert!(!parsed.0.is_empty());

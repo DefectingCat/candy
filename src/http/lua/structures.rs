@@ -33,6 +33,12 @@ pub struct CandyReqState {
     pub jump: bool,
     /// 请求头（可变）
     pub headers: Arc<Mutex<HeaderMap>>,
+    /// 重定向 URL（如果设置则需要重定向）
+    pub redirect_uri: Option<String>,
+    /// 重定向状态码
+    pub redirect_status: Option<u16>,
+    /// 通过 print/say 输出的内容
+    pub output_buffer: String,
 }
 
 impl CandyReqState {
@@ -163,6 +169,9 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
+                redirect_uri: None,
+                redirect_status: None,
+                output_buffer: String::new(),
             };
             assert_eq!(state.build_uri(), "/test");
         }
@@ -179,6 +188,9 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
+                redirect_uri: None,
+                redirect_status: None,
+                output_buffer: String::new(),
             };
             assert_eq!(state.build_uri(), "/test?key1=value1&key2=value2");
         }
@@ -192,6 +204,9 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
+                redirect_uri: None,
+                redirect_status: None,
+                output_buffer: String::new(),
             };
             assert_eq!(state.build_uri(), "/api?flag");
         }
@@ -208,6 +223,9 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
+                redirect_uri: None,
+                redirect_status: None,
+                output_buffer: String::new(),
             };
             let uri = state.build_uri();
             assert!(uri.contains("q="));
@@ -381,6 +399,9 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
+                redirect_uri: None,
+                redirect_status: None,
+                output_buffer: String::new(),
             }));
 
             let ctx = RequestContext {
@@ -417,6 +438,9 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: headers.clone(),
+                redirect_uri: None,
+                redirect_status: None,
+                output_buffer: String::new(),
             }));
 
             let ctx = RequestContext {
@@ -463,6 +487,9 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers,
+                redirect_uri: None,
+                redirect_status: None,
+                output_buffer: String::new(),
             };
 
             // Verify initial state
@@ -483,6 +510,9 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
+                redirect_uri: None,
+                redirect_status: None,
+                output_buffer: String::new(),
             };
 
             let uri = state.build_uri();
@@ -504,6 +534,9 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
+                redirect_uri: None,
+                redirect_status: None,
+                output_buffer: String::new(),
             };
             assert_eq!(state.build_uri(), "/a/b/c");
         }
@@ -517,6 +550,9 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
+                redirect_uri: None,
+                redirect_status: None,
+                output_buffer: String::new(),
             };
             assert_eq!(state.build_uri(), "/");
         }
@@ -534,6 +570,9 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
+                redirect_uri: None,
+                redirect_status: None,
+                output_buffer: String::new(),
             };
             // Should preserve order
             let uri = state.build_uri();
