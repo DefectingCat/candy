@@ -28,6 +28,11 @@ fn default_weight() -> u32 {
     1
 }
 
+/// 默认 Lua 代码缓存设置
+fn default_lua_code_cache() -> bool {
+    true
+}
+
 /// 负载均衡算法类型
 #[derive(Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -212,6 +217,11 @@ pub struct SettingRoute {
 
     /// Lua 脚本
     pub lua_script: Option<String>,
+    /// 是否启用 Lua 代码缓存
+    /// 默认为 true，启用缓存可以提高性能
+    /// 设置为 false 时，每次请求都会重新编译 Lua 脚本
+    #[serde(default = "default_lua_code_cache")]
+    pub lua_code_cache: bool,
 
     /// HTTP 重定向目标 URL
     pub redirect_to: Option<String>,

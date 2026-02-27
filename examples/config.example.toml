@@ -98,3 +98,13 @@ server = [
 ]
 # Health check configuration
 health_check = { interval = 3000, fall = 3, rise = 2, type = "http", check_http_send = "HEAD / HTTP/1.0\r\n\r\n", check_http_expect_alive = "200-399" }
+
+# Example: Route with Lua script and disabled code cache (for development/debugging)
+[[host]]
+ip = "0.0.0.0"
+port = 8084
+server_name = "lua.example.com"
+[[host.route]]
+location = "/lua"
+lua_script = "./examples/hello.lua"
+lua_code_cache = false  # Disable Lua code cache for debugging purposes

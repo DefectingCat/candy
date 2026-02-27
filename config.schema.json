@@ -251,6 +251,11 @@
           "description": "Lua script to execute for this route (requires Lua feature)",
           "type": "string"
         },
+        "lua_code_cache": {
+          "description": "Whether to enable Lua code caching (default: true)",
+          "type": "boolean",
+          "default": true
+        },
         "redirect_to": {
           "description": "Target URL for HTTP redirect",
           "type": "string",

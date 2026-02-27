@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 use anyhow::{Context, anyhow};
 use axum::{
@@ -9,11 +11,11 @@ use axum::{
 };
 use http::Uri;
 use tokio::fs;
-use tracing::error;
+use tracing::{error, info, debug};
 
 use crate::{
     http::{HOSTS, error::RouteError, serve::resolve_parent_path},
-    lua_engine::LUA_ENGINE,
+    lua_engine::{LUA_ENGINE, LuaCodeCacheEntry},
     utils::parse_port_from_host,
 };
 
@@ -22,6 +24,13 @@ use super::{
     utils::UriArgs,
 };
 use crate::http::error::RouteResult;
+
+/// 计算字节数组的校验和（用于检测文件内容变化）
+fn compute_checksum(data: &[u8]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    data.hash(&mut hasher);
+    hasher.finish()
+}
 
 pub async fn lua(
     req_uri: Uri,
@@ -137,9 +146,10 @@ pub async fn lua(
     };
 
     let lua = &LUA_ENGINE.lua;
-    let script = fs::read_to_string(lua_script)
+    let script_content = fs::read(lua_script)
         .await
         .with_context(|| format!("Failed to read lua script file: {lua_script}",))?;
+    let script = String::from_utf8_lossy(&script_content).to_string();
 
     // 创建请求的可变状态
     let (uri_path, uri_args) = req_uri
@@ -185,10 +195,79 @@ pub async fn lua(
             error!("Lua script {lua_script} exec error: {err}");
             RouteError::InternalError()
         })?;
-    lua.load(script).exec_async().await.map_err(|err| {
-        error!("Lua script {lua_script} exec error: {err}");
-        RouteError::InternalError()
-    })?;
+
+    // 根据 lua_code_cache 配置决定是否使用缓存
+    if route_config.lua_code_cache {
+        let checksum = compute_checksum(&script_content);
+        let start_time = std::time::Instant::now();
+
+        // 检查是否已存在缓存条目
+        if let Some(mut cache_entry) = LUA_ENGINE.code_cache.get_mut(lua_script) {
+            // 比较校验和，检测脚本内容是否发生变化
+            if cache_entry.checksum == checksum {
+                // 使用缓存的编译函数
+                cache_entry.compiled_func.call_async::<()>(()).await.map_err(|err| {
+                    error!("Lua script {lua_script} exec error: {err}");
+                    RouteError::InternalError()
+                })?;
+                debug!("Lua script executed from cache: {}, time: {:?}", lua_script, start_time.elapsed());
+            } else {
+                // 脚本内容已变化，重新编译
+                info!("Lua script changed, recompiling: {}", lua_script);
+                let chunk = lua.load(script.as_str());
+                let compiled_func = chunk.into_function().map_err(|err| {
+                    error!("Lua script {lua_script} compile error: {err}");
+                    RouteError::InternalError()
+                })?;
+
+                // 更新缓存
+                *cache_entry = LuaCodeCacheEntry {
+                    compiled_func,
+                    checksum,
+                };
+
+                // 执行新编译的函数
+                cache_entry.compiled_func.call_async::<()>(()).await.map_err(|err| {
+                    error!("Lua script {lua_script} exec error: {err}");
+                    RouteError::InternalError()
+                })?;
+                debug!("Lua script recompiled and executed: {}, time: {:?}", lua_script, start_time.elapsed());
+            }
+        } else {
+            // 缓存中不存在该脚本，编译并添加到缓存
+            info!("Lua script not in cache, compiling: {}", lua_script);
+            let chunk = lua.load(script.as_str());
+            let compiled_func = chunk.into_function().map_err(|err| {
+                error!("Lua script {lua_script} compile error: {err}");
+                RouteError::InternalError()
+            })?;
+
+            LUA_ENGINE.code_cache.insert(
+                lua_script.to_string(),
+                LuaCodeCacheEntry {
+                    compiled_func,
+                    checksum,
+                },
+            );
+
+            // 执行新编译的函数
+            if let Some(entry) = LUA_ENGINE.code_cache.get(lua_script) {
+                entry.compiled_func.call_async::<()>(()).await.map_err(|err| {
+                    error!("Lua script {lua_script} exec error: {err}");
+                    RouteError::InternalError()
+                })?;
+            }
+            debug!("Lua script compiled and executed: {}, time: {:?}", lua_script, start_time.elapsed());
+        }
+    } else {
+        // 禁用缓存，直接编译和执行
+        let start_time = std::time::Instant::now();
+        lua.load(script).exec_async().await.map_err(|err| {
+            error!("Lua script {lua_script} exec error: {err}");
+            RouteError::InternalError()
+        })?;
+        debug!("Lua script executed without cache: {}, time: {:?}", lua_script, start_time.elapsed());
+    }
     // 获取修改后的上下文并返回响应
     let ctx: mlua::UserDataRef<RequestContext> = lua.globals().get("cd").map_err(|err| {
         error!("Lua script {lua_script} exec error: {err}");

@@ -1,10 +1,18 @@
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use dashmap::DashMap;
-use mlua::Lua;
-use tracing::{error, info};
+use mlua::{Function, Lua, chunk};
+use tracing::{error, info, debug};
 
 use crate::consts::{ARCH, COMMIT, COMPILER, NAME, OS, VERSION};
+
+/// Lua 代码缓存条目
+pub struct LuaCodeCacheEntry {
+    /// 编译后的 Lua 函数
+    pub compiled_func: Function,
+    /// 脚本内容的校验和，用于检测脚本是否发生变化
+    pub checksum: u64,
+}
 
 /// Lua 引擎实例，包含 Lua 虚拟机和共享字典
 pub struct LuaEngine {
@@ -13,6 +21,10 @@ pub struct LuaEngine {
     /// 线程安全的共享字典，用于 Lua 和 Rust 之间交换数据
     #[allow(dead_code)]
     pub shared_table: Arc<DashMap<String, String>>,
+    /// Lua 代码缓存，用于存储编译后的 Lua 脚本
+    /// 键：脚本文件路径
+    /// 值：(编译后的函数, 脚本内容的校验和)
+    pub code_cache: Arc<DashMap<String, LuaCodeCacheEntry>>,
 }
 
 impl Default for LuaEngine {
@@ -31,6 +43,7 @@ impl LuaEngine {
     pub fn new() -> Self {
         let lua = Lua::new();
         let shared_table = Arc::new(DashMap::new());
+        let code_cache = Arc::new(DashMap::new());
 
         // 创建主模块和共享API子模块
         let module = lua.create_table().expect("Failed to create Lua module");
@@ -52,7 +65,48 @@ impl LuaEngine {
             .set("candy", module)
             .expect("设置全局变量 candy 失败");
 
-        Self { lua, shared_table }
+        Self {
+            lua,
+            shared_table,
+            code_cache,
+        }
+    }
+
+    /// 清除所有 Lua 代码缓存
+    pub fn clear_cache(&self) {
+        self.code_cache.clear();
+        info!("Lua code cache cleared");
+    }
+
+    /// 清除特定脚本的缓存条目
+    pub fn remove_from_cache(&self, script_path: &str) -> bool {
+        if self.code_cache.remove(script_path).is_some() {
+            info!("Removed Lua script from cache: {}", script_path);
+            true
+        } else {
+            debug!("Lua script not found in cache: {}", script_path);
+            false
+        }
+    }
+
+    /// 获取缓存统计信息
+    pub fn cache_stats(&self) -> (usize, usize, usize) {
+        let entry_count = self.code_cache.len();
+        let total_memory_estimate = self.code_cache.len() * std::mem::size_of::<LuaCodeCacheEntry>();
+
+        // 估算平均条目大小（包含编译后的函数）
+        let estimated_bytes = entry_count * 1024; // 假设平均每个编译后的函数是 1KB
+
+        (entry_count, estimated_bytes, total_memory_estimate)
+    }
+
+    /// 打印缓存统计信息（用于调试）
+    pub fn print_cache_stats(&self) {
+        let (count, estimated_bytes, memory) = self.cache_stats();
+        info!(
+            "Lua code cache stats: {} entries, ~{} bytes ({} KB), memory: {} bytes",
+            count, estimated_bytes, estimated_bytes / 1024, memory
+        );
     }
 
     /// 注册共享字典操作 API
@@ -205,5 +259,74 @@ mod tests {
             .load("candy.log('Test log message')")
             .eval::<()>()
             .unwrap();
+    }
+
+    #[test]
+    fn test_code_cache_operations() {
+        // 测试代码缓存操作
+        let engine = LuaEngine::new();
+
+        // 测试添加和获取缓存
+        let test_script = "test_script.lua";
+        let test_content = "return 'test value'";
+        let test_checksum = 12345;
+
+        // 检查初始缓存是否为空
+        let initial_stats = engine.cache_stats();
+        assert_eq!(initial_stats.0, 0);
+
+        // 添加到缓存
+        engine.code_cache.insert(test_script.to_string(), LuaCodeCacheEntry {
+            compiled_func: engine.lua.load(test_content).into_function().unwrap(),
+            checksum: test_checksum
+        });
+
+        // 检查缓存是否包含条目
+        assert!(engine.code_cache.contains_key(test_script));
+        let after_insert_stats = engine.cache_stats();
+        assert_eq!(after_insert_stats.0, 1);
+
+        // 测试清除特定条目
+        let removed = engine.remove_from_cache(test_script);
+        assert!(removed);
+        assert!(!engine.code_cache.contains_key(test_script));
+
+        // 测试清除所有缓存
+        let another_script = "another_script.lua";
+        engine.code_cache.insert(another_script.to_string(), LuaCodeCacheEntry {
+            compiled_func: engine.lua.load("return 'another value'").into_function().unwrap(),
+            checksum: 67890
+        });
+        assert!(!engine.code_cache.is_empty());
+
+        engine.clear_cache();
+        assert!(engine.code_cache.is_empty());
+    }
+
+    #[test]
+    fn test_cache_stats() {
+        // 测试缓存统计信息
+        let engine = LuaEngine::new();
+
+        let (count, estimated_bytes, memory) = engine.cache_stats();
+        assert_eq!(count, 0);
+        assert_eq!(estimated_bytes, 0);
+
+        // 添加一些条目
+        for i in 0..5 {
+            let script = format!("script_{}.lua", i);
+            engine.code_cache.insert(script, LuaCodeCacheEntry {
+                compiled_func: engine.lua.load(format!("return 'value{}'", i)).into_function().unwrap(),
+                checksum: i as u64
+            });
+        }
+
+        let (count, estimated_bytes, memory) = engine.cache_stats();
+        assert_eq!(count, 5);
+        assert!(estimated_bytes > 0);
+        assert!(memory > 0);
+
+        // 打印统计信息
+        engine.print_cache_stats();
     }
 }

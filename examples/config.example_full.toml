@@ -94,6 +94,13 @@ port = 8081
 [[host.route]]
 location = "/lua"
 lua_script = "./scripts/handler.lua" # Path to Lua script
+lua_code_cache = true # Enable Lua code caching for performance (default: true)
+
+# Example 4a: Lua script handler with code cache disabled (for debugging)
+[[host.route]]
+location = "/lua_debug"
+lua_script = "./scripts/debug_handler.lua" # Path to debug Lua script
+lua_code_cache = false # Disable Lua code caching for debugging purposes
 
 # Example 5: Forward proxy
 [[host]]

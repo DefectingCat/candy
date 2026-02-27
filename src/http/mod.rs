@@ -533,6 +533,7 @@ mod tests {
             br: None,
             zstd: None,
             level: None,
+            lua_code_cache: true,
         };
 
         let global = CompressionConfig::default();
@@ -565,6 +566,7 @@ mod tests {
             br: Some(true),    // 覆盖全局
             zstd: None,        // 使用全局
             level: Some(9),    // 覆盖全局
+            lua_code_cache: true,
         };
 
         let global = CompressionConfig {
@@ -644,6 +646,7 @@ mod tests {
                 br: None,
                 zstd: None,
                 level: Some(tc.level),
+                lua_code_cache: true,
             };
 
             let global = CompressionConfig::default();
@@ -688,6 +691,7 @@ mod tests {
             br: None,
             zstd: None,
             level: None,
+            lua_code_cache: true,
         };
 
         assert!(!route_has_custom_compression(&route));
@@ -716,6 +720,7 @@ mod tests {
             br: None,
             zstd: None,
             level: None,
+            lua_code_cache: true,
         };
 
         assert!(route_has_custom_compression(&route));
@@ -744,6 +749,7 @@ mod tests {
             br: None,
             zstd: None,
             level: Some(5),
+            lua_code_cache: true,
         };
 
         assert!(route_has_custom_compression(&route));
@@ -772,6 +778,7 @@ mod tests {
             br: Some(false),
             zstd: Some(true),
             level: Some(3),
+            lua_code_cache: true,
         };
 
         assert!(route_has_custom_compression(&route));
@@ -817,6 +824,7 @@ mod tests {
             br: None,
             zstd: None,
             level: None,
+            lua_code_cache: true,
         };
 
         let host = SettingHost {
@@ -857,6 +865,7 @@ mod tests {
             br: None,
             zstd: None,
             level: None,
+            lua_code_cache: true,
         };
 
         let host = SettingHost {
@@ -897,6 +906,7 @@ mod tests {
             br: None,
             zstd: None,
             level: None,
+            lua_code_cache: true,
         };
 
         let route_with_custom = SettingRoute {
@@ -920,6 +930,7 @@ mod tests {
             br: None,
             zstd: None,
             level: Some(9),
+            lua_code_cache: true,
         };
 
         let host = SettingHost {
@@ -984,6 +995,7 @@ mod tests {
                 br: None,
                 zstd: None,
                 level: Some(level),
+                lua_code_cache: true,
             };
 
             let global = CompressionConfig::default();
