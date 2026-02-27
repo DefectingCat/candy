@@ -1624,7 +1624,6 @@ mod tests {
     // Header manipulation logic tests
     mod header_manipulation {
         use super::*;
-        use std::sync::{Arc, Mutex};
 
         #[test]
         fn test_header_name_normalization_underscore() {

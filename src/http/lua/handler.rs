@@ -264,7 +264,11 @@ mod tests {
         headers_str
     }
 
-    fn build_request_line(method: &str, uri_pq: Option<&http::uri::PathAndQuery>, version_str: &str) -> String {
+    fn build_request_line(
+        method: &str,
+        uri_pq: Option<&http::uri::PathAndQuery>,
+        version_str: &str,
+    ) -> String {
         format!(
             "{} {} {}",
             method,
@@ -538,14 +542,14 @@ mod tests {
         #[test]
         fn test_nested_path() {
             let uri = Uri::from_static("/a/b/c/d");
-            let (path, args) = parse_uri_args(&uri);
+            let (path, _args) = parse_uri_args(&uri);
             assert_eq!(path, "/a/b/c/d");
         }
 
         #[test]
         fn test_trailing_slash() {
             let uri = Uri::from_static("/api/");
-            let (path, args) = parse_uri_args(&uri);
+            let (path, _args) = parse_uri_args(&uri);
             assert_eq!(path, "/api/");
         }
     }
