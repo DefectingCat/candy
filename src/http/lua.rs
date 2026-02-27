@@ -496,32 +496,55 @@ impl UserData for CandyReq {
         });
 
         // read_body(): 读取请求体
-        // 在 Candy 中，请求体在请求进入时已经读取并存储
-        // 此方法返回已存储的请求体字符串
-        methods.add_method("read_body", |lua, this, ()| {
-            let body = this
-                .body
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock body: {}", e)))?;
-            match body.as_ref() {
-                Some(bytes) => {
-                    let s = String::from_utf8_lossy(bytes);
-                    lua.pack(s.into_owned())
-                }
-                None => lua.pack(""),
-            }
+        // 在 Candy 中，请求体在请求进入时已经自动读取
+        // 此方法为 API 兼容性而存在，是空操作
+        methods.add_method("read_body", |_, _, ()| {
+            // 请求体已在请求处理前自动读取，此方法为空操作
+            Ok(())
         });
 
-        // get_body_data(): 获取原始请求体数据
+        // get_body_data(): 获取请求体数据
+        // 返回请求体的原始字节字符串
+        // 如果请求体未读取、大小为 0 或已丢弃，返回 nil
         methods.add_method("get_body_data", |lua, this, ()| {
             let body = this
                 .body
                 .lock()
                 .map_err(|e| mlua::Error::external(anyhow!("Failed to lock body: {}", e)))?;
             match body.as_ref() {
-                Some(bytes) => lua.create_string(bytes.as_slice()).map(mlua::Value::String),
-                None => Ok(mlua::Value::Nil),
+                Some(bytes) if !bytes.is_empty() => {
+                    lua.create_string(bytes.as_slice()).map(mlua::Value::String)
+                }
+                _ => Ok(mlua::Value::Nil),
             }
+        });
+
+        // discard_body(): 丢弃请求体
+        // 在 Candy 中，请求体已读入内存，此方法清空请求体
+        methods.add_method_mut("discard_body", |_, this, ()| {
+            let mut body = this
+                .body
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock body: {}", e)))?;
+            *body = None;
+            Ok(())
+        });
+
+        // get_body_file(): 获取请求体临时文件名
+        // Candy 不使用临时文件存储请求体，始终返回 nil
+        methods.add_method("get_body_file", |_, _, ()| {
+            // Candy 将请求体存储在内存中，不使用临时文件
+            Ok(mlua::Value::Nil)
+        });
+
+        // set_body_data(data): 设置请求体数据
+        methods.add_method_mut("set_body_data", |_, this, data: mlua::String| {
+            let mut body = this
+                .body
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock body: {}", e)))?;
+            *body = Some(data.as_bytes().to_vec());
+            Ok(())
         });
 
         // get_post_args(max_args?): 解析 POST 参数
@@ -710,9 +733,11 @@ impl UserData for CandyReq {
         });
 
         // set_header(header_name, header_value): 设置请求头
+        // header_value 可以是字符串、数组或 nil
+        // nil 表示删除 header
         methods.add_method_mut(
             "set_header",
-            |_, this, (header_name, header_value): (String, String)| {
+            |_, this, (header_name, header_value): (String, mlua::Value)| {
                 let state = this
                     .state
                     .lock()
@@ -725,10 +750,37 @@ impl UserData for CandyReq {
                 let normalized = header_name.to_lowercase().replace('_', "-");
                 let header_name = HeaderName::try_from(normalized.as_str())
                     .map_err(|e| mlua::Error::external(anyhow!("Invalid header name: {}", e)))?;
-                let header_value = HeaderValue::from_str(&header_value)
-                    .map_err(|e| mlua::Error::external(anyhow!("Invalid header value: {}", e)))?;
 
-                headers.insert(header_name, header_value);
+                match header_value {
+                    mlua::Value::Nil => {
+                        // nil 表示删除 header
+                        headers.remove(&header_name);
+                    }
+                    mlua::Value::String(s) => {
+                        let header_value = HeaderValue::from_str(&s.to_str()?)
+                            .map_err(|e| {
+                                mlua::Error::external(anyhow!("Invalid header value: {}", e))
+                            })?;
+                        headers.insert(header_name, header_value);
+                    }
+                    mlua::Value::Table(t) => {
+                        // 数组值：先删除旧的，再添加所有新值
+                        headers.remove(&header_name);
+                        for i in 1..=t.len()? {
+                            if let mlua::Value::String(s) = t.get(i)? {
+                                let header_value = HeaderValue::from_str(&s.to_str()?).map_err(|e| {
+                                    mlua::Error::external(anyhow!("Invalid header value: {}", e))
+                                })?;
+                                headers.append(&header_name, header_value);
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(mlua::Error::external(anyhow!(
+                            "header_value must be a string, table, or nil"
+                        )));
+                    }
+                }
                 Ok(())
             },
         );
