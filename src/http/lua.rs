@@ -406,13 +406,11 @@ impl UserData for CandyReq {
 
             let limit = max_args.unwrap_or(100);
             let table = lua.create_table()?;
-            let mut count = 0;
 
-            for (k, v) in &state.uri_args.0 {
+            for (count, (k, v)) in state.uri_args.0.iter().enumerate() {
                 if limit > 0 && count >= limit {
                     break;
                 }
-                count += 1;
 
                 if table.contains_key(k.clone())? {
                     let existing: mlua::Value = table.get(k.clone())?;
@@ -555,13 +553,11 @@ impl UserData for CandyReq {
             let post_args = state.post_args.as_ref().unwrap();
             let limit = max_args.unwrap_or(100);
             let table = lua.create_table()?;
-            let mut count = 0;
 
-            for (k, v) in &post_args.0 {
+            for (count, (k, v)) in post_args.0.iter().enumerate() {
                 if limit > 0 && count >= limit {
                     break;
                 }
-                count += 1;
 
                 if table.contains_key(k.clone())? {
                     let existing: mlua::Value = table.get(k.clone())?;
@@ -610,13 +606,11 @@ impl UserData for CandyReq {
                 let limit = max_headers.unwrap_or(100);
                 let preserve_case = raw.unwrap_or(false);
                 let table = lua.create_table()?;
-                let mut count = 0;
 
-                for (name, value) in headers.iter() {
+                for (count, (name, value)) in headers.iter().enumerate() {
                     if limit > 0 && count >= limit {
                         break;
                     }
-                    count += 1;
 
                     let key = if preserve_case {
                         name.as_str().to_string()
