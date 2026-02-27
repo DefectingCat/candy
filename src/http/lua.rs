@@ -46,6 +46,55 @@ impl CandyHeaders {
     fn normalize_header_name(key: &str) -> String {
         key.replace('_', "-")
     }
+
+    /// 获取所有 headers 作为 Lua table
+    fn get_headers_table(&self, lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
+        let headers = self.headers.lock().map_err(|e| {
+            mlua::Error::external(anyhow!("Failed to lock headers: {}", e))
+        })?;
+
+        let table = lua.create_table()?;
+        for (name, value) in headers.iter() {
+            let key = name.as_str();
+            if let Ok(v) = value.to_str() {
+                // 如果已有相同 key，转换为数组
+                if table.contains_key(key)? {
+                    let existing: mlua::Value = table.get(key)?;
+                    match existing {
+                        mlua::Value::String(s) => {
+                            let arr = lua.create_table()?;
+                            arr.set(1, s)?;
+                            arr.set(2, v)?;
+                            table.set(key, arr)?;
+                        }
+                        mlua::Value::Table(t) => {
+                            let len = t.len()?;
+                            t.set(len + 1, v)?;
+                        }
+                        _ => {}
+                    }
+                } else {
+                    table.set(key, v)?;
+                }
+            }
+        }
+        Ok(table)
+    }
+}
+
+/// 响应操作对象，提供 get_headers 等方法
+#[derive(Clone, Debug)]
+struct CandyResp {
+    headers: CandyHeaders,
+}
+
+impl UserData for CandyResp {
+    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        // get_headers(): 返回所有响应头的 table
+        methods.add_method("get_headers", |lua, this, ()| {
+            this.headers.get_headers_table(lua)
+        });
+    }
 }
 
 impl UserData for CandyHeaders {
@@ -158,6 +207,13 @@ impl UserData for RequestContext {
                     // 返回 headers 对象
                     lua.create_userdata(this.res.headers.clone())
                         .map(mlua::Value::UserData)
+                }
+                "resp" => {
+                    // 返回 resp 对象，提供 get_headers 方法
+                    lua.create_userdata(CandyResp {
+                        headers: this.res.headers.clone(),
+                    })
+                    .map(mlua::Value::UserData)
                 }
                 // HTTP 方法常量
                 "HTTP_GET" => lua.pack(0u16),
