@@ -259,6 +259,51 @@ impl UserData for CandyReq {
             Ok(())
         });
 
+        // init_body(buffer_size?): 初始化新的空白请求体
+        // 为后续通过 append_body 和 finish_body 追加请求体数据做准备
+        // buffer_size 指定内存缓冲区大小（字节），默认 8KB
+        // 在 Candy 中，请求体存储在内存中，不使用临时文件
+        methods.add_method_mut("init_body", |_, this, buffer_size: Option<usize>| {
+            let _ = buffer_size; // 在内存实现中未使用，但保留参数兼容性
+            let mut body = this
+                .body
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock body: {}", e)))?;
+            // 初始化为空字节数组，表示可追加状态
+            *body = Some(Vec::new());
+            Ok(())
+        });
+
+        // append_body(data): 追加数据到请求体
+        // 必须在 init_body 之后、finish_body 之前调用
+        // data 可以是字符串或 Lua 字符串
+        methods.add_method_mut("append_body", |_, this, data: mlua::String| {
+            let mut body = this
+                .body
+                .lock()
+                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock body: {}", e)))?;
+            match body.as_mut() {
+                Some(vec) => {
+                    vec.extend_from_slice(&data.as_bytes());
+                }
+                None => {
+                    return Err(mlua::Error::external(anyhow!(
+                        "request body not initialized, call ngx.req.init_body first"
+                    )));
+                }
+            }
+            Ok(())
+        });
+
+        // finish_body(): 完成请求体写入
+        // 在所有数据通过 append_body 追加完毕后调用
+        // 在 Candy 中，此方法为空操作（仅标记写入完成）
+        methods.add_method_mut("finish_body", |_, _this, ()| {
+            // 在内存实现中无需额外操作
+            // 在基于文件的实现中，这里会刷新缓冲区到临时文件
+            Ok(())
+        });
+
         // get_body_file(): 获取请求体临时文件名
         // Candy 不使用临时文件存储请求体，始终返回 nil
         methods.add_method("get_body_file", |_, _, ()| {
