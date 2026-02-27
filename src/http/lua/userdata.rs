@@ -791,38 +791,38 @@ impl UserData for RequestContext {
     }
 }
 
-/// Helper function to get method name from method ID
-pub fn method_id_to_string(method_id: u16) -> Option<&'static str> {
-    match method_id {
-        HTTP_GET => Some("GET"),
-        HTTP_HEAD => Some("HEAD"),
-        HTTP_PUT => Some("PUT"),
-        HTTP_POST => Some("POST"),
-        HTTP_DELETE => Some("DELETE"),
-        HTTP_OPTIONS => Some("OPTIONS"),
-        HTTP_MKCOL => Some("MKCOL"),
-        HTTP_COPY => Some("COPY"),
-        HTTP_MOVE => Some("MOVE"),
-        HTTP_PROPFIND => Some("PROPFIND"),
-        HTTP_PROPPATCH => Some("PROPPATCH"),
-        HTTP_LOCK => Some("LOCK"),
-        HTTP_UNLOCK => Some("UNLOCK"),
-        HTTP_PATCH => Some("PATCH"),
-        HTTP_TRACE => Some("TRACE"),
-        _ => None,
-    }
-}
-
-/// Helper function to validate header name normalization
-pub fn normalize_header_name_for_test(key: &str) -> String {
-    key.replace('_', "-").to_lowercase()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use http::{header, HeaderMap, HeaderValue};
     use std::sync::{Arc, Mutex};
+
+    // Helper function to get method name from method ID
+    fn method_id_to_string(method_id: u16) -> Option<&'static str> {
+        match method_id {
+            HTTP_GET => Some("GET"),
+            HTTP_HEAD => Some("HEAD"),
+            HTTP_PUT => Some("PUT"),
+            HTTP_POST => Some("POST"),
+            HTTP_DELETE => Some("DELETE"),
+            HTTP_OPTIONS => Some("OPTIONS"),
+            HTTP_MKCOL => Some("MKCOL"),
+            HTTP_COPY => Some("COPY"),
+            HTTP_MOVE => Some("MOVE"),
+            HTTP_PROPFIND => Some("PROPFIND"),
+            HTTP_PROPPATCH => Some("PROPPATCH"),
+            HTTP_LOCK => Some("LOCK"),
+            HTTP_UNLOCK => Some("UNLOCK"),
+            HTTP_PATCH => Some("PATCH"),
+            HTTP_TRACE => Some("TRACE"),
+            _ => None,
+        }
+    }
+
+    // Helper function to validate header name normalization
+    fn normalize_header_name_for_test(key: &str) -> String {
+        key.replace('_', "-").to_lowercase()
+    }
 
     // method_id_to_string tests
     mod method_id_to_string {

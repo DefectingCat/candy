@@ -23,65 +23,6 @@ use super::{
 };
 use crate::http::error::RouteResult;
 
-/// 将 HTTP 版本转换为字符串表示
-pub fn http_version_to_string(version: http::Version) -> &'static str {
-    match version {
-        http::Version::HTTP_09 => "HTTP/0.9",
-        http::Version::HTTP_10 => "HTTP/1.0",
-        http::Version::HTTP_11 => "HTTP/1.1",
-        http::Version::HTTP_2 => "HTTP/2.0",
-        http::Version::HTTP_3 => "HTTP/3.0",
-        _ => "HTTP/1.1",
-    }
-}
-
-/// 将 HTTP 版本转换为 Option<f32>
-pub fn http_version_to_float(version: http::Version) -> Option<f32> {
-    match version {
-        http::Version::HTTP_09 => Some(0.9),
-        http::Version::HTTP_10 => Some(1.0),
-        http::Version::HTTP_11 => Some(1.1),
-        http::Version::HTTP_2 => Some(2.0),
-        http::Version::HTTP_3 => Some(3.0),
-        _ => None,
-    }
-}
-
-/// 从请求构建原始请求头字符串
-pub fn build_raw_header(headers: &http::HeaderMap) -> String {
-    let mut headers_str = String::new();
-    for (name, value) in headers.iter() {
-        if let Ok(v) = value.to_str() {
-            headers_str.push_str(&format!("{}: {}\r\n", name, v));
-        }
-    }
-    headers_str
-}
-
-/// 构建请求行
-pub fn build_request_line(
-    method: &str,
-    uri_pq: Option<&http::uri::PathAndQuery>,
-    version_str: &str,
-) -> String {
-    format!(
-        "{} {} {}",
-        method,
-        uri_pq.map(|pq| pq.as_str()).unwrap_or("/"),
-        version_str
-    )
-}
-
-/// 从 Uri 解析路径和查询参数
-pub fn parse_uri_args(uri: &Uri) -> (String, UriArgs) {
-    uri.path_and_query()
-        .map(|pq| {
-            let (path, query) = pq.as_str().split_once('?').unwrap_or((pq.as_str(), ""));
-            (path.to_string(), UriArgs::from_query(query))
-        })
-        .unwrap_or_else(|| ("/".to_string(), UriArgs::new()))
-}
-
 pub async fn lua(
     req_uri: Uri,
     path: Option<Path<String>>,
@@ -275,6 +216,57 @@ pub async fn lua(
 mod tests {
     use super::*;
     use http::{HeaderMap, HeaderValue, header};
+
+    // Helper functions for tests
+    fn http_version_to_string(version: http::Version) -> &'static str {
+        match version {
+            http::Version::HTTP_09 => "HTTP/0.9",
+            http::Version::HTTP_10 => "HTTP/1.0",
+            http::Version::HTTP_11 => "HTTP/1.1",
+            http::Version::HTTP_2 => "HTTP/2.0",
+            http::Version::HTTP_3 => "HTTP/3.0",
+            _ => "HTTP/1.1",
+        }
+    }
+
+    fn http_version_to_float(version: http::Version) -> Option<f32> {
+        match version {
+            http::Version::HTTP_09 => Some(0.9),
+            http::Version::HTTP_10 => Some(1.0),
+            http::Version::HTTP_11 => Some(1.1),
+            http::Version::HTTP_2 => Some(2.0),
+            http::Version::HTTP_3 => Some(3.0),
+            _ => None,
+        }
+    }
+
+    fn build_raw_header(headers: &http::HeaderMap) -> String {
+        let mut headers_str = String::new();
+        for (name, value) in headers.iter() {
+            if let Ok(v) = value.to_str() {
+                headers_str.push_str(&format!("{}: {}\r\n", name, v));
+            }
+        }
+        headers_str
+    }
+
+    fn build_request_line(method: &str, uri_pq: Option<&http::uri::PathAndQuery>, version_str: &str) -> String {
+        format!(
+            "{} {} {}",
+            method,
+            uri_pq.map(|pq| pq.as_str()).unwrap_or("/"),
+            version_str
+        )
+    }
+
+    fn parse_uri_args(uri: &http::Uri) -> (String, UriArgs) {
+        uri.path_and_query()
+            .map(|pq| {
+                let (path, query) = pq.as_str().split_once('?').unwrap_or((pq.as_str(), ""));
+                (path.to_string(), UriArgs::from_query(query))
+            })
+            .unwrap_or_else(|| ("/".to_string(), UriArgs::new()))
+    }
 
     // http_version_to_string tests
     mod http_version_to_string {
