@@ -49,7 +49,8 @@
 - [x] Specific custom config location
 - [x] HTTP 2
 - [x] Lua engine
-  - [ ] `cd` global variable
+  - [x] `cd` global variable
+  - [ ] cd.req.is_internal()
 - [ ] JavaScript engine
 - [ ] HTTP 3
 - [ ] Specify thread numbers

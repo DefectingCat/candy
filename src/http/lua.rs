@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, anyhow};
 use axum::{
@@ -19,13 +20,59 @@ use crate::{
 
 use super::error::RouteResult;
 
+/// 将自 1970-01-01 以来的天数转换为年月日
+fn days_to_ymd(days: i32) -> (i32, u32, u32) {
+    // 简化的日期计算算法
+    let mut year = 1970;
+    let mut remaining_days = days;
+
+    // 计算年份
+    loop {
+        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
+        if remaining_days < days_in_year {
+            break;
+        }
+        remaining_days -= days_in_year;
+        year += 1;
+    }
+
+    // 每月天数
+    let month_days = if is_leap_year(year) {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+
+    // 计算月份和日期
+    let mut month = 1u32;
+    let mut day = 1u32;
+    for &md in &month_days {
+        if remaining_days < md {
+            day = remaining_days as u32 + 1;
+            break;
+        }
+        remaining_days -= md;
+        month += 1;
+    }
+
+    (year, month, day)
+}
+
+/// 判断是否为闰年
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+}
+
 /// 为 Lua 脚本提供 HTTP 请求上下文
 #[derive(Clone, Debug)]
 struct CandyRequest {
     #[allow(dead_code)]
     method: String,
     /// Uri 在路由中被添加到上下文中
+    #[allow(dead_code)]
     uri: Uri,
+    /// HTTP 版本号 (1.0, 1.1, 2.0, 0.9)
+    http_version: Option<f32>,
 }
 
 /// HTTP 响应头包装器，支持 Lua 访问
@@ -93,6 +140,37 @@ impl UserData for CandyResp {
         // get_headers(): 返回所有响应头的 table
         methods.add_method("get_headers", |lua, this, ()| {
             this.headers.get_headers_table(lua)
+        });
+    }
+}
+
+/// 请求操作对象，提供 is_internal 等方法
+#[derive(Clone, Debug)]
+struct CandyReq {
+    is_internal: bool,
+    /// 请求开始时间（秒，包含毫秒小数）
+    start_time: f64,
+    /// HTTP 版本号 (1.0, 1.1, 2.0, 0.9)
+    http_version: Option<f32>,
+}
+
+impl UserData for CandyReq {
+    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        // is_internal(): 返回是否为内部请求
+        // 在 Candy 中，目前没有子请求机制，始终返回 false
+        methods.add_method("is_internal", |_, this, ()| Ok(this.is_internal));
+
+        // start_time(): 返回请求开始时间（秒，包含毫秒小数）
+        methods.add_method("start_time", |lua, this, ()| {
+            lua.pack(this.start_time)
+        });
+
+        // http_version(): 返回 HTTP 版本号
+        methods.add_method("http_version", |lua, this, ()| {
+            match this.http_version {
+                Some(v) => lua.pack(v),
+                None => Ok(mlua::Value::Nil),
+            }
         });
     }
 }
@@ -193,6 +271,8 @@ struct CandyResponse {
 struct RequestContext {
     req: CandyRequest,
     res: CandyResponse,
+    /// 请求开始时间（秒，包含毫秒小数）
+    start_time: f64,
 }
 
 impl UserData for RequestContext {
@@ -214,6 +294,61 @@ impl UserData for RequestContext {
                         headers: this.res.headers.clone(),
                     })
                     .map(mlua::Value::UserData)
+                }
+                "req" => {
+                    // 返回 req 对象，提供 is_internal 等方法
+                    lua.create_userdata(CandyReq {
+                        is_internal: false,
+                        start_time: this.start_time,
+                        http_version: this.req.http_version,
+                    })
+                    .map(mlua::Value::UserData)
+                }
+                "now" => {
+                    // now(): 返回当前时间戳（秒，包含毫秒小数部分）
+                    let now_func = lua.create_function(|lua, ()| {
+                        let now = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map_err(|e| mlua::Error::external(anyhow!("Time error: {}", e)))?;
+                        let secs = now.as_secs() as f64 + now.subsec_nanos() as f64 / 1_000_000_000.0;
+                        lua.pack(secs)
+                    })?;
+                    Ok(mlua::Value::Function(now_func))
+                }
+                "time" => {
+                    // time(): 返回当前时间戳（整数秒）
+                    let time_func = lua.create_function(|lua, ()| {
+                        let now = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map_err(|e| mlua::Error::external(anyhow!("Time error: {}", e)))?;
+                        lua.pack(now.as_secs())
+                    })?;
+                    Ok(mlua::Value::Function(time_func))
+                }
+                "today" => {
+                    // today(): 返回当前日期（格式 yyyy-mm-dd）
+                    let today_func = lua.create_function(|lua, ()| {
+                        let now = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map_err(|e| mlua::Error::external(anyhow!("Time error: {}", e)))?;
+                        let secs = now.as_secs();
+                        // 计算日期（简化实现，不处理时区）
+                        let days = secs / 86400;
+                        // 从 1970-01-01 开始计算
+                        let (year, month, day) = days_to_ymd(days as i32);
+                        let date_str = format!("{:04}-{:02}-{:02}", year, month, day);
+                        lua.pack(date_str)
+                    })?;
+                    Ok(mlua::Value::Function(today_func))
+                }
+                "update_time" => {
+                    // update_time(): 强制更新时间（在 Candy 中是空操作，因为每次都获取最新时间）
+                    let update_time_func = lua.create_function(|_, ()| {
+                        // Candy 每次调用 now()/today() 都会获取最新时间
+                        // 此函数仅为 API 兼容性而存在
+                        Ok(())
+                    })?;
+                    Ok(mlua::Value::Function(update_time_func))
                 }
                 // HTTP 方法常量
                 "HTTP_GET" => lua.pack(0u16),
@@ -346,10 +481,29 @@ pub async fn lua(
 
     let method = req.method().to_string();
 
+    // 解析 HTTP 版本号
+    let http_version = match req.version() {
+        http::Version::HTTP_09 => Some(0.9),
+        http::Version::HTTP_10 => Some(1.0),
+        http::Version::HTTP_11 => Some(1.1),
+        http::Version::HTTP_2 => Some(2.0),
+        http::Version::HTTP_3 => Some(3.0),
+        _ => None,
+    };
+
     let lua = &LUA_ENGINE.lua;
     let script = fs::read_to_string(lua_script)
         .await
         .with_context(|| format!("Failed to read lua script file: {lua_script}",))?;
+
+    // 计算请求开始时间
+    let start_time = {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| RouteError::InternalError())?;
+        now.as_secs() as f64 + now.subsec_nanos() as f64 / 1_000_000_000.0
+    };
+
     lua.globals()
         .set(
             "cd",
@@ -357,12 +511,14 @@ pub async fn lua(
                 req: CandyRequest {
                     method,
                     uri: req_uri,
+                    http_version,
                 },
                 res: CandyResponse {
                     status: 200,
                     headers: CandyHeaders::new(HeaderMap::new()),
                     body: "".to_string(),
                 },
+                start_time,
             },
         )
         .map_err(|err| {
