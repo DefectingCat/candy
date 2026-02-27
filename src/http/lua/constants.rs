@@ -435,3 +435,14 @@ mod tests {
         }
     }
 }
+
+// 日志级别常量
+pub const LOG_STDERR: u8 = 1;
+pub const LOG_EMERG: u8 = 2;
+pub const LOG_ALERT: u8 = 4;
+pub const LOG_CRIT: u8 = 8;
+pub const LOG_ERR: u8 = 16;
+pub const LOG_WARN: u8 = 32;
+pub const LOG_NOTICE: u8 = 64;
+pub const LOG_INFO: u8 = 128;
+pub const LOG_DEBUG: u8 = 255;

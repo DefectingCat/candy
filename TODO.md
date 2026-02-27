@@ -51,6 +51,8 @@
 - [x] Lua engine
   - [x] `cd` global variable
   - [ ] cd.req.is_internal()
+  - [ ] lua_code_cache
+  - [ ] lua_shared_dict
 - [ ] JavaScript engine
 - [ ] HTTP 3
 - [ ] Specify thread numbers
