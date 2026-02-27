@@ -66,13 +66,42 @@ fn is_leap_year(year: i32) -> bool {
 /// 为 Lua 脚本提供 HTTP 请求上下文
 #[derive(Clone, Debug)]
 struct CandyRequest {
-    #[allow(dead_code)]
-    method: String,
     /// Uri 在路由中被添加到上下文中
     #[allow(dead_code)]
     uri: Uri,
     /// HTTP 版本号 (1.0, 1.1, 2.0, 0.9)
     http_version: Option<f32>,
+    /// 原始请求头字符串
+    raw_header: String,
+    /// 请求行（如 "GET /t HTTP/1.1"）
+    request_line: String,
+}
+
+/// 请求的可变状态，使用 Arc<Mutex<>> 共享
+#[derive(Clone, Debug)]
+struct CandyReqState {
+    /// 请求方法 (GET, POST, etc.)
+    method: String,
+    /// 当前 URI（可被 set_uri 修改）
+    uri: String,
+    /// 是否需要重新路由（jump 标志）
+    jump: bool,
+}
+
+/// 请求操作对象，提供 is_internal 等方法
+#[derive(Clone, Debug)]
+struct CandyReq {
+    is_internal: bool,
+    /// 请求开始时间（秒，包含毫秒小数）
+    start_time: f64,
+    /// HTTP 版本号 (1.0, 1.1, 2.0, 0.9)
+    http_version: Option<f32>,
+    /// 原始请求头字符串
+    raw_header: String,
+    /// 请求行（如 "GET /t HTTP/1.1"）
+    request_line: String,
+    /// 可变状态
+    state: Arc<Mutex<CandyReqState>>,
 }
 
 /// HTTP 响应头包装器，支持 Lua 访问
@@ -144,16 +173,6 @@ impl UserData for CandyResp {
     }
 }
 
-/// 请求操作对象，提供 is_internal 等方法
-#[derive(Clone, Debug)]
-struct CandyReq {
-    is_internal: bool,
-    /// 请求开始时间（秒，包含毫秒小数）
-    start_time: f64,
-    /// HTTP 版本号 (1.0, 1.1, 2.0, 0.9)
-    http_version: Option<f32>,
-}
-
 impl UserData for CandyReq {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         // is_internal(): 返回是否为内部请求
@@ -171,6 +190,84 @@ impl UserData for CandyReq {
                 Some(v) => lua.pack(v),
                 None => Ok(mlua::Value::Nil),
             }
+        });
+
+        // raw_header(no_request_line?): 返回原始请求头
+        // raw_header() - 包含请求行
+        // raw_header(true) - 不包含请求行
+        methods.add_method("raw_header", |lua, this, no_request_line: Option<bool>| {
+            let skip_request_line = no_request_line.unwrap_or(false);
+            if skip_request_line {
+                lua.pack(this.raw_header.clone())
+            } else {
+                let full = format!("{}\r\n{}", this.request_line, this.raw_header);
+                lua.pack(full)
+            }
+        });
+
+        // get_method(): 返回请求方法名称
+        methods.add_method("get_method", |lua, this, ()| {
+            let state = this.state.lock().map_err(|e| {
+                mlua::Error::external(anyhow!("Failed to lock state: {}", e))
+            })?;
+            lua.pack(state.method.clone())
+        });
+
+        // set_method(method_id): 设置请求方法
+        // 使用数字常量，如 cd.HTTP_POST, cd.HTTP_GET
+        methods.add_method_mut("set_method", |_, this, method_id: u16| {
+            let method = match method_id {
+                0 => "GET",
+                1 => "HEAD",
+                2 => "PUT",
+                3 => "POST",
+                4 => "DELETE",
+                5 => "OPTIONS",
+                6 => "MKCOL",
+                7 => "COPY",
+                8 => "MOVE",
+                9 => "PROPFIND",
+                10 => "PROPPATCH",
+                11 => "LOCK",
+                12 => "UNLOCK",
+                13 => "PATCH",
+                14 => "TRACE",
+                _ => {
+                    return Err(mlua::Error::external(anyhow!(
+                        "Invalid method id: {}",
+                        method_id
+                    )));
+                }
+            };
+            let mut state = this.state.lock().map_err(|e| {
+                mlua::Error::external(anyhow!("Failed to lock state: {}", e))
+            })?;
+            state.method = method.to_string();
+            Ok(())
+        });
+
+        // get_uri(): 返回当前 URI
+        methods.add_method("get_uri", |lua, this, ()| {
+            let state = this.state.lock().map_err(|e| {
+                mlua::Error::external(anyhow!("Failed to lock state: {}", e))
+            })?;
+            lua.pack(state.uri.clone())
+        });
+
+        // set_uri(uri, jump?): 设置当前 URI
+        // jump=true 时标记需要重新路由（类似 nginx rewrite ... last）
+        methods.add_method_mut("set_uri", |_, this, (uri, jump): (String, Option<bool>)| {
+            if uri.is_empty() {
+                return Err(mlua::Error::external(anyhow!(
+                    "uri argument must be a non-empty string"
+                )));
+            }
+            let mut state = this.state.lock().map_err(|e| {
+                mlua::Error::external(anyhow!("Failed to lock state: {}", e))
+            })?;
+            state.uri = uri;
+            state.jump = jump.unwrap_or(false);
+            Ok(())
         });
     }
 }
@@ -273,6 +370,8 @@ struct RequestContext {
     res: CandyResponse,
     /// 请求开始时间（秒，包含毫秒小数）
     start_time: f64,
+    /// 请求的可变状态（方法、URI 等）
+    req_state: Arc<Mutex<CandyReqState>>,
 }
 
 impl UserData for RequestContext {
@@ -301,6 +400,9 @@ impl UserData for RequestContext {
                         is_internal: false,
                         start_time: this.start_time,
                         http_version: this.req.http_version,
+                        raw_header: this.req.raw_header.clone(),
+                        request_line: this.req.request_line.clone(),
+                        state: this.req_state.clone(),
                     })
                     .map(mlua::Value::UserData)
                 }
@@ -491,6 +593,35 @@ pub async fn lua(
         _ => None,
     };
 
+    // 构建 HTTP 版本字符串
+    let http_version_str = match req.version() {
+        http::Version::HTTP_09 => "HTTP/0.9",
+        http::Version::HTTP_10 => "HTTP/1.0",
+        http::Version::HTTP_11 => "HTTP/1.1",
+        http::Version::HTTP_2 => "HTTP/2.0",
+        http::Version::HTTP_3 => "HTTP/3.0",
+        _ => "HTTP/1.1",
+    };
+
+    // 构建请求行
+    let request_line = format!(
+        "{} {} {}",
+        method,
+        req_uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/"),
+        http_version_str
+    );
+
+    // 构建原始请求头字符串
+    let raw_header = {
+        let mut headers_str = String::new();
+        for (name, value) in req.headers() {
+            if let Ok(v) = value.to_str() {
+                headers_str.push_str(&format!("{}: {}\r\n", name, v));
+            }
+        }
+        headers_str
+    };
+
     let lua = &LUA_ENGINE.lua;
     let script = fs::read_to_string(lua_script)
         .await
@@ -504,14 +635,22 @@ pub async fn lua(
         now.as_secs() as f64 + now.subsec_nanos() as f64 / 1_000_000_000.0
     };
 
+    // 创建请求的可变状态
+    let req_state = Arc::new(Mutex::new(CandyReqState {
+        method: method.clone(),
+        uri: req_uri.path_and_query().map(|pq| pq.to_string()).unwrap_or_default(),
+        jump: false,
+    }));
+
     lua.globals()
         .set(
             "cd",
             RequestContext {
                 req: CandyRequest {
-                    method,
                     uri: req_uri,
                     http_version,
+                    raw_header,
+                    request_line,
                 },
                 res: CandyResponse {
                     status: 200,
@@ -519,6 +658,7 @@ pub async fn lua(
                     body: "".to_string(),
                 },
                 start_time,
+                req_state,
             },
         )
         .map_err(|err| {
