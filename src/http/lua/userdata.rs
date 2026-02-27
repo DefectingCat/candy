@@ -790,3 +790,472 @@ impl UserData for RequestContext {
         );
     }
 }
+
+/// Helper function to get method name from method ID
+pub fn method_id_to_string(method_id: u16) -> Option<&'static str> {
+    match method_id {
+        HTTP_GET => Some("GET"),
+        HTTP_HEAD => Some("HEAD"),
+        HTTP_PUT => Some("PUT"),
+        HTTP_POST => Some("POST"),
+        HTTP_DELETE => Some("DELETE"),
+        HTTP_OPTIONS => Some("OPTIONS"),
+        HTTP_MKCOL => Some("MKCOL"),
+        HTTP_COPY => Some("COPY"),
+        HTTP_MOVE => Some("MOVE"),
+        HTTP_PROPFIND => Some("PROPFIND"),
+        HTTP_PROPPATCH => Some("PROPPATCH"),
+        HTTP_LOCK => Some("LOCK"),
+        HTTP_UNLOCK => Some("UNLOCK"),
+        HTTP_PATCH => Some("PATCH"),
+        HTTP_TRACE => Some("TRACE"),
+        _ => None,
+    }
+}
+
+/// Helper function to validate header name normalization
+pub fn normalize_header_name_for_test(key: &str) -> String {
+    key.replace('_', "-").to_lowercase()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::{header, HeaderMap, HeaderValue};
+    use std::sync::{Arc, Mutex};
+
+    // method_id_to_string tests
+    mod method_id_to_string {
+        use super::*;
+
+        #[test]
+        fn test_all_valid_methods() {
+            assert_eq!(method_id_to_string(HTTP_GET), Some("GET"));
+            assert_eq!(method_id_to_string(HTTP_HEAD), Some("HEAD"));
+            assert_eq!(method_id_to_string(HTTP_PUT), Some("PUT"));
+            assert_eq!(method_id_to_string(HTTP_POST), Some("POST"));
+            assert_eq!(method_id_to_string(HTTP_DELETE), Some("DELETE"));
+            assert_eq!(method_id_to_string(HTTP_OPTIONS), Some("OPTIONS"));
+            assert_eq!(method_id_to_string(HTTP_MKCOL), Some("MKCOL"));
+            assert_eq!(method_id_to_string(HTTP_COPY), Some("COPY"));
+            assert_eq!(method_id_to_string(HTTP_MOVE), Some("MOVE"));
+            assert_eq!(method_id_to_string(HTTP_PROPFIND), Some("PROPFIND"));
+            assert_eq!(method_id_to_string(HTTP_PROPPATCH), Some("PROPPATCH"));
+            assert_eq!(method_id_to_string(HTTP_LOCK), Some("LOCK"));
+            assert_eq!(method_id_to_string(HTTP_UNLOCK), Some("UNLOCK"));
+            assert_eq!(method_id_to_string(HTTP_PATCH), Some("PATCH"));
+            assert_eq!(method_id_to_string(HTTP_TRACE), Some("TRACE"));
+        }
+
+        #[test]
+        fn test_invalid_method_id() {
+            assert_eq!(method_id_to_string(100), None);
+            assert_eq!(method_id_to_string(999), None);
+            assert_eq!(method_id_to_string(u16::MAX), None);
+        }
+    }
+
+    // normalize_header_name_for_test tests
+    mod normalize_header_name {
+        use super::*;
+
+        #[test]
+        fn test_no_underscore() {
+            assert_eq!(normalize_header_name_for_test("content-type"), "content-type");
+            assert_eq!(normalize_header_name_for_test("host"), "host");
+        }
+
+        #[test]
+        fn test_with_underscore() {
+            assert_eq!(normalize_header_name_for_test("content_type"), "content-type");
+            assert_eq!(normalize_header_name_for_test("x_custom_header"), "x-custom-header");
+        }
+
+        #[test]
+        fn test_mixed_case() {
+            assert_eq!(normalize_header_name_for_test("Content_Type"), "content-type");
+            assert_eq!(normalize_header_name_for_test("X_API_Key"), "x-api-key");
+        }
+
+        #[test]
+        fn test_empty_string() {
+            assert_eq!(normalize_header_name_for_test(""), "");
+        }
+    }
+
+    // CandyReq construction and basic field tests
+    mod candy_req {
+        use super::*;
+        use crate::http::lua::structures::CandyReqState;
+
+        fn create_test_candy_req() -> CandyReq {
+            let body = Arc::new(Mutex::new(Some(b"test body".to_vec())));
+            let headers = Arc::new(Mutex::new(HeaderMap::new()));
+            let state = Arc::new(Mutex::new(CandyReqState {
+                method: "GET".to_string(),
+                uri_path: "/test".to_string(),
+                uri_args: UriArgs::new(),
+                post_args: None,
+                jump: false,
+                headers: headers.clone(),
+            }));
+
+            CandyReq {
+                is_internal: false,
+                start_time: 1234567890.0,
+                http_version: Some(1.1),
+                raw_header: "Host: localhost\r\n".to_string(),
+                request_line: "GET /test HTTP/1.1".to_string(),
+                body,
+                state,
+            }
+        }
+
+        #[test]
+        fn test_candy_req_creation() {
+            let req = create_test_candy_req();
+            assert!(!req.is_internal);
+            assert_eq!(req.start_time, 1234567890.0);
+            assert_eq!(req.http_version, Some(1.1));
+        }
+
+        #[test]
+        fn test_candy_req_body_access() {
+            let req = create_test_candy_req();
+            let guard = req.body.lock().unwrap();
+            assert_eq!(guard.as_ref().unwrap(), b"test body");
+        }
+
+        #[test]
+        fn test_candy_req_state_access() {
+            let req = create_test_candy_req();
+            let state = req.state.lock().unwrap();
+            assert_eq!(state.method, "GET");
+            assert_eq!(state.uri_path, "/test");
+        }
+    }
+
+    // CandyResp tests
+    mod candy_resp {
+        use super::*;
+
+        fn create_test_candy_resp() -> CandyResp {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            );
+            CandyResp {
+                headers: CandyHeaders::new(headers),
+            }
+        }
+
+        #[test]
+        fn test_candy_resp_creation() {
+            let resp = create_test_candy_resp();
+            let guard = resp.headers.headers.lock().unwrap();
+            assert!(guard.get(header::CONTENT_TYPE).is_some());
+        }
+    }
+
+    // CandyHeaders tests
+    mod candy_headers {
+        use super::*;
+
+        #[test]
+        fn test_new_headers() {
+            let headers = HeaderMap::new();
+            let candy_headers = CandyHeaders::new(headers);
+            assert!(candy_headers.headers.lock().is_ok());
+        }
+
+        #[test]
+        fn test_headers_with_values() {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("text/html"),
+            );
+            headers.insert(
+                header::CONTENT_LENGTH,
+                HeaderValue::from_static("100"),
+            );
+
+            let candy_headers = CandyHeaders::new(headers);
+            let guard = candy_headers.headers.lock().unwrap();
+
+            assert_eq!(guard.get(header::CONTENT_TYPE).unwrap(), "text/html");
+            assert_eq!(guard.get(header::CONTENT_LENGTH).unwrap(), "100");
+        }
+
+        #[test]
+        fn test_headers_clone() {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                header::HOST,
+                HeaderValue::from_static("localhost"),
+            );
+            let candy_headers = CandyHeaders::new(headers);
+            let cloned = candy_headers.headers.lock().unwrap().clone();
+            assert_eq!(cloned.get(header::HOST).unwrap(), "localhost");
+        }
+    }
+
+    // RequestContext tests
+    mod request_context {
+        use super::*;
+        use crate::http::lua::structures::{CandyRequest, CandyResponse, CandyReqState};
+        use http::Uri;
+
+        fn create_test_request_context() -> RequestContext {
+            let body = Arc::new(Mutex::new(Some(b"".to_vec())));
+            let headers = Arc::new(Mutex::new(HeaderMap::new()));
+            let req_state = Arc::new(Mutex::new(CandyReqState {
+                method: "GET".to_string(),
+                uri_path: "/".to_string(),
+                uri_args: UriArgs::new(),
+                post_args: None,
+                jump: false,
+                headers: headers.clone(),
+            }));
+
+            RequestContext {
+                req: CandyRequest {
+                    uri: Uri::from_static("/"),
+                    http_version: Some(1.1),
+                    raw_header: String::new(),
+                    request_line: "GET / HTTP/1.1".to_string(),
+                    body,
+                },
+                res: CandyResponse {
+                    status: 200,
+                    headers: CandyHeaders::new(HeaderMap::new()),
+                    body: "".to_string(),
+                },
+                start_time: 1000.0,
+                req_state,
+            }
+        }
+
+        #[test]
+        fn test_request_context_creation() {
+            let ctx = create_test_request_context();
+            assert_eq!(ctx.start_time, 1000.0);
+            assert_eq!(ctx.res.status, 200);
+        }
+
+        #[test]
+        fn test_request_context_clone() {
+            let ctx = create_test_request_context();
+            let cloned = ctx.clone();
+            assert_eq!(cloned.start_time, ctx.start_time);
+            assert_eq!(cloned.res.status, ctx.res.status);
+        }
+    }
+
+    // UriArgs construction and behavior tests
+    mod uri_args {
+        use super::*;
+
+        #[test]
+        fn test_from_query_simple() {
+            let args = UriArgs::from_query("a=1&b=2");
+            assert_eq!(args.0.len(), 2);
+            assert_eq!(args.0[0], ("a".to_string(), "1".to_string()));
+            assert_eq!(args.0[1], ("b".to_string(), "2".to_string()));
+        }
+
+        #[test]
+        fn test_from_query_empty_value() {
+            let args = UriArgs::from_query("flag&key=value");
+            assert_eq!(args.0.len(), 2);
+            assert_eq!(args.0[0].0, "flag");
+            assert_eq!(args.0[0].1, ""); // empty value for flag without =
+            assert_eq!(args.0[1], ("key".to_string(), "value".to_string()));
+        }
+
+        #[test]
+        fn test_from_query_empty() {
+            let args = UriArgs::from_query("");
+            assert!(args.0.is_empty());
+        }
+
+        #[test]
+        fn test_to_query_simple() {
+            let args = UriArgs(vec![
+                ("a".to_string(), "1".to_string()),
+                ("b".to_string(), "2".to_string()),
+            ]);
+            let query = args.to_query();
+            assert!(query.contains("a=1"));
+            assert!(query.contains("b=2"));
+        }
+
+        #[test]
+        fn test_to_query_empty_value() {
+            let args = UriArgs(vec![("flag".to_string(), "".to_string())]);
+            let query = args.to_query();
+            assert!(query.contains("flag"));
+            assert!(!query.contains("flag="));
+        }
+    }
+
+    // Header manipulation logic tests
+    mod header_manipulation {
+        use super::*;
+        use std::sync::{Arc, Mutex};
+
+        #[test]
+        fn test_header_name_normalization_underscore() {
+            // Test that header names with underscore are normalized to dash
+            let normalized = "content_type".to_lowercase().replace('_', "-");
+            assert_eq!(normalized, "content-type");
+        }
+
+        #[test]
+        fn test_header_name_normalization_case() {
+            // Test that header names are lowercased
+            let normalized = "Content-Type".to_lowercase().replace('_', "-");
+            assert_eq!(normalized, "content-type");
+        }
+
+        #[test]
+        fn test_header_insert_and_get() {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                HeaderName::from_static("content-type"),
+                HeaderValue::from_static("application/json"),
+            );
+            assert_eq!(headers.get("content-type").unwrap(), "application/json");
+        }
+
+        #[test]
+        fn test_header_append() {
+            let mut headers = HeaderMap::new();
+            headers.append(
+                HeaderName::from_static("set-cookie"),
+                HeaderValue::from_static("a=1"),
+            );
+            headers.append(
+                HeaderName::from_static("set-cookie"),
+                HeaderValue::from_static("b=2"),
+            );
+
+            let values: Vec<_> = headers.get_all("set-cookie").iter().collect();
+            assert_eq!(values.len(), 2);
+        }
+
+        #[test]
+        fn test_header_remove() {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                HeaderName::from_static("content-type"),
+                HeaderValue::from_static("text/html"),
+            );
+            headers.remove("content-type");
+            assert!(headers.get("content-type").is_none());
+        }
+    }
+
+    // Integration: building request state
+    mod request_state_integration {
+        use super::*;
+        use crate::http::lua::structures::CandyReqState;
+
+        #[test]
+        fn test_build_uri_from_state() {
+            let state = CandyReqState {
+                method: "GET".to_string(),
+                uri_path: "/api/users".to_string(),
+                uri_args: UriArgs(vec![
+                    ("page".to_string(), "1".to_string()),
+                    ("limit".to_string(), "10".to_string()),
+                ]),
+                post_args: None,
+                jump: false,
+                headers: Arc::new(Mutex::new(HeaderMap::new())),
+            };
+
+            let uri = state.build_uri();
+            assert!(uri.starts_with("/api/users?"));
+            assert!(uri.contains("page=1"));
+            assert!(uri.contains("limit=10"));
+        }
+
+        #[test]
+        fn test_state_with_post_args() {
+            let state = CandyReqState {
+                method: "POST".to_string(),
+                uri_path: "/submit".to_string(),
+                uri_args: UriArgs::new(),
+                post_args: Some(UriArgs(vec![
+                    ("name".to_string(), "test".to_string()),
+                ])),
+                jump: false,
+                headers: Arc::new(Mutex::new(HeaderMap::new())),
+            };
+
+            assert!(state.post_args.is_some());
+            assert_eq!(state.post_args.as_ref().unwrap().0[0].0, "name");
+        }
+    }
+
+    // Edge cases
+    mod edge_cases {
+        use super::*;
+        use crate::http::lua::structures::CandyReqState;
+
+        #[test]
+        fn test_empty_body() {
+            let body = Arc::new(Mutex::new(Some(b"".to_vec())));
+            let guard = body.lock().unwrap();
+            // Empty body is Some with empty vec
+            assert!(guard.as_ref().unwrap().is_empty());
+        }
+
+        #[test]
+        fn test_none_body() {
+            let body: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
+            let guard = body.lock().unwrap();
+            assert!(guard.is_none());
+        }
+
+        #[test]
+        fn test_uri_with_special_chars() {
+            let args = UriArgs::from_query("q=hello%20world&lang=en");
+            assert!(!args.0.is_empty());
+            // URL decoded value
+            assert_eq!(args.0[0].0, "q");
+        }
+
+        #[test]
+        fn test_multiple_headers_same_name() {
+            let mut headers = HeaderMap::new();
+            headers.append(
+                header::SET_COOKIE,
+                HeaderValue::from_static("cookie1=value1"),
+            );
+            headers.append(
+                header::SET_COOKIE,
+                HeaderValue::from_static("cookie2=value2"),
+            );
+
+            let all: Vec<_> = headers.get_all(header::SET_COOKIE).iter().collect();
+            assert_eq!(all.len(), 2);
+        }
+
+        #[test]
+        fn test_state_jump_flag() {
+            let state = CandyReqState {
+                method: "GET".to_string(),
+                uri_path: "/original".to_string(),
+                uri_args: UriArgs::new(),
+                post_args: None,
+                jump: true, // Should trigger re-routing
+                headers: Arc::new(Mutex::new(HeaderMap::new())),
+            };
+
+            assert!(state.jump);
+        }
+    }
+}

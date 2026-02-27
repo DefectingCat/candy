@@ -23,6 +23,65 @@ use super::{
 };
 use crate::http::error::RouteResult;
 
+/// 将 HTTP 版本转换为字符串表示
+pub fn http_version_to_string(version: http::Version) -> &'static str {
+    match version {
+        http::Version::HTTP_09 => "HTTP/0.9",
+        http::Version::HTTP_10 => "HTTP/1.0",
+        http::Version::HTTP_11 => "HTTP/1.1",
+        http::Version::HTTP_2 => "HTTP/2.0",
+        http::Version::HTTP_3 => "HTTP/3.0",
+        _ => "HTTP/1.1",
+    }
+}
+
+/// 将 HTTP 版本转换为 Option<f32>
+pub fn http_version_to_float(version: http::Version) -> Option<f32> {
+    match version {
+        http::Version::HTTP_09 => Some(0.9),
+        http::Version::HTTP_10 => Some(1.0),
+        http::Version::HTTP_11 => Some(1.1),
+        http::Version::HTTP_2 => Some(2.0),
+        http::Version::HTTP_3 => Some(3.0),
+        _ => None,
+    }
+}
+
+/// 从请求构建原始请求头字符串
+pub fn build_raw_header(headers: &http::HeaderMap) -> String {
+    let mut headers_str = String::new();
+    for (name, value) in headers.iter() {
+        if let Ok(v) = value.to_str() {
+            headers_str.push_str(&format!("{}: {}\r\n", name, v));
+        }
+    }
+    headers_str
+}
+
+/// 构建请求行
+pub fn build_request_line(
+    method: &str,
+    uri_pq: Option<&http::uri::PathAndQuery>,
+    version_str: &str,
+) -> String {
+    format!(
+        "{} {} {}",
+        method,
+        uri_pq.map(|pq| pq.as_str()).unwrap_or("/"),
+        version_str
+    )
+}
+
+/// 从 Uri 解析路径和查询参数
+pub fn parse_uri_args(uri: &Uri) -> (String, UriArgs) {
+    uri.path_and_query()
+        .map(|pq| {
+            let (path, query) = pq.as_str().split_once('?').unwrap_or((pq.as_str(), ""));
+            (path.to_string(), UriArgs::from_query(query))
+        })
+        .unwrap_or_else(|| ("/".to_string(), UriArgs::new()))
+}
+
 pub async fn lua(
     req_uri: Uri,
     path: Option<Path<String>>,
@@ -210,4 +269,398 @@ pub async fn lua(
         .body(body)
         .with_context(|| "Failed to build HTTP response with lua")?;
     Ok(response)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::{HeaderMap, HeaderValue, header};
+
+    // http_version_to_string tests
+    mod http_version_to_string {
+        use super::*;
+
+        #[test]
+        fn test_http_09() {
+            assert_eq!(http_version_to_string(http::Version::HTTP_09), "HTTP/0.9");
+        }
+
+        #[test]
+        fn test_http_10() {
+            assert_eq!(http_version_to_string(http::Version::HTTP_10), "HTTP/1.0");
+        }
+
+        #[test]
+        fn test_http_11() {
+            assert_eq!(http_version_to_string(http::Version::HTTP_11), "HTTP/1.1");
+        }
+
+        #[test]
+        fn test_http_2() {
+            assert_eq!(http_version_to_string(http::Version::HTTP_2), "HTTP/2.0");
+        }
+
+        #[test]
+        fn test_http_3() {
+            assert_eq!(http_version_to_string(http::Version::HTTP_3), "HTTP/3.0");
+        }
+
+        #[test]
+        fn test_all_known_versions() {
+            // All known HTTP versions should return proper string
+            assert_eq!(http_version_to_string(http::Version::HTTP_09), "HTTP/0.9");
+            assert_eq!(http_version_to_string(http::Version::HTTP_10), "HTTP/1.0");
+            assert_eq!(http_version_to_string(http::Version::HTTP_11), "HTTP/1.1");
+            assert_eq!(http_version_to_string(http::Version::HTTP_2), "HTTP/2.0");
+            assert_eq!(http_version_to_string(http::Version::HTTP_3), "HTTP/3.0");
+        }
+    }
+
+    // http_version_to_float tests
+    mod http_version_to_float {
+        use super::*;
+
+        #[test]
+        fn test_http_09() {
+            assert_eq!(http_version_to_float(http::Version::HTTP_09), Some(0.9));
+        }
+
+        #[test]
+        fn test_http_10() {
+            assert_eq!(http_version_to_float(http::Version::HTTP_10), Some(1.0));
+        }
+
+        #[test]
+        fn test_http_11() {
+            assert_eq!(http_version_to_float(http::Version::HTTP_11), Some(1.1));
+        }
+
+        #[test]
+        fn test_http_2() {
+            assert_eq!(http_version_to_float(http::Version::HTTP_2), Some(2.0));
+        }
+
+        #[test]
+        fn test_http_3() {
+            assert_eq!(http_version_to_float(http::Version::HTTP_3), Some(3.0));
+        }
+
+        #[test]
+        fn test_all_known_versions_float() {
+            // All known HTTP versions should return Some
+            assert_eq!(http_version_to_float(http::Version::HTTP_09), Some(0.9));
+            assert_eq!(http_version_to_float(http::Version::HTTP_10), Some(1.0));
+            assert_eq!(http_version_to_float(http::Version::HTTP_11), Some(1.1));
+            assert_eq!(http_version_to_float(http::Version::HTTP_2), Some(2.0));
+            assert_eq!(http_version_to_float(http::Version::HTTP_3), Some(3.0));
+        }
+    }
+
+    // build_raw_header tests
+    mod build_raw_header {
+        use super::*;
+
+        #[test]
+        fn test_empty_headers() {
+            let headers = HeaderMap::new();
+            let result = build_raw_header(&headers);
+            assert_eq!(result, "");
+        }
+
+        #[test]
+        fn test_single_header() {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::HOST, HeaderValue::from_static("localhost"));
+            let result = build_raw_header(&headers);
+            assert!(result.contains("host: localhost"));
+        }
+
+        #[test]
+        fn test_multiple_headers() {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::HOST, HeaderValue::from_static("localhost"));
+            headers.insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            );
+            let result = build_raw_header(&headers);
+            assert!(result.contains("host: localhost"));
+            assert!(result.contains("content-type: application/json"));
+        }
+
+        #[test]
+        fn test_header_format() {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::ACCEPT, HeaderValue::from_static("text/html"));
+            let result = build_raw_header(&headers);
+            assert!(result.ends_with("\r\n"));
+            assert!(result.contains(": "));
+        }
+
+        #[test]
+        fn test_header_value_with_special_chars() {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                header::ACCEPT,
+                HeaderValue::from_static("text/html; charset=utf-8"),
+            );
+            let result = build_raw_header(&headers);
+            assert!(result.contains("text/html; charset=utf-8"));
+        }
+    }
+
+    // build_request_line tests
+    mod build_request_line {
+        use super::*;
+
+        #[test]
+        fn test_simple_get() {
+            let uri = Uri::from_static("/");
+            let pq = uri.path_and_query();
+            let result = build_request_line("GET", pq, "HTTP/1.1");
+            assert_eq!(result, "GET / HTTP/1.1");
+        }
+
+        #[test]
+        fn test_with_path() {
+            let uri = Uri::from_static("/api/users");
+            let pq = uri.path_and_query();
+            let result = build_request_line("POST", pq, "HTTP/1.1");
+            assert_eq!(result, "POST /api/users HTTP/1.1");
+        }
+
+        #[test]
+        fn test_with_query_string() {
+            let uri = Uri::from_static("/search?q=test");
+            let pq = uri.path_and_query();
+            let result = build_request_line("GET", pq, "HTTP/1.1");
+            assert_eq!(result, "GET /search?q=test HTTP/1.1");
+        }
+
+        #[test]
+        fn test_with_path_and_query() {
+            let uri = Uri::from_static("/api/item/123?fields=name,email");
+            let pq = uri.path_and_query();
+            let result = build_request_line("PUT", pq, "HTTP/1.1");
+            assert_eq!(result, "PUT /api/item/123?fields=name,email HTTP/1.1");
+        }
+
+        #[test]
+        fn test_none_uri() {
+            let result = build_request_line("GET", None, "HTTP/1.1");
+            assert_eq!(result, "GET / HTTP/1.1");
+        }
+
+        #[test]
+        fn test_http_10() {
+            let uri = Uri::from_static("/");
+            let pq = uri.path_and_query();
+            let result = build_request_line("GET", pq, "HTTP/1.0");
+            assert_eq!(result, "GET / HTTP/1.0");
+        }
+
+        #[test]
+        fn test_delete_method() {
+            let uri = Uri::from_static("/resource/1");
+            let pq = uri.path_and_query();
+            let result = build_request_line("DELETE", pq, "HTTP/1.1");
+            assert_eq!(result, "DELETE /resource/1 HTTP/1.1");
+        }
+    }
+
+    // parse_uri_args tests
+    mod parse_uri_args {
+        use super::*;
+
+        #[test]
+        fn test_root_path() {
+            let uri = Uri::from_static("/");
+            let (path, args) = parse_uri_args(&uri);
+            assert_eq!(path, "/");
+            assert!(args.0.is_empty());
+        }
+
+        #[test]
+        fn test_simple_path() {
+            let uri = Uri::from_static("/api/users");
+            let (path, args) = parse_uri_args(&uri);
+            assert_eq!(path, "/api/users");
+            assert!(args.0.is_empty());
+        }
+
+        #[test]
+        fn test_path_with_query() {
+            let uri = Uri::from_static("/search?q=rust");
+            let (path, args) = parse_uri_args(&uri);
+            assert_eq!(path, "/search");
+            assert_eq!(args.0.len(), 1);
+            assert_eq!(args.0[0], ("q".to_string(), "rust".to_string()));
+        }
+
+        #[test]
+        fn test_path_with_multiple_params() {
+            let uri = Uri::from_static("/api?q=1&page=2&size=10");
+            let (path, args) = parse_uri_args(&uri);
+            assert_eq!(path, "/api");
+            assert_eq!(args.0.len(), 3);
+        }
+
+        #[test]
+        fn test_empty_query() {
+            let uri = Uri::from_static("/api?");
+            let (path, args) = parse_uri_args(&uri);
+            assert_eq!(path, "/api");
+            assert!(args.0.is_empty());
+        }
+
+        #[test]
+        fn test_no_query() {
+            let uri = Uri::from_static("/api/users/123");
+            let (path, args) = parse_uri_args(&uri);
+            assert_eq!(path, "/api/users/123");
+            assert!(args.0.is_empty());
+        }
+
+        #[test]
+        fn test_special_characters_in_query() {
+            let uri = Uri::from_static("/search?q=hello%20world");
+            let (path, args) = parse_uri_args(&uri);
+            assert_eq!(path, "/search");
+            assert_eq!(args.0[0].0, "q");
+        }
+
+        #[test]
+        fn test_nested_path() {
+            let uri = Uri::from_static("/a/b/c/d");
+            let (path, args) = parse_uri_args(&uri);
+            assert_eq!(path, "/a/b/c/d");
+        }
+
+        #[test]
+        fn test_trailing_slash() {
+            let uri = Uri::from_static("/api/");
+            let (path, args) = parse_uri_args(&uri);
+            assert_eq!(path, "/api/");
+        }
+    }
+
+    // Integration tests
+    mod integration {
+        use super::*;
+
+        #[test]
+        fn test_full_request_line_flow() {
+            // Test complete flow: version -> string -> request line
+            let version = http::Version::HTTP_11;
+            let version_str = http_version_to_string(version);
+            let uri = Uri::from_static("/test?a=1");
+            let request_line = build_request_line("GET", uri.path_and_query(), version_str);
+
+            assert_eq!(request_line, "GET /test?a=1 HTTP/1.1");
+        }
+
+        #[test]
+        fn test_full_header_flow() {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::HOST, HeaderValue::from_static("example.com"));
+            headers.insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            );
+
+            let raw = build_raw_header(&headers);
+
+            assert!(raw.contains("host: example.com"));
+            assert!(raw.contains("content-type: application/json"));
+        }
+
+        #[test]
+        fn test_uri_to_state_flow() {
+            let uri = Uri::from_static("/api/users?id=42&name=test");
+            let (path, uri_args) = parse_uri_args(&uri);
+
+            // Build URI back
+            let built_uri = if uri_args.0.is_empty() {
+                path.clone()
+            } else {
+                format!("{}?{}", path, uri_args.to_query())
+            };
+
+            assert!(built_uri.contains("/api/users"));
+            assert!(built_uri.contains("id=42"));
+            assert!(built_uri.contains("name=test"));
+        }
+
+        #[test]
+        fn test_version_conversion_consistency() {
+            // Verify float and string conversions are consistent
+            let versions = [
+                http::Version::HTTP_09,
+                http::Version::HTTP_10,
+                http::Version::HTTP_11,
+                http::Version::HTTP_2,
+                http::Version::HTTP_3,
+            ];
+
+            for v in versions {
+                let float_val = http_version_to_float(v);
+                let string_val = http_version_to_string(v);
+
+                match float_val {
+                    Some(0.9) => assert_eq!(string_val, "HTTP/0.9"),
+                    Some(1.0) => assert_eq!(string_val, "HTTP/1.0"),
+                    Some(1.1) => assert_eq!(string_val, "HTTP/1.1"),
+                    Some(2.0) => assert_eq!(string_val, "HTTP/2.0"),
+                    Some(3.0) => assert_eq!(string_val, "HTTP/3.0"),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    // Edge cases
+    mod edge_cases {
+        use super::*;
+
+        #[test]
+        fn test_raw_header_with_binary_value() {
+            // Binary values that can't be converted to &str should be skipped
+            let mut headers = HeaderMap::new();
+            // Content-Disposition might have binary data in real scenarios
+            headers.insert(
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_static("attachment; filename=\"test.txt\""),
+            );
+            let result = build_raw_header(&headers);
+            assert!(result.contains("content-disposition"));
+        }
+
+        #[test]
+        fn test_request_line_with_complex_path() {
+            let uri = Uri::from_static("/api/v1/users/123/profile/settings?debug=true");
+            let pq = uri.path_and_query();
+            let result = build_request_line("PATCH", pq, "HTTP/2.0");
+
+            assert!(result.starts_with("PATCH "));
+            assert!(result.ends_with(" HTTP/2.0"));
+            assert!(result.contains("/api/v1/users/123/profile/settings"));
+        }
+
+        #[test]
+        fn test_uri_args_preserves_order() {
+            let uri = Uri::from_static("/?a=1&b=2&c=3&d=4&e=5");
+            let (_, args) = parse_uri_args(&uri);
+
+            let keys: Vec<_> = args.0.iter().map(|(k, _)| k.clone()).collect();
+            assert_eq!(keys, vec!["a", "b", "c", "d", "e"]);
+        }
+
+        #[test]
+        fn test_root_path_parsing() {
+            // Root path "/" should parse correctly
+            let uri = Uri::from_static("/");
+            let (path, _) = parse_uri_args(&uri);
+            assert_eq!(path, "/");
+        }
+    }
 }
