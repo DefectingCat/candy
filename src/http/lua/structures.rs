@@ -33,8 +33,6 @@ pub struct CandyReqState {
     pub jump: bool,
     /// 请求头（可变）
     pub headers: Arc<Mutex<HeaderMap>>,
-    /// 重定向 URL（如果设置则需要重定向）
-    pub redirect_uri: Option<String>,
     /// 重定向状态码
     pub redirect_status: Option<u16>,
     /// 通过 print/say 输出的内容
@@ -169,7 +167,6 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
-                redirect_uri: None,
                 redirect_status: None,
                 output_buffer: String::new(),
             };
@@ -188,7 +185,6 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
-                redirect_uri: None,
                 redirect_status: None,
                 output_buffer: String::new(),
             };
@@ -204,7 +200,6 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
-                redirect_uri: None,
                 redirect_status: None,
                 output_buffer: String::new(),
             };
@@ -223,7 +218,6 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
-                redirect_uri: None,
                 redirect_status: None,
                 output_buffer: String::new(),
             };
@@ -399,7 +393,6 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
-                redirect_uri: None,
                 redirect_status: None,
                 output_buffer: String::new(),
             }));
@@ -438,7 +431,6 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: headers.clone(),
-                redirect_uri: None,
                 redirect_status: None,
                 output_buffer: String::new(),
             }));
@@ -487,7 +479,6 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers,
-                redirect_uri: None,
                 redirect_status: None,
                 output_buffer: String::new(),
             };
@@ -510,7 +501,6 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
-                redirect_uri: None,
                 redirect_status: None,
                 output_buffer: String::new(),
             };
@@ -534,7 +524,6 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
-                redirect_uri: None,
                 redirect_status: None,
                 output_buffer: String::new(),
             };
@@ -550,7 +539,6 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
-                redirect_uri: None,
                 redirect_status: None,
                 output_buffer: String::new(),
             };
@@ -570,7 +558,6 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
-                redirect_uri: None,
                 redirect_status: None,
                 output_buffer: String::new(),
             };

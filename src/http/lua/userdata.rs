@@ -100,7 +100,7 @@ fn value_to_string_for_args(value: &mlua::Value) -> mlua::Result<Option<(String,
 }
 
 // Helper function to recursively convert Lua table to string
-fn table_to_string_impl(lua: &mlua::Lua, table: &mlua::Table) -> mlua::Result<String> {
+fn table_to_string_impl(_lua: &mlua::Lua, table: &mlua::Table) -> mlua::Result<String> {
     let mut result = String::new();
     
     for pair in table.pairs::<mlua::Value, mlua::Value>() {
@@ -114,7 +114,7 @@ fn table_to_string_impl(lua: &mlua::Lua, table: &mlua::Table) -> mlua::Result<St
             mlua::Value::String(s) => result.push_str(&s.to_str()?),
             mlua::Value::Table(t) => {
                 // Recursively handle nested tables
-                result.push_str(&table_to_string_impl(lua, &t)?);
+                result.push_str(&table_to_string_impl(_lua, &t)?);
             }
             mlua::Value::UserData(ud) => {
                 let s = format!("{:?}", ud);
@@ -659,8 +659,8 @@ impl UserData for CandyReq {
         // max_args 默认为 100，设为 0 表示无限制
         methods.add_method_mut("decode_args", |lua, _this, (str, max_args): (String, Option<usize>)| {
             let max_count = max_args.unwrap_or(100);
-            let mut result = lua.create_table()?;
-            
+            let result = lua.create_table()?;
+
             let mut count = 0;
             for pair in str.split('&') {
                 if !pair.is_empty() {
@@ -1415,7 +1415,6 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: headers.clone(),
-                redirect_uri: None,
                 redirect_status: None,
                 output_buffer: String::new(),
             }));
@@ -1537,7 +1536,6 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: headers.clone(),
-                redirect_uri: None,
                 redirect_status: None,
                 output_buffer: String::new(),
             }));
@@ -1697,7 +1695,6 @@ mod tests {
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
-                redirect_uri: None,
                 redirect_status: None,
                 output_buffer: String::new(),
             };
@@ -1719,7 +1716,6 @@ mod tests {
                 ])),
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
-                redirect_uri: None,
                 redirect_status: None,
                 output_buffer: String::new(),
             };
@@ -1782,7 +1778,6 @@ mod tests {
                 post_args: None,
                 jump: true, // Should trigger re-routing
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
-                redirect_uri: None,
                 redirect_status: None,
                 output_buffer: String::new(),
             };

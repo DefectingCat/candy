@@ -437,7 +437,6 @@ mod tests {
 }
 
 // 日志级别常量
-pub const LOG_STDERR: u8 = 1;
 pub const LOG_EMERG: u8 = 2;
 pub const LOG_ALERT: u8 = 4;
 pub const LOG_CRIT: u8 = 8;

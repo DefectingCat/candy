@@ -157,7 +157,6 @@ pub async fn lua(
         post_args: None,
         jump: false,
         headers: Arc::new(Mutex::new(req_headers)),
-        redirect_uri: None,
         redirect_status: None,
         output_buffer: String::new(),
     }));
