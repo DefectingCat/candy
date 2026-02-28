@@ -169,11 +169,33 @@ impl UserData for CandyReq {
 
         // get_method(): 返回请求方法名称
         methods.add_method("get_method", |lua, this, ()| {
-            let state = this
-                .state
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
-            lua.pack(state.method.clone())
+            // Access the method from the state with maximum safety
+            let state_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                this.state.lock()
+            }));
+            
+            match state_result {
+                Ok(lock_result) => {
+                    match lock_result {
+                        Ok(state_guard) => {
+                            let method = state_guard.method.clone();
+                            drop(state_guard); // Explicitly drop the lock
+                            lua.pack(method)
+                        },
+                        Err(poisoned) => {
+                            // If the mutex is poisoned, try to recover
+                            let state_guard = poisoned.into_inner();
+                            let method = state_guard.method.clone();
+                            drop(state_guard); // Explicitly drop the lock
+                            lua.pack(method)
+                        }
+                    }
+                },
+                Err(_) => {
+                    // If there was a panic during locking, return an error
+                    Err(mlua::Error::external(anyhow!("Panic occurred while accessing state in get_method")))
+                }
+            }
         });
 
         // set_method(method_id): 设置请求方法
@@ -1182,7 +1204,7 @@ impl UserData for RequestContext {
                 }
                 "req" => {
                     // 返回 req 对象，提供 is_internal 等方法
-                    lua.create_userdata(CandyReq {
+                    let candy_req = CandyReq {
                         is_internal: false,
                         start_time: this.start_time,
                         http_version: this.req.http_version,
@@ -1190,8 +1212,9 @@ impl UserData for RequestContext {
                         request_line: this.req.request_line.clone(),
                         body: this.req.body.clone(),
                         state: this.req_state.clone(),
-                    })
-                    .map(mlua::Value::UserData)
+                    };
+                    lua.create_userdata(candy_req)
+                        .map(mlua::Value::UserData)
                 }
                 "now" => {
                     // now(): 返回当前时间戳（秒，包含毫秒小数部分）
@@ -1295,10 +1318,11 @@ impl UserData for RequestContext {
                 "HTTP_GATEWAY_TIMEOUT" => lua.pack(HTTP_GATEWAY_TIMEOUT),
                 "HTTP_VERSION_NOT_SUPPORTED" => lua.pack(HTTP_VERSION_NOT_SUPPORTED),
                 "HTTP_INSUFFICIENT_STORAGE" => lua.pack(HTTP_INSUFFICIENT_STORAGE),
-                _ => Err(mlua::Error::external(anyhow!(
-                    "attempt to index unknown field: {}",
-                    key
-                ))),
+                _ => {
+                    // For unknown fields, try to get the method from the default __index
+                    // by returning nil, we let mlua's default method lookup work
+                    Ok(mlua::Value::Nil)
+                }
             }
         });
 
