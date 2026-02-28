@@ -6,5 +6,9 @@
   "sidebar.tutorialSidebar.category.配置参考": {
     "message": "配置参考",
     "description": "The label for category '配置参考' in sidebar 'tutorialSidebar'"
+  },
+  "sidebar.tutorialSidebar.category.Lua 脚本": {
+    "message": "Lua 脚本",
+    "description": "The label for category 'Lua 脚本' in sidebar 'tutorialSidebar'"
   }
 }
