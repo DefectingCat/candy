@@ -211,10 +211,7 @@ mod tests {
             let state = CandyReqState {
                 method: "GET".to_string(),
                 uri_path: "/search".to_string(),
-                uri_args: UriArgs(vec![(
-                    "q".to_string(),
-                    "hello world".to_string(),
-                )]),
+                uri_args: UriArgs(vec![("q".to_string(), "hello world".to_string())]),
                 post_args: None,
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
@@ -239,22 +236,40 @@ mod tests {
 
         #[test]
         fn test_normalize_header_name_no_change() {
-            assert_eq!(CandyHeaders::normalize_header_name("content-type"), "content-type");
+            assert_eq!(
+                CandyHeaders::normalize_header_name("content-type"),
+                "content-type"
+            );
             assert_eq!(CandyHeaders::normalize_header_name("accept"), "accept");
             assert_eq!(CandyHeaders::normalize_header_name("host"), "host");
         }
 
         #[test]
         fn test_normalize_header_name_underscore_to_dash() {
-            assert_eq!(CandyHeaders::normalize_header_name("content_type"), "content-type");
-            assert_eq!(CandyHeaders::normalize_header_name("accept_encoding"), "accept-encoding");
-            assert_eq!(CandyHeaders::normalize_header_name("x_custom_header"), "x-custom-header");
+            assert_eq!(
+                CandyHeaders::normalize_header_name("content_type"),
+                "content-type"
+            );
+            assert_eq!(
+                CandyHeaders::normalize_header_name("accept_encoding"),
+                "accept-encoding"
+            );
+            assert_eq!(
+                CandyHeaders::normalize_header_name("x_custom_header"),
+                "x-custom-header"
+            );
         }
 
         #[test]
         fn test_normalize_header_name_mixed() {
-            assert_eq!(CandyHeaders::normalize_header_name("Content_Type"), "Content-Type");
-            assert_eq!(CandyHeaders::normalize_header_name("X_API_KEY"), "X-API-KEY");
+            assert_eq!(
+                CandyHeaders::normalize_header_name("Content_Type"),
+                "Content-Type"
+            );
+            assert_eq!(
+                CandyHeaders::normalize_header_name("X_API_KEY"),
+                "X-API-KEY"
+            );
         }
 
         #[test]
@@ -264,10 +279,7 @@ mod tests {
 
         #[test]
         fn test_normalize_header_name_multiple_underscores() {
-            assert_eq!(
-                CandyHeaders::normalize_header_name("x_a_b_c"),
-                "x-a-b-c"
-            );
+            assert_eq!(CandyHeaders::normalize_header_name("x_a_b_c"), "x-a-b-c");
         }
 
         #[test]
@@ -285,7 +297,10 @@ mod tests {
             let candy_headers = CandyHeaders::new(headers);
             let guard = candy_headers.headers.lock().unwrap();
 
-            assert_eq!(guard.get(http::header::CONTENT_TYPE).unwrap(), "application/json");
+            assert_eq!(
+                guard.get(http::header::CONTENT_TYPE).unwrap(),
+                "application/json"
+            );
             assert_eq!(guard.get(http::header::CONTENT_LENGTH).unwrap(), "100");
         }
     }
@@ -467,10 +482,10 @@ mod tests {
         #[test]
         fn test_state_modification() {
             let headers = Arc::new(Mutex::new(HeaderMap::new()));
-            headers.lock().unwrap().insert(
-                http::header::HOST,
-                HeaderValue::from_static("localhost"),
-            );
+            headers
+                .lock()
+                .unwrap()
+                .insert(http::header::HOST, HeaderValue::from_static("localhost"));
 
             let state = CandyReqState {
                 method: "GET".to_string(),

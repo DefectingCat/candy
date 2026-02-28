@@ -2,7 +2,7 @@ use std::sync::{Arc, LazyLock};
 
 use dashmap::DashMap;
 use mlua::{Function, Lua};
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 use crate::consts::{ARCH, COMMIT, COMPILER, NAME, OS, VERSION};
 
@@ -54,10 +54,7 @@ impl LuaEngine {
             .set("candy", module)
             .expect("设置全局变量 candy 失败");
 
-        Self {
-            lua,
-            code_cache,
-        }
+        Self { lua, code_cache }
     }
 
     /// 清除所有 Lua 代码缓存
@@ -83,7 +80,8 @@ impl LuaEngine {
     #[allow(dead_code)]
     pub fn cache_stats(&self) -> (usize, usize, usize) {
         let entry_count = self.code_cache.len();
-        let total_memory_estimate = self.code_cache.len() * std::mem::size_of::<LuaCodeCacheEntry>();
+        let total_memory_estimate =
+            self.code_cache.len() * std::mem::size_of::<LuaCodeCacheEntry>();
 
         // 估算平均条目大小（包含编译后的函数）
         let estimated_bytes = entry_count * 1024; // 假设平均每个编译后的函数是 1KB
@@ -97,10 +95,12 @@ impl LuaEngine {
         let (count, estimated_bytes, memory) = self.cache_stats();
         info!(
             "Lua code cache stats: {} entries, ~{} bytes ({} KB), memory: {} bytes",
-            count, estimated_bytes, estimated_bytes / 1024, memory
+            count,
+            estimated_bytes,
+            estimated_bytes / 1024,
+            memory
         );
     }
-
 
     /// 注册日志函数到主模块
     fn register_log_function(lua: &Lua, module: &mlua::Table) {
@@ -152,7 +152,6 @@ mod tests {
         assert!(engine.lua.globals().contains_key("candy").unwrap());
     }
 
-
     #[test]
     fn test_version_info() {
         // 测试系统信息的访问
@@ -201,10 +200,13 @@ mod tests {
         assert_eq!(initial_stats.0, 0);
 
         // 添加到缓存
-        engine.code_cache.insert(test_script.to_string(), LuaCodeCacheEntry {
-            compiled_func: engine.lua.load(test_content).into_function().unwrap(),
-            checksum: test_checksum
-        });
+        engine.code_cache.insert(
+            test_script.to_string(),
+            LuaCodeCacheEntry {
+                compiled_func: engine.lua.load(test_content).into_function().unwrap(),
+                checksum: test_checksum,
+            },
+        );
 
         // 检查缓存是否包含条目
         assert!(engine.code_cache.contains_key(test_script));
@@ -218,10 +220,17 @@ mod tests {
 
         // 测试清除所有缓存
         let another_script = "another_script.lua";
-        engine.code_cache.insert(another_script.to_string(), LuaCodeCacheEntry {
-            compiled_func: engine.lua.load("return 'another value'").into_function().unwrap(),
-            checksum: 67890
-        });
+        engine.code_cache.insert(
+            another_script.to_string(),
+            LuaCodeCacheEntry {
+                compiled_func: engine
+                    .lua
+                    .load("return 'another value'")
+                    .into_function()
+                    .unwrap(),
+                checksum: 67890,
+            },
+        );
         assert!(!engine.code_cache.is_empty());
 
         engine.clear_cache();
@@ -240,10 +249,17 @@ mod tests {
         // 添加一些条目
         for i in 0..5 {
             let script = format!("script_{}.lua", i);
-            engine.code_cache.insert(script, LuaCodeCacheEntry {
-                compiled_func: engine.lua.load(format!("return 'value{}'", i)).into_function().unwrap(),
-                checksum: i as u64
-            });
+            engine.code_cache.insert(
+                script,
+                LuaCodeCacheEntry {
+                    compiled_func: engine
+                        .lua
+                        .load(format!("return 'value{}'", i))
+                        .into_function()
+                        .unwrap(),
+                    checksum: i as u64,
+                },
+            );
         }
 
         let (count, estimated_bytes, memory) = engine.cache_stats();

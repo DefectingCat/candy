@@ -11,7 +11,7 @@ use super::{
 // Helper function to escape URI components
 fn url_escape_component(input: &str) -> String {
     let mut result = String::new();
-    
+
     for c in input.chars() {
         match c {
             // RFC 3986 unreserved characters - don't encode these
@@ -27,7 +27,7 @@ fn url_escape_component(input: &str) -> String {
             }
         }
     }
-    
+
     result
 }
 
@@ -36,13 +36,13 @@ fn url_unescape_component(input: &str) -> String {
     let bytes = input.as_bytes();
     let mut result = Vec::new();
     let mut i = 0;
-    
+
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
             // Try to read the next two hex digits
             let hex1 = bytes[i + 1];
             let hex2 = bytes[i + 2];
-            
+
             // Convert hex digits to character
             if let (Some(d1), Some(d2)) = (hex_digit_value(hex1), hex_digit_value(hex2)) {
                 let decoded_byte = (d1 << 4) | d2;
@@ -63,7 +63,7 @@ fn url_unescape_component(input: &str) -> String {
             i += 1;
         }
     }
-    
+
     // Convert bytes back to string, handling potential UTF-8
     String::from_utf8_lossy(&result).to_string()
 }
@@ -89,7 +89,7 @@ fn value_to_string_for_args(value: &mlua::Value) -> mlua::Result<Option<(String,
             } else {
                 Ok(None) // false is treated as nil (skipped)
             }
-        },
+        }
         mlua::Value::Number(n) => Ok(Some((n.to_string(), true))), // has value
         mlua::Value::Integer(i) => Ok(Some((i.to_string(), true))), // has value
         mlua::Value::String(s) => Ok(Some((s.to_str()?.to_string(), true))), // has value
@@ -102,10 +102,10 @@ fn value_to_string_for_args(value: &mlua::Value) -> mlua::Result<Option<(String,
 // Helper function to recursively convert Lua table to string
 fn table_to_string_impl(_lua: &mlua::Lua, table: &mlua::Table) -> mlua::Result<String> {
     let mut result = String::new();
-    
+
     for pair in table.pairs::<mlua::Value, mlua::Value>() {
         let (_, value) = pair?;
-        
+
         match value {
             mlua::Value::Nil => result.push_str("nil"),
             mlua::Value::Boolean(b) => result.push_str(if b { "true" } else { "false" }),
@@ -126,7 +126,7 @@ fn table_to_string_impl(_lua: &mlua::Lua, table: &mlua::Table) -> mlua::Result<S
             }
         }
     }
-    
+
     Ok(result)
 }
 
@@ -434,10 +434,10 @@ impl UserData for CandyReq {
                 .state
                 .lock()
                 .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
-            
+
             // 构建输出字符串
             let mut output = String::new();
-            
+
             for value in args {
                 match value {
                     mlua::Value::Nil => output.push_str("nil"),
@@ -461,10 +461,10 @@ impl UserData for CandyReq {
                     }
                 }
             }
-            
+
             // 将输出追加到缓冲区
             state.output_buffer.push_str(&output);
-            
+
             // 返回成功状态 1
             Ok(1)
         });
@@ -476,10 +476,10 @@ impl UserData for CandyReq {
                 .state
                 .lock()
                 .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
-            
+
             // 构建输出字符串
             let mut output = String::new();
-            
+
             for value in args {
                 match value {
                     mlua::Value::Nil => output.push_str("nil"),
@@ -503,13 +503,13 @@ impl UserData for CandyReq {
                     }
                 }
             }
-            
+
             // 添加换行符
             output.push('\n');
-            
+
             // 将输出追加到缓冲区
             state.output_buffer.push_str(&output);
-            
+
             // 返回成功状态 1
             Ok(1)
         });
@@ -521,7 +521,7 @@ impl UserData for CandyReq {
             // 在 Candy 的实现中，我们只是简单地返回成功
             // 真正的刷新逻辑是在响应发送时处理的
             let _wait = wait.unwrap_or(false);
-            
+
             // 实际上，在当前的 Candy 实现中，输出会在请求结束时自动刷新
             // 所以我们只需返回成功状态
             // 在真实的实现中，这会根据 wait 参数决定是否等待
@@ -538,11 +538,11 @@ impl UserData for CandyReq {
                 .state
                 .lock()
                 .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
-            
+
             // 设置退出状态，框架会根据这个来决定如何处理
             // 对于 Candy，我们会直接设置响应状态码
             state.redirect_status = Some(status);
-            
+
             // 如果状态码 >= 200，则认为是正常退出
             if status >= 200 {
                 // 这里不会真正退出，而是让框架知道应该结束请求
@@ -563,13 +563,13 @@ impl UserData for CandyReq {
                 .state
                 .lock()
                 .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
-            
+
             // 设置输出结束标志
             // 在实际实现中，这会告诉底层框架停止接受更多输出并发送结束信号
             // 对于 Candy，我们可能需要一个标志来表示响应已完成
             // 但由于我们无法直接控制底层传输，我们只是记录这个事件
             state.output_buffer.push_str(""); // 不改变缓冲区，只是记录事件
-            
+
             // 返回成功状态 1
             Ok(1)
         });
@@ -579,14 +579,14 @@ impl UserData for CandyReq {
         // 底层使用 Nginx 定时器
         methods.add_async_method_mut("sleep", |_lua, _this, seconds: f64| {
             use tokio::time::Duration;
-            
+
             // 将秒转换为 Duration
             let duration = Duration::from_secs_f64(seconds);
-            
+
             Box::pin(async move {
                 // 异步等待指定的时间
                 tokio::time::sleep(duration).await;
-                
+
                 Ok(())
             })
         });
@@ -608,19 +608,23 @@ impl UserData for CandyReq {
         // encode_args(table): 将 Lua 表编码为查询参数字符串
         methods.add_method_mut("encode_args", |lua, _this, table: mlua::Table| {
             let mut args = Vec::new();
-            
+
             for pair in table.pairs::<mlua::Value, mlua::Value>() {
                 let (key, value) = pair?;
-                
+
                 let key_str = match key {
                     mlua::Value::String(s) => s.to_str()?.to_string(),
                     mlua::Value::Number(n) => n.to_string(),
                     mlua::Value::Integer(i) => i.to_string(),
-                    _ => return Err(mlua::Error::external(anyhow::anyhow!("Table key must be a string, number, or integer"))),
+                    _ => {
+                        return Err(mlua::Error::external(anyhow::anyhow!(
+                            "Table key must be a string, number, or integer"
+                        )));
+                    }
                 };
-                
+
                 let encoded_key = url_escape_component(&key_str);
-                
+
                 match value {
                     mlua::Value::Table(arr) => {
                         // 处理多值参数
@@ -650,76 +654,79 @@ impl UserData for CandyReq {
                     }
                 }
             }
-            
+
             let result = args.join("&");
             lua.create_string(&result).map(mlua::Value::String)
         });
 
         // decode_args(str, max_args?): 将 URI 编码的查询字符串解码为 Lua 表
         // max_args 默认为 100，设为 0 表示无限制
-        methods.add_method_mut("decode_args", |lua, _this, (str, max_args): (String, Option<usize>)| {
-            let max_count = max_args.unwrap_or(100);
-            let result = lua.create_table()?;
+        methods.add_method_mut(
+            "decode_args",
+            |lua, _this, (str, max_args): (String, Option<usize>)| {
+                let max_count = max_args.unwrap_or(100);
+                let result = lua.create_table()?;
 
-            let mut count = 0;
-            for pair in str.split('&') {
-                if !pair.is_empty() {
-                    // 检查是否达到最大参数数量限制（除非限制为0，表示无限制）
-                    if max_count > 0 && count >= max_count {
-                        break; // 达到最大参数数量限制
-                    }
-                    
-                    let (key, value) = if let Some(pos) = pair.find('=') {
-                        (&pair[..pos], &pair[pos + 1..])
-                    } else {
-                        (pair, "") // 无值参数，如布尔值参数
-                    };
-                    
-                    // 解码键和值
-                    let decoded_key = url_unescape_component(key);
-                    let decoded_value = url_unescape_component(value);
-                    
-                    // 检查键是否已存在
-                    if result.contains_key(decoded_key.as_str())? {
-                        // 键已存在，转换为数组或添加到现有数组
-                        let existing: mlua::Value = result.get(decoded_key.as_str())?;
-                        match existing {
-                            mlua::Value::String(_) => {
-                                // 将单个值转换为数组
-                                let arr = lua.create_table()?;
-                                arr.set(1, existing)?;
-                                arr.set(2, decoded_value)?;
-                                result.set(decoded_key.as_str(), arr)?;
-                            }
-                            mlua::Value::Table(t) => {
-                                // 添加到现有数组
-                                let len = t.len()?;
-                                t.set(len + 1, decoded_value)?;
-                            }
-                            _ => {
-                                // 其他情况，保持第一个值
-                                result.set(decoded_key.as_str(), decoded_value)?;
-                            }
+                let mut count = 0;
+                for pair in str.split('&') {
+                    if !pair.is_empty() {
+                        // 检查是否达到最大参数数量限制（除非限制为0，表示无限制）
+                        if max_count > 0 && count >= max_count {
+                            break; // 达到最大参数数量限制
                         }
-                    } else {
-                        // 新键
-                        result.set(decoded_key.as_str(), decoded_value)?;
+
+                        let (key, value) = if let Some(pos) = pair.find('=') {
+                            (&pair[..pos], &pair[pos + 1..])
+                        } else {
+                            (pair, "") // 无值参数，如布尔值参数
+                        };
+
+                        // 解码键和值
+                        let decoded_key = url_unescape_component(key);
+                        let decoded_value = url_unescape_component(value);
+
+                        // 检查键是否已存在
+                        if result.contains_key(decoded_key.as_str())? {
+                            // 键已存在，转换为数组或添加到现有数组
+                            let existing: mlua::Value = result.get(decoded_key.as_str())?;
+                            match existing {
+                                mlua::Value::String(_) => {
+                                    // 将单个值转换为数组
+                                    let arr = lua.create_table()?;
+                                    arr.set(1, existing)?;
+                                    arr.set(2, decoded_value)?;
+                                    result.set(decoded_key.as_str(), arr)?;
+                                }
+                                mlua::Value::Table(t) => {
+                                    // 添加到现有数组
+                                    let len = t.len()?;
+                                    t.set(len + 1, decoded_value)?;
+                                }
+                                _ => {
+                                    // 其他情况，保持第一个值
+                                    result.set(decoded_key.as_str(), decoded_value)?;
+                                }
+                            }
+                        } else {
+                            // 新键
+                            result.set(decoded_key.as_str(), decoded_value)?;
+                        }
+
+                        count += 1;
                     }
-                    
-                    count += 1;
                 }
-            }
-            
-            Ok(result)
-        });
+
+                Ok(result)
+            },
+        );
 
         // log(log_level, ...): 记录日志消息
         // 将参数连接并记录到错误日志中，带有指定的日志级别
         methods.add_method_mut("log", |_, _this, args: mlua::MultiValue| {
-            use tracing::{error, warn, info, debug};
+            use tracing::{debug, error, info, warn};
 
             let mut iter = args.into_iter();
-            
+
             // 获取日志级别
             let log_level = match iter.next() {
                 Some(mlua::Value::Integer(level)) => level as u8,
@@ -735,14 +742,18 @@ impl UserData for CandyReq {
             for value in iter {
                 let s = match value {
                     mlua::Value::Nil => "nil".to_string(),
-                    mlua::Value::Boolean(b) => if b { "true".to_string() } else { "false".to_string() },
+                    mlua::Value::Boolean(b) => {
+                        if b {
+                            "true".to_string()
+                        } else {
+                            "false".to_string()
+                        }
+                    }
                     mlua::Value::Number(n) => n.to_string(),
                     mlua::Value::Integer(i) => i.to_string(),
-                    mlua::Value::String(s) => {
-                        match s.to_str() {
-                            Ok(str_val) => str_val.to_string(),
-                            Err(_) => "<invalid>".to_string(),
-                        }
+                    mlua::Value::String(s) => match s.to_str() {
+                        Ok(str_val) => str_val.to_string(),
+                        Err(_) => "<invalid>".to_string(),
                     },
                     mlua::Value::Table(_) => "<table>".to_string(), // 避免复杂表的处理
                     mlua::Value::UserData(_) => "<userdata>".to_string(),
@@ -750,9 +761,9 @@ impl UserData for CandyReq {
                 };
                 message_parts.push(s);
             }
-            
+
             let message = message_parts.join("");
-            
+
             // 根据日志级别记录消息
             match log_level {
                 LOG_EMERG | LOG_ALERT | LOG_CRIT | LOG_ERR => {
@@ -772,7 +783,7 @@ impl UserData for CandyReq {
                     info!("ngx.log: {}", message);
                 }
             }
-            
+
             Ok(())
         });
 
@@ -1311,7 +1322,7 @@ impl UserData for RequestContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use http::{header, HeaderMap, HeaderValue};
+    use http::{HeaderMap, HeaderValue, header};
     use std::sync::{Arc, Mutex};
 
     // Helper function to get method name from method ID
@@ -1378,19 +1389,31 @@ mod tests {
 
         #[test]
         fn test_no_underscore() {
-            assert_eq!(normalize_header_name_for_test("content-type"), "content-type");
+            assert_eq!(
+                normalize_header_name_for_test("content-type"),
+                "content-type"
+            );
             assert_eq!(normalize_header_name_for_test("host"), "host");
         }
 
         #[test]
         fn test_with_underscore() {
-            assert_eq!(normalize_header_name_for_test("content_type"), "content-type");
-            assert_eq!(normalize_header_name_for_test("x_custom_header"), "x-custom-header");
+            assert_eq!(
+                normalize_header_name_for_test("content_type"),
+                "content-type"
+            );
+            assert_eq!(
+                normalize_header_name_for_test("x_custom_header"),
+                "x-custom-header"
+            );
         }
 
         #[test]
         fn test_mixed_case() {
-            assert_eq!(normalize_header_name_for_test("Content_Type"), "content-type");
+            assert_eq!(
+                normalize_header_name_for_test("Content_Type"),
+                "content-type"
+            );
             assert_eq!(normalize_header_name_for_test("X_API_Key"), "x-api-key");
         }
 
@@ -1491,14 +1514,8 @@ mod tests {
         #[test]
         fn test_headers_with_values() {
             let mut headers = HeaderMap::new();
-            headers.insert(
-                header::CONTENT_TYPE,
-                HeaderValue::from_static("text/html"),
-            );
-            headers.insert(
-                header::CONTENT_LENGTH,
-                HeaderValue::from_static("100"),
-            );
+            headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html"));
+            headers.insert(header::CONTENT_LENGTH, HeaderValue::from_static("100"));
 
             let candy_headers = CandyHeaders::new(headers);
             let guard = candy_headers.headers.lock().unwrap();
@@ -1510,10 +1527,7 @@ mod tests {
         #[test]
         fn test_headers_clone() {
             let mut headers = HeaderMap::new();
-            headers.insert(
-                header::HOST,
-                HeaderValue::from_static("localhost"),
-            );
+            headers.insert(header::HOST, HeaderValue::from_static("localhost"));
             let candy_headers = CandyHeaders::new(headers);
             let cloned = candy_headers.headers.lock().unwrap().clone();
             assert_eq!(cloned.get(header::HOST).unwrap(), "localhost");
@@ -1523,7 +1537,7 @@ mod tests {
     // RequestContext tests
     mod request_context {
         use super::*;
-        use crate::http::lua::structures::{CandyRequest, CandyResponse, CandyReqState};
+        use crate::http::lua::structures::{CandyReqState, CandyRequest, CandyResponse};
         use http::Uri;
 
         fn create_test_request_context() -> RequestContext {
@@ -1710,9 +1724,7 @@ mod tests {
                 method: "POST".to_string(),
                 uri_path: "/submit".to_string(),
                 uri_args: UriArgs::new(),
-                post_args: Some(UriArgs(vec![
-                    ("name".to_string(), "test".to_string()),
-                ])),
+                post_args: Some(UriArgs(vec![("name".to_string(), "test".to_string())])),
                 jump: false,
                 headers: Arc::new(Mutex::new(HeaderMap::new())),
                 redirect_status: None,
