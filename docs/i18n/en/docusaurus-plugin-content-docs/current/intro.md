@@ -2,48 +2,48 @@
 sidebar_position: 1
 ---
 
-# Introduction
+# 介绍
 
-Candy is a lightweight, high-performance HTTP server written in Rust, designed to provide an easy-to-use deployment experience with powerful features. It supports static file serving, reverse proxying, Lua script handling, and HTTP redirection, making it suitable for quickly setting up web services.
+Candy 是一个用 Rust 语言编写的轻量级、高性能 HTTP 服务器，旨在提供简单易用的部署体验和强大的功能特性。它支持静态文件服务、反向代理、Lua 脚本处理和 HTTP 重定向等功能，适合快速搭建 Web 服务。
 
-## Key Features
+## 主要特性
 
-- **Lightweight and Efficient**: Single binary with no dependencies, low resource consumption
-- **High Performance**: Based on Tokio async runtime and Axum framework, supporting HTTP/2
-- **Easy to Use**: Deploy with just one configuration file
-- **SSL/TLS Support**: Built-in Rustls encryption, supporting HTTPS
-- **Multiple Route Types**:
-  - Static file hosting (with directory listing)
-  - Reverse proxy (with timeout and body size limits)
-  - Lua script handling (built-in Lua 5.4 engine)
-  - HTTP redirection (supporting 301/302 status codes)
-- **Virtual Hosts**: Support for port-based and domain-based virtual hosts
-- **Compression**: Gzip, Deflate, and Brotli compression
-- **Custom Error Pages**: Support for 404 and custom error pages
+- **轻量高效**：单二进制文件，无依赖，资源消耗低
+- **高性能**：基于 Tokio 异步运行时和 Axum 框架，支持 HTTP/2
+- **简单易用**：只需一个配置文件即可快速部署
+- **SSL/TLS 支持**：内置 Rustls 加密，支持 HTTPS
+- **多路由支持**：
+  - 静态文件托管（支持目录列表）
+  - 反向代理（支持超时和 body 大小限制）
+  - Lua 脚本处理（内置 Lua 5.4 引擎）
+  - HTTP 重定向（支持 301/302 状态码）
+- **虚拟主机**：支持基于端口和域名的虚拟主机配置
+- **压缩支持**：Gzip、Deflate、Brotli 压缩
+- **自定义错误页面**：支持 404 和自定义错误页面
 
-## Installation
+## 安装
 
-### 1. Compile from Source
+### 1. 从源码编译
 
 ```bash
-# Clone the repository
+# 克隆仓库
 git clone https://github.com/DefectingCat/candy.git
 cd candy
 
-# Compile in release mode
+# 编译发布版本
 cargo build --release
 
-# Check the compiled executable
+# 查看编译好的可执行文件
 ls -la target/release/
 ```
 
-### 2. Download Precompiled Binary
+### 2. 下载预编译二进制文件
 
-(To be added: Release page link and download instructions)
+（待补充：发布页面链接和下载说明）
 
-## Usage
+## 使用
 
-Candy supports running as a single executable file:
+Candy 支持单个可执行文件运行：
 
 ```bash
 ❯ ./target/release/candy -h
@@ -55,9 +55,9 @@ Options:
   -V, --version        Print version
 ```
 
-### Quick Start
+### 快速启动
 
-1. Create a configuration file `config.toml`:
+1. 创建配置文件 `config.toml`：
 
 ```toml
 log_level = "info"
@@ -76,33 +76,38 @@ index = ["index.html"]
 auto_index = true
 ```
 
-1. Create an `html` directory and add an `index.html` file:
+1. 创建 `html` 目录并添加 `index.html` 文件：
 
 ```bash
 mkdir html
 echo "<h1>Hello from Candy!</h1>" > html/index.html
 ```
 
-1. Start the server:
+1. 启动服务器：
 
 ```bash
 ./target/release/candy
 ```
 
-1. Access in your browser: `http://localhost:8080`
+1. 在浏览器中访问：`http://localhost:8080`
 
-### Configuration File Location
+### 配置文件位置
 
-The `-c` option specifies a custom configuration file path. If omitted, it defaults to `./config.toml` in the current directory.
+`-c` 选项可以指定自定义配置文件路径，省略时默认使用当前目录下的 `config.toml` 文件。
 
-## Quick Examples
+## 快速示例
 
-### 1. Static File Server
+### 1. 静态文件服务器
 
 ```toml
+log_level = "info"
+log_folder = "./logs"
+
 [[host]]
 ip = "0.0.0.0"
 port = 8080
+server_name = "localhost"
+
 [[host.route]]
 location = "/"
 root = "./public"
@@ -110,12 +115,17 @@ index = ["index.html", "index.htm"]
 auto_index = true
 ```
 
-### 2. Reverse Proxy
+### 2. 反向代理
 
 ```toml
+log_level = "info"
+log_folder = "./logs"
+
 [[host]]
 ip = "0.0.0.0"
 port = 8080
+server_name = "api.example.com"
+
 [[host.route]]
 location = "/api"
 proxy_pass = "http://localhost:3000"
@@ -123,18 +133,23 @@ proxy_timeout = 10
 max_body_size = 1048576
 ```
 
-### 3. Lua Script Handling
+### 3. Lua 脚本处理
 
 ```toml
+log_level = "info"
+log_folder = "./logs"
+
 [[host]]
 ip = "0.0.0.0"
 port = 8080
+server_name = "lua.example.com"
+
 [[host.route]]
 location = "/hello"
 lua_script = "./scripts/hello.lua"
 ```
 
-`scripts/hello.lua`:
+`scripts/hello.lua`：
 
 ```lua
 ctx:set_status(200)
@@ -142,23 +157,100 @@ ctx:set_header("Content-Type", "text/plain")
 ctx:set_body("Hello from Lua!")
 ```
 
-## System Requirements
+### 4. 负载均衡
 
-- **Operating System**: Linux, macOS, Windows
-- **Memory**: At least 10MB of available memory
-- **Disk Space**: At least 5MB of available space
+```toml
+log_level = "info"
+log_folder = "./logs"
 
-## Supported Platforms
+# 上游服务器组
+[[upstream]]
+name = "backend_servers"
+method = "weightedroundrobin"
+server = [
+    { server = "192.168.1.100:8080", weight = 3 },
+    { server = "192.168.1.101:8080", weight = 1 },
+    { server = "192.168.1.102:8080", weight = 2 }
+]
 
-Candy can run on the following platforms:
+[[host]]
+ip = "0.0.0.0"
+port = 80
+server_name = "loadbalance.example.com"
 
-- x86_64 (Intel/AMD)
-- ARM (ARMv7, ARMv8)
-- MIPS (partial support)
+[[host.route]]
+location = "/api"
+upstream = "backend_servers"
+proxy_timeout = 10
+max_body_size = 1048576
+```
 
-## Development and Contributing
+### 5. HTTPS 服务器
 
-Candy is an open-source project and contributions are welcome!
+```toml
+log_level = "info"
+log_folder = "./logs"
 
-- **Repository**: [https://github.com/DefectingCat/candy](https://github.com/DefectingCat/candy)
-- **License**: MIT License
+[[host]]
+ip = "0.0.0.0"
+port = 443
+server_name = "secure.example.com"
+ssl = true
+certificate = "./ssl/server.crt"
+certificate_key = "./ssl/server.key"
+
+[[host.route]]
+location = "/"
+root = "./html"
+```
+
+### 6. 多虚拟主机
+
+```toml
+log_level = "info"
+log_folder = "./logs"
+
+# 第一个虚拟主机（HTTP）
+[[host]]
+ip = "0.0.0.0"
+port = 80
+server_name = "example.com"
+
+[[host.route]]
+location = "/"
+root = "./html/example"
+
+# 第二个虚拟主机（HTTPS）
+[[host]]
+ip = "0.0.0.0"
+port = 443
+server_name = "secure.example.com"
+ssl = true
+certificate = "./ssl/server.crt"
+certificate_key = "./ssl/server.key"
+
+[[host.route]]
+location = "/"
+root = "./html/secure"
+```
+
+## 系统要求
+
+- **操作系统**：Linux、macOS、Windows
+- **内存**：至少 10MB 可用内存
+- **磁盘空间**：至少 5MB 可用空间
+
+## 支持的平台
+
+Candy 可以在以下平台上运行：
+
+- x86_64（Intel/AMD）
+- ARM（ARMv7、ARMv8）
+- MIPS（部分支持）
+
+## 开发与贡献
+
+Candy 是一个开源项目，欢迎贡献！
+
+- **仓库地址**：[https://github.com/DefectingCat/candy](https://github.com/DefectingCat/candy)
+- **许可证**：MIT License

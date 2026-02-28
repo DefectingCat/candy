@@ -1,69 +1,94 @@
 ---
-sidebar_label: Config File
+sidebar_label: 配置文件
 sidebar_position: 1
-title: Config File
+title: 配置文件
 ---
 
-## Config File
+## 配置文件
 
-Candy follows the config file to configure. The configuration file format is TOML.
+Candy 使用 TOML 格式的配置文件，默认名称为 `config.toml`。配置文件包含全局设置、上游服务器组和虚拟主机配置。
 
-## Global Configuration
+## 全局配置
+
+### 日志配置
 
 ```toml
-log_level = "info"  # Log level: trace/debug/info/warn/error (default info)
-log_folder = "./logs"  # Log folder path (default ./logs)
+log_level = "info"  # 日志级别：trace/debug/info/warn/error（默认 info）
+log_folder = "./logs"  # 日志文件夹路径（默认 ./logs）
 ```
 
-### Virtual Host
+#### 日志级别说明
 
-The top level configuration is the virtual host `host`, and can configure multiple virtual hosts.
+- **trace**：最详细的日志，用于调试
+- **debug**：详细的调试信息
+- **info**：基本运行信息（默认）
+- **warn**：警告信息
+- **error**：错误信息
+
+### 上游服务器组配置
+
+```toml
+[[upstream]]
+name = "backend_servers"  # 服务器组名称（在路由中引用）
+method = "weightedroundrobin"  # 负载均衡算法：roundrobin/weightedroundrobin/iphash（默认 weightedroundrobin）
+server = [
+    { server = "192.168.1.100:8080", weight = 3 },  # 权重 3
+    { server = "192.168.1.101:8080", weight = 1 },  # 权重 1
+    { server = "http://api1.example.com", weight = 2 },  # 支持 HTTP 协议前缀
+    { server = "https://api2.example.com:443", weight = 1 }  # 支持 HTTPS
+]
+```
+
+### 虚拟主机配置
+
+顶层配置为虚拟主机 `host`，可以配置多个虚拟主机。
 
 ```toml
 [[host]]
 ip = "0.0.0.0"
 port = 80
-server_name = "example.com"  # Server name (domain name), supports domain-based routing
-timeout = 15  # Connection timeout
+server_name = "example.com"  # 服务器名称（域名），支持基于域名的路由
+timeout = 15  # 连接超时（秒），默认 75 秒
 
-# Only read certificate and key when ssl = true, and enable SSL support
-# ssl = true
-# Self sign a certificate
-# sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ./html/selfsigned.key -out ./html/selfsigned.crt
-certificate = "./html/selfsigned.crt"
-certificate_key = "./html/selfsigned.key"
+# SSL/TLS 配置
+ssl = true
+# 自签名证书生成命令：
+# sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ./ssl/selfsigned.key -out ./ssl/selfsigned.crt
+certificate = "./ssl/selfsigned.crt"
+certificate_key = "./ssl/selfsigned.key"
 
-# Host-level custom response headers
+# 主机级别的自定义响应头
 [host.headers]
-X-Powered-By = "candy"
+X-Powered-By = "Candy Server"
+Cache-Control = "public, max-age=3600"
 ```
 
-### Route
+### 路由
 
-Each virtual host can configure multiple routes. The configuration field is `route`.
+每个虚拟主机下都可以配置多个路由。配置字段为 `route`。
 
-Each route supports four configurations:
+每个路由支持四种配置：
 
-- Static file hosting
-- Reverse proxy
-- Lua script
-- HTTP redirect
+- 静态文件托管
+- 反向代理
+- Lua 脚本
+- HTTP 重定向
 
-#### Static File Hosting
+#### 静态文件托管
 
 ```toml
 [[host.route]]
-# Route location
+# 路由地址
 location = "/"
-# Static file root
+# 静态文件根目录
 root = "html"
-# Only use for root field
+# 当使用静态文件根目录时，使用下面的字段作为主页
 index = ["index.html"]
-# List directory
+# 列出目录
 auto_index = true
 ```
 
-#### Reverse Proxy
+#### 反向代理
 
 ```toml
 [[host]]
@@ -78,7 +103,7 @@ proxy_timeout = 10
 max_body_size = 2048
 ```
 
-#### Lua Script
+#### Lua 脚本
 
 ```toml
 [[host]]
@@ -89,41 +114,41 @@ location = "/"
 lua_script = "html/index.lua"
 ```
 
-#### HTTP Redirect
+#### HTTP 重定向
 
 ```toml
 [[host.route]]
 location = "/old-path"
-redirect_to = "http://example.com/new-path"  # Redirect target URL
-redirect_code = 301  # Redirect status code (301 permanent, 302 temporary)
+redirect_to = "http://example.com/new-path"  # 重定向目标 URL
+redirect_code = 301  # 重定向状态码（301 永久，302 临时）
 ```
 
-#### Error Page
+#### 错误页面
 
 ```toml
 [[host.route]]
 location = "/"
 root = "html"
 
-# Custom error page (500 error)
+# 自定义错误页面（500 错误）
 [host.route.error_page]
 status = 500
 page = "500.html"
 
-# Custom 404 page
+# 自定义 404 页面
 [host.route.not_found_page]
 status = 404
 page = "404.html"
 ```
 
-#### Route-level Custom Response Header
+#### 路由级自定义响应头
 
 ```toml
 [[host.route]]
 location = "/api"
 proxy_pass = "http://localhost:3000"
 
-# Route-level custom response headers (overrides host configuration)
+# 路由级别的自定义响应头（覆盖主机配置）
 [host.route.headers]
 X-API-Version = "1.0"
 ```

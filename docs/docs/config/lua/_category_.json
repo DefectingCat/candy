@@ -1,0 +1,8 @@
+{
+  "label": "Lua 脚本",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "description": "Candy 的 Lua 脚本功能完全兼容 OpenResty API，提供强大的 HTTP 请求处理能力。"
+  }
+}
