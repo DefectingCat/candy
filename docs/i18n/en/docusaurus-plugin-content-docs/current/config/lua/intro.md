@@ -1,63 +1,63 @@
 ---
-sidebar_label: Lua 脚本入门
+sidebar_label: Getting Started with Lua Scripts
 sidebar_position: 1
-title: Lua 脚本入门
+title: Getting Started with Lua Scripts
 ---
 
-# Lua 脚本入门
+# Getting Started with Lua Scripts
 
-Candy 支持使用 Lua 脚本作为路由处理方式，允许您编写自定义的 HTTP 请求处理逻辑。Candy 的 Lua 实现完全兼容 OpenResty 的 API，使您可以轻松地从 Nginx + Lua 环境迁移现有脚本。
+Candy supports using Lua scripts as a route handling method, allowing you to write custom HTTP request processing logic. Candy's Lua implementation is fully compatible with OpenResty's API, enabling you to easily migrate existing scripts from Nginx + Lua environments.
 
-## 主要特性
+## Main Features
 
-- **OpenResty API 兼容**：支持大部分 OpenResty 的 API，包括 `ngx.*` 系列函数
-- **高性能**：使用 mlua 库实现，提供高效的 Lua 执行环境
-- **安全性**：沙箱执行环境，防止恶意脚本影响服务器
-- **可扩展性**：丰富的 API 接口，满足各种复杂需求
+- **OpenResty API Compatible**: Supports most OpenResty APIs, including `ngx.*` series functions
+- **High Performance**: Implemented using the mlua library, providing an efficient Lua execution environment
+- **Security**: Sandboxed execution environment to prevent malicious scripts from affecting the server
+- **Extensibility**: Rich API interfaces to meet various complex requirements
 
-## 配置方法
+## Configuration Method
 
-在 `config.toml` 中添加路由配置：
+Add route configuration in `config.toml`:
 
 ```toml
 [[host.route]]
 location = "/api"
 lua_script = "scripts/api_handler.lua"
-lua_code_cache = true  # 启用代码缓存以提高性能
+lua_code_cache = true  # Enable code caching to improve performance
 ```
 
-## 核心概念
+## Core Concepts
 
-### 1. 请求上下文 (cd)
+### 1. Request Context (cd)
 
-在 Lua 脚本中，您可以使用 `cd` 对象访问请求和响应相关信息：
+In Lua scripts, you can use the `cd` object to access request and response information:
 
-- `cd.req` - 请求对象，用于获取请求信息
-- `cd.resp` - 响应对象，用于设置响应信息  
-- `cd.header` - 请求/响应头操作
-- `cd.status` - 响应状态码
+- `cd.req` - Request object, used to get request information
+- `cd.resp` - Response object, used to set response information
+- `cd.header` - Request/response header operations
+- `cd.status` - Response status code
 
-### 2. API 兼容性
+### 2. API Compatibility
 
-Candy 实现了大量 OpenResty 的 API，包括但不限于：
+Candy implements many OpenResty APIs, including but not limited to:
 
-- `cd.log()` - 日志记录
-- `cd.print()` / `cd.say()` - 输出响应内容
-- `cd.get_uri_args()` - 获取 URI 参数
-- `cd.get_post_args()` - 获取 POST 参数
-- `cd.get_headers()` - 获取请求头
-- `cd.set_header()` - 设置响应头
+- `cd.log()` - Log recording
+- `cd.print()` / `cd.say()` - Output response content
+- `cd.get_uri_args()` - Get URI parameters
+- `cd.get_post_args()` - Get POST parameters
+- `cd.get_headers()` - Get request headers
+- `cd.set_header()` - Set response headers
 
-## 快速开始
+## Quick Start
 
-### 1. 简单的 Hello World
+### 1. Simple Hello World
 
 ```lua
 -- scripts/hello.lua
 cd.say("Hello from Candy Lua!")
 ```
 
-### 2. 获取请求信息
+### 2. Get Request Information
 
 ```lua
 -- scripts/request_info.lua
@@ -73,7 +73,7 @@ for key, value in pairs(args) do
 end
 ```
 
-### 3. 设置响应
+### 3. Set Response
 
 ```lua
 -- scripts/response_example.lua
@@ -84,11 +84,11 @@ local response = '{"message": "Hello from Lua!", "status": "success"}'
 cd.print(response)
 ```
 
-## Lua 代码缓存
+## Lua Code Caching
 
-Candy 支持 Lua 代码缓存以提高性能：
+Candy supports Lua code caching to improve performance:
 
-- `lua_code_cache = true`：启用缓存（推荐用于生产环境）
-- `lua_code_cache = false`：禁用缓存（开发期间便于调试）
+- `lua_code_cache = true`: Enable caching (recommended for production environments)
+- `lua_code_cache = false`: Disable caching (convenient for debugging during development)
 
-当启用缓存时，Candy 会检查脚本内容的校验和，只有在脚本更改时才会重新编译。
+When caching is enabled, Candy checks the script content checksum and only recompiles when the script changes.

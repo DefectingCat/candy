@@ -1,45 +1,45 @@
 ---
-sidebar_label: 快速入门
+sidebar_label: Quick Start
 sidebar_position: 2
-title: 快速入门
+title: Quick Start
 ---
 
-## 快速入门
+## Quick Start
 
-本文档将帮助您快速上手使用 Candy 服务器。我们将介绍基本的安装、配置和使用方法。
+This document will help you get started quickly with the Candy server. We will cover basic installation, configuration, and usage methods.
 
-## 系统要求
+## System Requirements
 
-- **操作系统**：Linux、macOS、Windows、BSD 系统
-- **CPU**：至少 1 核心（推荐 2 核心或更多）
-- **内存**：至少 50MB 可用内存
-- **磁盘空间**：至少 10MB 可用空间
+- **Operating Systems**: Linux, macOS, Windows, BSD systems
+- **CPU**: At least 1 core (recommended: 2 cores or more)
+- **Memory**: At least 50MB available memory
+- **Disk Space**: At least 10MB available space
 
-## 安装方法
+## Installation Methods
 
-### 1. 从源代码编译
+### 1. Build from Source
 
 ```bash
-# 克隆仓库
+# Clone the repository
 git clone https://github.com/DefectingCat/candy.git
 cd candy
 
-# 编译发布版本
+# Build release version
 cargo build --release
 
-# 查看编译好的可执行文件
+# View the compiled executable
 ls -la target/release/
 ```
 
-### 2. 使用预编译二进制文件
+### 2. Using Pre-built Binaries
 
-（待支持）
+(TODO: Support pending)
 
-## 基本使用
+## Basic Usage
 
-### 1. 简单的静态文件服务器
+### 1. Simple Static File Server
 
-创建一个简单的配置文件 `config.toml`：
+Create a simple configuration file `config.toml`:
 
 ```toml
 log_level = "info"
@@ -57,32 +57,32 @@ index = ["index.html"]
 auto_index = true
 ```
 
-### 2. 创建静态文件
+### 2. Create Static Files
 
-创建 `html` 目录并添加 `index.html` 文件：
+Create the `html` directory and add an `index.html` file:
 
 ```bash
 mkdir -p html
 echo "<h1>Hello from Candy!</h1>" > html/index.html
 ```
 
-### 3. 启动服务器
+### 3. Start the Server
 
 ```bash
-# 使用默认配置文件
+# Use default configuration file
 candy
 
-# 或者使用自定义配置文件
+# Or use a custom configuration file
 candy -c /path/to/config.toml
 ```
 
-### 4. 访问服务器
+### 4. Access the Server
 
-在浏览器中访问 `http://localhost:8080`，您应该会看到 "Hello from Candy!"。
+Visit `http://localhost:8080` in your browser, and you should see "Hello from Candy!".
 
-## 常用配置示例
+## Common Configuration Examples
 
-### 1. 反向代理
+### 1. Reverse Proxy
 
 ```toml
 log_level = "info"
@@ -100,7 +100,7 @@ proxy_timeout = 10
 max_body_size = 1048576
 ```
 
-### 2. 负载均衡
+### 2. Load Balancing
 
 ```toml
 log_level = "info"
@@ -127,7 +127,7 @@ proxy_timeout = 10
 max_body_size = 1048576
 ```
 
-### 3. HTTPS 服务器
+### 3. HTTPS Server
 
 ```toml
 log_level = "info"
@@ -146,7 +146,7 @@ location = "/"
 root = "./html"
 ```
 
-### 4. Lua 脚本处理
+### 4. Lua Script Processing
 
 ```toml
 log_level = "info"
@@ -169,7 +169,7 @@ ctx:set_header("Content-Type", "text/plain")
 ctx:set_body("Hello from Lua!")
 ```
 
-## 命令行选项
+## Command Line Options
 
 ```bash
 Usage: candy [OPTIONS]
@@ -180,21 +180,21 @@ Options:
   -V, --version        Print version
 ```
 
-## 下一步
+## Next Steps
 
-- 查看 [配置文件文档](./config/config-file) 了解详细配置选项
-- 了解 [Lua 脚本编程](./config/lua) 功能
-- 学习 [负载均衡](./config/load-balancing) 配置方法
-- 掌握 [反向代理](./config/reverse-proxy) 高级用法
-- 查看 [常见问题](./faq) 解决遇到的问题
+- Check out the [Configuration Documentation](./config/config-file) for detailed configuration options
+- Learn about [Lua Scripting](./config/lua) features
+- Study [Load Balancing](./config/load-balancing) configuration methods
+- Master advanced usage of [Reverse Proxy](./config/reverse-proxy)
+- See the [FAQ](./faq) to solve encountered problems
 
-## 资源
+## Resources
 
-- [GitHub 仓库](https://github.com/DefectingCat/candy)
+- [GitHub Repository](https://github.com/DefectingCat/candy)
 - [GitHub Issues](https://github.com/DefectingCat/candy/issues)
 - [Contributing](https://github.com/DefectingCat/candy/blob/main/CONTRIBUTING.md)
 - [CHANGELOG](https://github.com/DefectingCat/candy/blob/main/CHANGELOG.md)
 
-## 许可证
+## License
 
-Candy 遵循 MIT 许可证。详情请查看 LICENSE 文件。
+Candy follows the MIT license. See the LICENSE file for details.

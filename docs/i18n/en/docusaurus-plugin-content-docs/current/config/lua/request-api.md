@@ -1,18 +1,18 @@
 ---
-sidebar_label: 请求 API
+sidebar_label: Request API
 sidebar_position: 2
-title: 请求 API
+title: Request API
 ---
 
-# 请求 API
+# Request API
 
-Candy 的 Lua 脚本提供了全面的请求处理 API，通过 `cd.req` 对象访问。这些 API 与 OpenResty 的 `ngx.req.*` 系列函数兼容。
+Candy's Lua scripts provide comprehensive request handling APIs accessible through the `cd.req` object. These APIs are compatible with OpenResty's `ngx.req.*` series of functions.
 
-## 获取请求信息
+## Getting Request Information
 
 ### `cd.req.get_method()`
 
-获取 HTTP 请求方法（GET、POST、PUT 等）。
+Get the HTTP request method (GET, POST, PUT, etc.).
 
 ```lua
 local method = cd.req.get_method()
@@ -21,7 +21,7 @@ cd.say("Request method: ", method)
 
 ### `cd.req.get_uri()`
 
-获取当前请求的完整 URI（包含查询参数）。
+Get the complete URI of the current request (including query parameters).
 
 ```lua
 local uri = cd.req.get_uri()
@@ -30,20 +30,20 @@ cd.say("Requested URI: ", uri)
 
 ### `cd.req.get_headers(max_headers?, raw?)`
 
-获取请求头信息。
+Get request header information.
 
-参数：
-- `max_headers`：最大返回头数量（默认 100，0 表示无限制）
-- `raw`：是否保持原始大小写（默认 false，会转换为小写）
+Parameters:
+- `max_headers`: Maximum number of headers to return (default 100, 0 means unlimited)
+- `raw`: Whether to preserve original case (default false, converts to lowercase)
 
 ```lua
--- 获取所有请求头
+-- Get all request headers
 local headers = cd.req.get_headers()
 
--- 获取最多 50 个头
+-- Get up to 50 headers
 local limited_headers = cd.req.get_headers(50)
 
--- 获取原始大小写的头
+-- Get headers with original case
 local raw_headers = cd.req.get_headers(0, true)
 
 cd.say("User-Agent: ", headers["user-agent"])
@@ -52,15 +52,15 @@ cd.say("Content-Type: ", headers["content-type"])
 
 ### `cd.req.get_uri_args(max_args?)`
 
-获取 URI 查询参数。
+Get URI query parameters.
 
-参数：
-- `max_args`：最大参数数量（默认 100，0 表示无限制）
+Parameters:
+- `max_args`: Maximum number of parameters (default 100, 0 means unlimited)
 
 ```lua
 local args = cd.req.get_uri_args()
 
--- 访问 ?name=John&age=30
+-- Access ?name=John&age=30
 local name = args["name"]
 local age = args["age"]
 
@@ -69,12 +69,12 @@ cd.say("Name: ", name, ", Age: ", age)
 
 ### `cd.req.get_post_args(max_args?)`
 
-获取 POST 请求的表单参数（仅支持 `application/x-www-form-urlencoded`）。
+Get form parameters from POST requests (only supports `application/x-www-form-urlencoded`).
 
 ```lua
 local post_args = cd.req.get_post_args()
 
--- 访问 POST 数据：name=Jane&age=25
+-- Access POST data: name=Jane&age=25
 local name = post_args["name"]
 local age = post_args["age"]
 
@@ -83,7 +83,7 @@ cd.say("POST Name: ", name, ", POST Age: ", age)
 
 ### `cd.req.get_body_data()`
 
-获取原始请求体数据。
+Get raw request body data.
 
 ```lua
 local body_data = cd.req.get_body_data()
@@ -96,92 +96,92 @@ else
 end
 ```
 
-## 修改请求信息
+## Modifying Request Information
 
 ### `cd.req.set_uri(uri, jump?)`
 
-设置当前请求的 URI。
+Set the URI for the current request.
 
-参数：
-- `uri`：新的 URI 字符串
-- `jump`：是否跳转到新 URI（默认 false）
+Parameters:
+- `uri`: New URI string
+- `jump`: Whether to jump to the new URI (default false)
 
 ```lua
--- 更改请求 URI
+-- Change request URI
 cd.req.set_uri("/new-location")
 
--- 更改并跳转
+-- Change and jump
 cd.req.set_uri("/redirect-target", true)
 ```
 
 ### `cd.req.set_uri_args(args)`
 
-设置 URI 查询参数。
+Set URI query parameters.
 
-参数：
-- `args`：参数表或查询字符串
+Parameters:
+- `args`: Parameter table or query string
 
 ```lua
--- 使用表设置参数
+-- Set parameters using table
 cd.req.set_uri_args({
     page = 1,
     size = 10,
     sort = "name"
 })
 
--- 使用查询字符串设置参数
+-- Set parameters using query string
 cd.req.set_uri_args("category=tech&tag=rust")
 ```
 
 ### `cd.req.set_method(method_id)`
 
-设置请求方法（使用预定义常量）。
+Set the request method (using predefined constants).
 
 ```lua
--- 使用方法常量
+-- Use method constants
 cd.req.set_method(cd.HTTP_POST)
 cd.req.set_method(cd.HTTP_GET)
 cd.req.set_method(cd.HTTP_PUT)
 ```
 
-## 请求体操作
+## Request Body Operations
 
 ### `cd.req.read_body()`
 
-读取请求体（在 Candy 中是空操作，因为请求体已自动读取）。
+Read the request body (is a no-op in Candy, as the request body is automatically read).
 
 ```lua
--- 在 Candy 中调用此函数不会产生实际效果
+-- Calling this function in Candy has no actual effect
 cd.req.read_body()
 ```
 
 ### `cd.req.discard_body()`
 
-丢弃当前请求体。
+Discard the current request body.
 
 ```lua
--- 清空请求体
+-- Clear request body
 cd.req.discard_body()
 ```
 
 ### `cd.req.init_body(buffer_size?)`
 
-初始化新的请求体（用于程序化构造请求体）。
+Initialize a new request body (for programmatic construction of request body).
 
-参数：
-- `buffer_size`：缓冲区大小（字节，默认 8KB）
+Parameters:
+- `buffer_size`: Buffer size (bytes, default 8KB)
 
 ```lua
--- 初始化请求体
+-- Initialize request body
 cd.req.init_body()
 ```
 
 ### `cd.req.append_body(data)`
 
-向请求体追加数据。
+Append data to the request body.
 
 ```lua
--- 初始化并追加数据
+-- Initialize and append data
 cd.req.init_body()
 cd.req.append_body("Hello, ")
 cd.req.append_body("World!")
@@ -190,18 +190,18 @@ cd.req.finish_body()
 
 ### `cd.req.finish_body()`
 
-完成请求体写入。
+Finish writing the request body.
 
 ```lua
--- 完成请求体写入
+-- Finish writing request body
 cd.req.finish_body()
 ```
 
-## 时间相关
+## Time Related
 
 ### `cd.req.start_time()`
 
-获取请求开始时间（秒，包含毫秒小数）。
+Get the request start time (seconds, including fractional milliseconds).
 
 ```lua
 local start_time = cd.req.start_time()
@@ -210,7 +210,7 @@ cd.say("Request started at: ", start_time)
 
 ### `cd.req.http_version()`
 
-获取 HTTP 版本号。
+Get the HTTP version number.
 
 ```lua
 local version = cd.req.http_version()
@@ -221,11 +221,11 @@ else
 end
 ```
 
-## 实用工具函数
+## Utility Functions
 
 ### `cd.req.escape_uri(str)`
 
-转义 URI 组件。
+Escape URI component.
 
 ```lua
 local original = "hello world"
@@ -236,7 +236,7 @@ cd.say("Escaped: ", escaped)  -- hello%20world
 
 ### `cd.req.unescape_uri(str)`
 
-解码 URI 组件。
+Decode URI component.
 
 ```lua
 local escaped = "hello%20world"
@@ -247,7 +247,7 @@ cd.say("Unescaped: ", unescaped)  -- hello world
 
 ### `cd.req.encode_args(table)`
 
-将表编码为查询字符串。
+Encode a table as a query string.
 
 ```lua
 local args = {
@@ -262,7 +262,7 @@ cd.say("Encoded: ", query_string)  -- name=John&age=30&tags=tech&tags=rust
 
 ### `cd.req.decode_args(str, max_args?)`
 
-将查询字符串解码为表。
+Decode a query string into a table.
 
 ```lua
 local query = "name=Jane&age=25&active=true"
@@ -273,12 +273,12 @@ cd.say("Age: ", args["age"])        -- 25
 cd.say("Active: ", args["active"])  -- true
 ```
 
-## 常量
+## Constants
 
-### HTTP 方法常量
+### HTTP Method Constants
 
 - `cd.HTTP_GET` (0)
-- `cd.HTTP_HEAD` (1) 
+- `cd.HTTP_HEAD` (1)
 - `cd.HTTP_PUT` (2)
 - `cd.HTTP_POST` (3)
 - `cd.HTTP_DELETE` (4)
@@ -293,7 +293,7 @@ cd.say("Active: ", args["active"])  -- true
 - `cd.HTTP_PATCH` (13)
 - `cd.HTTP_TRACE` (14)
 
-### HTTP 状态码常量
+### HTTP Status Code Constants
 
 - `cd.HTTP_OK` (200)
 - `cd.HTTP_CREATED` (201)

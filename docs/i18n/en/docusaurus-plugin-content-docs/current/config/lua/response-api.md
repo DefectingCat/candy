@@ -1,146 +1,146 @@
 ---
-sidebar_label: 响应 API
+sidebar_label: Response API
 sidebar_position: 3
-title: 响应 API
+title: Response API
 ---
 
-# 响应 API
+# Response API
 
-Candy 的 Lua 脚本提供了全面的响应处理 API，通过 `cd` 对象和 `cd.header` 对象访问。这些 API 与 OpenResty 的 `ngx.*` 系列函数兼容。
+Candy's Lua scripts provide comprehensive response handling APIs accessible through the `cd` object and `cd.header` object. These APIs are compatible with OpenResty's `ngx.*` series of functions.
 
-## 设置响应状态
+## Setting Response Status
 
 ### `cd.status`
 
-设置响应的 HTTP 状态码。
+Set the HTTP status code of the response.
 
 ```lua
--- 设置成功状态
+-- Set success status
 cd.status = 200
 
--- 设置其他状态码
+-- Set other status codes
 cd.status = 404  -- Not Found
 cd.status = 500  -- Internal Server Error
 cd.status = 302  -- Moved Temporarily
 ```
 
-## 响应内容输出
+## Response Content Output
 
 ### `cd.print(...)`
 
-输出数据到响应体，连接所有参数并发送到 HTTP 客户端。
+Output data to the response body, concatenating all parameters and sending to the HTTP client.
 
 ```lua
--- 输出简单文本
+-- Output simple text
 cd.print("Hello, World!")
 
--- 输出多个参数
+-- Output multiple parameters
 cd.print("User: ", "Alice", ", Age: ", 25)
 
--- 输出表格内容
+-- Output table content
 local user = {name = "Bob", age = 30}
 cd.print("User: ", user.name, ", Age: ", user.age)
 ```
 
 ### `cd.say(...)`
 
-输出数据到响应体并添加换行符。
+Output data to the response body and add a newline character.
 
 ```lua
--- 输出带换行的文本
+-- Output text with newlines
 cd.say("Line 1")
 cd.say("Line 2")
 cd.say("Line 3")
 
--- 输出多个参数带换行
+-- Output multiple parameters with newlines
 cd.say("Status: OK")
 cd.say("Code: 200")
 ```
 
 ### `cd.flush(wait?)`
 
-刷新响应输出到客户端。
+Flush response output to the client.
 
-参数：
-- `wait`：是否等待所有数据写入（默认 false）
+Parameters:
+- `wait`: Whether to wait for all data to be written (default false)
 
 ```lua
--- 异步刷新
+-- Asynchronous flush
 cd.flush()
 
--- 同步刷新
+-- Synchronous flush
 cd.flush(true)
 ```
 
 ### `cd.eof()`
 
-明确指定响应输出流的结束。
+Explicitly specify the end of the response output stream.
 
 ```lua
--- 结束响应流
+-- End response stream
 cd.print("Final data")
 cd.eof()
 ```
 
-## 响应头操作
+## Response Header Operations
 
 ### `cd.header[key]`
 
-获取或设置响应头。
+Get or set response headers.
 
 ```lua
--- 设置单个响应头
+-- Set single response header
 cd.header["Content-Type"] = "application/json"
 cd.header["X-Custom-Header"] = "custom-value"
 
--- 设置多个相同名称的头（数组形式）
+-- Set multiple headers with the same name (array form)
 cd.header["Set-Cookie"] = {"session=abc123", "theme=dark"}
 
--- 获取响应头（在响应阶段无效，仅在请求阶段有效）
--- 在响应阶段，通常只设置头，不获取
+-- Get response headers (invalid in response phase, only valid in request phase)
+-- In response phase, typically only set headers, not get them
 ```
 
-## 响应对象
+## Response Object
 
 ### `cd.resp`
 
-响应对象，提供 `get_headers` 方法。
+Response object, providing `get_headers` method.
 
 ```lua
--- 获取所有响应头
+-- Get all response headers
 local response_headers = cd.resp.get_headers()
 ```
 
-## 控制流程
+## Flow Control
 
 ### `cd.exit(status)`
 
-退出当前请求处理并返回状态码。
+Exit the current request processing and return a status code.
 
-参数：
-- `status`：HTTP 状态码（>= 200 时中断请求）
+Parameters:
+- `status`: HTTP status code (interrupts request when >= 200)
 
 ```lua
--- 正常退出并返回 200
+-- Exit normally and return 200
 cd.exit(200)
 
--- 返回 403 禁止访问
+-- Return 403 Forbidden
 if not authorized then
     cd.status = 403
     cd.print("Access denied")
     cd.exit(403)
 end
 
--- 返回 302 重定向
+-- Return 302 redirect
 cd.header["Location"] = "https://example.com"
 cd.exit(302)
 ```
 
-## 时间相关
+## Time Related
 
 ### `cd.now()`
 
-获取当前时间戳（秒，包含毫秒小数部分）。
+Get the current timestamp (seconds, including fractional milliseconds).
 
 ```lua
 local current_time = cd.now()
@@ -149,7 +149,7 @@ cd.print("Current time: ", current_time)
 
 ### `cd.time()`
 
-获取当前时间戳（整数秒）。
+Get the current timestamp (integer seconds).
 
 ```lua
 local current_time = cd.time()
@@ -158,28 +158,28 @@ cd.print("Current time (seconds): ", current_time)
 
 ### `cd.today()`
 
-获取当前日期（格式：yyyy-mm-dd）。
+Get the current date (format: yyyy-mm-dd).
 
 ```lua
 local today = cd.today()
-cd.print("Today: ", today)  -- 例如: 2023-12-25
+cd.print("Today: ", today)  -- e.g.: 2023-12-25
 ```
 
 ### `cd.update_time()`
 
-强制更新时间（在 Candy 中是空操作）。
+Force update time (is a no-op in Candy).
 
 ```lua
--- 更新时间（仅 API 兼容性）
+-- Update time (for API compatibility only)
 cd.update_time()
 ```
 
-## 实际应用示例
+## Practical Examples
 
-### JSON 响应
+### JSON Response
 
 ```lua
--- 设置 JSON 响应
+-- Set JSON response
 cd.status = 200
 cd.header["Content-Type"] = "application/json"
 
@@ -191,76 +191,76 @@ local response = {
     }
 }
 
--- 简单 JSON 序列化
+-- Simple JSON serialization
 local json = string.format([[{"status":"%s","data":{"message":"%s","timestamp":%d}}]],
                           response.status, response.data.message, response.data.timestamp)
 
 cd.print(json)
 ```
 
-### 重定向
+### Redirect
 
 ```lua
--- 302 重定向
+-- 302 redirect
 cd.status = 302
 cd.header["Location"] = "https://example.com/new-location"
 cd.exit(302)
 ```
 
-### 文件下载
+### File Download
 
 ```lua
--- 设置文件下载响应
+-- Set file download response
 cd.status = 200
 cd.header["Content-Type"] = "application/octet-stream"
 cd.header["Content-Disposition"] = 'attachment; filename="document.pdf"'
 
--- 输出文件内容
+-- Output file content
 cd.print(file_content)
 ```
 
-### 流式响应
+### Streaming Response
 
 ```lua
--- 流式输出数据
+-- Stream data output
 cd.status = 200
 cd.header["Content-Type"] = "text/plain"
 
 for i = 1, 10 do
     cd.say("Line ", i)
-    cd.flush()  -- 立即发送到客户端
-    
-    -- 模拟延迟
-    -- 注意：Candy 中没有内置的 sleep 函数，这是概念示例
+    cd.flush()  -- Send immediately to client
+
+    -- Simulate delay
+    -- Note: Candy does not have a built-in sleep function, this is a conceptual example
 end
 
 cd.eof()
 ```
 
-## 常用响应头
+## Common Response Headers
 
-以下是一些常用的响应头设置：
+Here are some commonly used response header settings:
 
 ```lua
--- JSON 响应
+-- JSON response
 cd.header["Content-Type"] = "application/json"
 
--- HTML 响应
+-- HTML response
 cd.header["Content-Type"] = "text/html; charset=utf-8"
 
--- JavaScript 文件
+-- JavaScript file
 cd.header["Content-Type"] = "application/javascript"
 
--- CSS 文件
+-- CSS file
 cd.header["Content-Type"] = "text/css"
 
--- 图片
+-- Image
 cd.header["Content-Type"] = "image/png"
 
--- 自定义缓存控制
+-- Custom cache control
 cd.header["Cache-Control"] = "no-cache, no-store, must-revalidate"
 
--- CORS 头
+-- CORS headers
 cd.header["Access-Control-Allow-Origin"] = "*"
 cd.header["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE"
 cd.header["Access-Control-Allow-Headers"] = "Content-Type"

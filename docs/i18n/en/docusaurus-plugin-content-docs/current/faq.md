@@ -1,14 +1,14 @@
 ---
-sidebar_label: 常见问题
+sidebar_label: FAQ
 sidebar_position: 5
-title: 常见问题与故障排除
+title: Frequently Asked Questions and Troubleshooting
 ---
 
-## 常见问题
+## Frequently Asked Questions
 
-### 1. 如何安装 Candy？
+### 1. How do I install Candy?
 
-**方法一：从源代码编译**
+**Method 1: Build from Source**
 
 ```bash
 git clone https://github.com/DefectingCat/candy.git
@@ -16,32 +16,32 @@ cd candy
 cargo build --release
 ```
 
-**方法二：使用预编译二进制文件**（待支持）
+**Method 2: Using Pre-built Binaries** (Pending support)
 
-### 2. Candy 支持哪些操作系统？
+### 2. What operating systems does Candy support?
 
-Candy 支持以下操作系统：
+Candy supports the following operating systems:
 - Linux
 - macOS
 - Windows
-- BSD 系统
+- BSD systems
 
-### 3. 如何运行 Candy？
+### 3. How do I run Candy?
 
 ```bash
-# 使用默认配置文件 (config.toml)
+# Use default configuration file (config.toml)
 candy
 
-# 使用自定义配置文件
+# Use custom configuration file
 candy -c /path/to/config.toml
 
-# 查看帮助
+# View help
 candy -h
 ```
 
-### 4. 如何配置虚拟主机？
+### 4. How do I configure virtual hosts?
 
-在 `config.toml` 中添加多个 `[[host]]` 块：
+Add multiple `[[host]]` blocks in `config.toml`:
 
 ```toml
 [[host]]
@@ -63,28 +63,28 @@ location = "/"
 root = "./test"
 ```
 
-### 5. 如何配置 HTTPS？
+### 5. How do I configure HTTPS?
 
 ```toml
 [[host]]
 ip = "0.0.0.0"
 port = 443
 ssl = true
-certificate = "./ssl/server.crt"  # 证书路径
-certificate_key = "./ssl/server.key"  # 私钥路径
+certificate = "./ssl/server.crt"  # Certificate path
+certificate_key = "./ssl/server.key"  # Private key path
 
 [[host.route]]
 location = "/"
 root = "./html"
 ```
 
-### 6. 如何生成自签名证书？
+### 6. How do I generate a self-signed certificate?
 
 ```bash
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout server.key -out server.crt
 ```
 
-### 7. 如何配置反向代理？
+### 7. How do I configure reverse proxy?
 
 ```toml
 [[host.route]]
@@ -92,125 +92,125 @@ location = "/api"
 proxy_pass = "http://localhost:3000"
 ```
 
-### 8. 如何启用目录列表？
+### 8. How do I enable directory listing?
 
 ```toml
 [[host.route]]
 location = "/"
 root = "./html"
-auto_index = true  # 启用目录列表
+auto_index = true  # Enable directory listing
 ```
 
-## 故障排除
+## Troubleshooting
 
-### 1. 无法找到配置文件
+### 1. Cannot find configuration file
 
-**问题**：`Error: Failed to read config.toml: No such file or directory (os error 2)`
+**Issue**: `Error: Failed to read config.toml: No such file or directory (os error 2)`
 
-**解决方案**：
-- 确保配置文件名为 `config.toml` 并位于当前目录
-- 或者使用 `-c` 选项指定配置文件路径：`candy -c /path/to/config.toml`
+**Solution**:
+- Ensure the configuration file is named `config.toml` and located in the current directory
+- Or use the `-c` option to specify the configuration file path: `candy -c /path/to/config.toml`
 
-### 2. 端口被占用
+### 2. Port is already in use
 
-**问题**：`Error: Address already in use (os error 48)`
+**Issue**: `Error: Address already in use (os error 48)`
 
-**解决方案**：
-- 更改配置文件中的端口号
-- 或者终止占用该端口的进程
+**Solution**:
+- Change the port number in the configuration file
+- Or terminate the process that is using the port
 
-### 3. 配置文件格式错误
+### 3. Configuration file format error
 
-**问题**：`Error: TOML parse error at line 10, column 5`
+**Issue**: `Error: TOML parse error at line 10, column 5`
 
-**解决方案**：
-- 检查配置文件语法是否符合 TOML 规范
-- 确保所有字符串被正确引用
-- 检查是否有未闭合的括号或大括号
+**Solution**:
+- Check if the configuration file syntax complies with TOML specifications
+- Ensure all strings are properly quoted
+- Check for unclosed parentheses or braces
 
-### 4. 静态文件无法访问
+### 4. Static files cannot be accessed
 
-**问题**：访问页面显示 404 错误
+**Issue**: Page displays 404 error
 
-**解决方案**：
-- 检查 `root` 路径是否正确
-- 确保文件权限正确（Candy 需要读取权限）
-- 检查配置文件中的 `auto_index` 选项是否启用
+**Solution**:
+- Check if the `root` path is correct
+- Ensure file permissions are correct (Candy needs read permission)
+- Check if the `auto_index` option in the configuration file is enabled
 
-### 5. SSL 证书验证失败
+### 5. SSL certificate validation failed
 
-**问题**：浏览器显示证书错误
+**Issue**: Browser shows certificate error
 
-**解决方案**：
-- 确保证书路径正确
-- 检查证书是否过期
-- 使用有效的 CA 签名证书（生产环境）
+**Solution**:
+- Ensure the certificate path is correct
+- Check if the certificate has expired
+- Use a valid CA-signed certificate (for production environments)
 
-### 6. 反向代理超时
+### 6. Reverse proxy timeout
 
-**问题**：`504 Gateway Timeout` 错误
+**Issue**: `504 Gateway Timeout` error
 
-**解决方案**：
-- 增加 `proxy_timeout` 配置值
-- 检查后端服务器是否响应正常
-- 优化后端服务器性能
+**Solution**:
+- Increase the `proxy_timeout` configuration value
+- Check if the backend server responds normally
+- Optimize backend server performance
 
-### 7. 请求体过大
+### 7. Request body too large
 
-**问题**：`413 Request Entity Too Large` 错误
+**Issue**: `413 Request Entity Too Large` error
 
-**解决方案**：
-- 增加 `max_body_size` 配置值
-- 优化客户端请求大小
-- 考虑使用分块上传
+**Solution**:
+- Increase the `max_body_size` configuration value
+- Optimize client request size
+- Consider using chunked upload
 
-### 8. Lua 脚本执行失败
+### 8. Lua script execution failure
 
-**问题**：Lua 脚本无法正常工作
+**Issue**: Lua script does not work properly
 
-**解决方案**：
-- 确保使用 `--features lua` 编译
-- 检查 Lua 脚本语法
-- 查看日志获取详细错误信息
-- 确保脚本路径正确
+**Solution**:
+- Ensure compilation with `--features lua`
+- Check Lua script syntax
+- Check logs for detailed error information
+- Ensure the script path is correct
 
-### 9. 权限不足
+### 9. Insufficient permissions
 
-**问题**：无法访问某些文件或端口
+**Issue**: Cannot access certain files or ports
 
-**解决方案**：
-- 确保运行用户有足够权限
-- 对于 Linux/macOS，使用 `sudo` 提升权限
-- 对于 Windows，以管理员身份运行
+**Solution**:
+- Ensure the running user has sufficient permissions
+- For Linux/macOS, use `sudo` to elevate privileges
+- For Windows, run as administrator
 
-### 10. 日志文件无法写入
+### 10. Log file cannot be written
 
-**问题**：无法创建日志文件
+**Issue**: Cannot create log file
 
-**解决方案**：
-- 检查 `log_folder` 路径是否存在
-- 确保运行用户有写入权限
-- 检查磁盘空间是否充足
+**Solution**:
+- Check if the `log_folder` path exists
+- Ensure the running user has write permissions
+- Check if disk space is sufficient
 
-## 性能优化
+## Performance Optimization
 
-### 1. 调整工作进程数
+### 1. Adjust worker process count
 
-Candy 使用 Tokio 异步运行时，默认使用系统 CPU 核心数。
+Candy uses the Tokio asynchronous runtime and defaults to using the number of system CPU cores.
 
-### 2. 启用 Gzip 压缩
+### 2. Enable Gzip compression
 
-Candy 默认启用 Gzip 压缩，但可以调整：
+Candy enables Gzip compression by default, but it can be adjusted:
 
 ```toml
-# 在路由级别配置
+# Configure at route level
 [[host.route]]
 location = "/"
 root = "./html"
-# 压缩已默认启用
+# Compression is enabled by default
 ```
 
-### 3. 配置缓存头
+### 3. Configure cache headers
 
 ```toml
 [[host.route]]
@@ -221,13 +221,13 @@ root = "./static"
 Cache-Control = "public, max-age=3600"
 ```
 
-### 4. 使用高性能文件系统
+### 4. Use high-performance file system
 
-确保静态文件存储在高性能存储上（如 SSD）。
+Ensure static files are stored on high-performance storage (such as SSD).
 
-### 5. 负载均衡
+### 5. Load balancing
 
-使用上游服务器组和负载均衡：
+Use upstream server groups and load balancing:
 
 ```toml
 [[upstream]]
@@ -239,9 +239,9 @@ server = [
 ]
 ```
 
-## 安全最佳实践
+## Security Best Practices
 
-### 1. 使用 HTTPS
+### 1. Use HTTPS
 
 ```toml
 [[host]]
@@ -252,9 +252,9 @@ certificate = "./ssl/server.crt"
 certificate_key = "./ssl/server.key"
 ```
 
-### 2. 限制访问
+### 2. Restrict access
 
-使用 Lua 脚本进行访问控制：
+Use Lua scripts for access control:
 
 ```toml
 [[host.route]]
@@ -262,7 +262,7 @@ location = "/admin"
 lua_script = "./scripts/auth.lua"
 ```
 
-### 3. 设置安全头
+### 3. Set security headers
 
 ```toml
 [host.headers]
@@ -271,39 +271,39 @@ X-Content-Type-Options = "nosniff"
 X-XSS-Protection = "1; mode=block"
 ```
 
-### 4. 最小权限原则
+### 4. Principle of least privilege
 
-以非 root 用户运行 Candy：
+Run Candy as a non-root user:
 
 ```bash
-# 创建专用用户
+# Create dedicated user
 useradd -r -s /bin/false candy
 chown -R candy:candy /path/to/candy
 su -s /bin/bash -c "candy" candy
 ```
 
-## 日志和调试
+## Logging and Debugging
 
-### 1. 配置日志级别
+### 1. Configure log level
 
 ```toml
-log_level = "debug"  # 可选：trace, debug, info, warn, error
+log_level = "debug"  # Options: trace, debug, info, warn, error
 log_folder = "./logs"
 ```
 
-### 2. 查看实时日志
+### 2. View real-time logs
 
 ```bash
 tail -f logs/candy.log
 ```
 
-### 3. 启用详细日志
+### 3. Enable detailed logs
 
 ```toml
 log_level = "trace"
 ```
 
-### 4. 检查系统资源使用
+### 4. Check system resource usage
 
 ```bash
 # Linux/macOS
@@ -313,9 +313,9 @@ top -p $(pgrep candy)
 tasklist /fi "imagename eq candy.exe"
 ```
 
-## 部署建议
+## Deployment Recommendations
 
-### 1. 使用系统服务
+### 1. Use system service
 
 **Linux (Systemd):**
 
@@ -363,7 +363,7 @@ WantedBy=multi-user.target
 </plist>
 ```
 
-### 2. 使用 Docker
+### 2. Use Docker
 
 ```dockerfile
 FROM rust:latest AS builder
@@ -379,24 +379,24 @@ EXPOSE 80 443
 CMD ["candy", "-c", "/etc/candy/config.toml"]
 ```
 
-## 联系和支持
+## Contact and Support
 
-如果您遇到问题或需要帮助：
+If you encounter issues or need help:
 
-1. 查看 [GitHub Issues](https://github.com/DefectingCat/candy/issues)
-2. 提交新问题
-3. 查看示例配置和文档
-4. 检查 CHANGELOG.md 了解最新更新
+1. Check [GitHub Issues](https://github.com/DefectingCat/candy/issues)
+2. Submit a new issue
+3. Check example configurations and documentation
+4. Check CHANGELOG.md for latest updates
 
-## 贡献
+## Contributing
 
-欢迎为 Candy 项目做出贡献：
+Contributions to the Candy project are welcome:
 
-1. Fork 仓库
-2. 创建功能分支
-3. 提交更改
-4. 发送 Pull Request
+1. Fork the repository
+2. Create a feature branch
+3. Submit changes
+4. Send a Pull Request
 
-## 许可证
+## License
 
-Candy 遵循 MIT 许可证。详情请查看 LICENSE 文件。
+Candy follows the MIT License. See the LICENSE file for details.

@@ -1,18 +1,18 @@
 ---
-sidebar_label: 实际应用示例
+sidebar_label: Practical Application Examples
 sidebar_position: 5
-title: 实际应用示例
+title: Practical Application Examples
 ---
 
-# 实际应用示例
+# Practical Application Examples
 
-本章节提供一系列实际应用示例，展示如何在不同场景中使用 Candy 的 Lua 脚本功能。
+This section provides a series of practical application examples showing how to use Candy's Lua script functionality in different scenarios.
 
-## 1. API 认证中间件
+## 1. API Authentication Middleware
 
 ```lua
 -- scripts/auth_middleware.lua
--- API 认证中间件示例
+-- API authentication middleware example
 
 local api_keys = {
     ["secret-key-1"] = {user_id = 1, role = "admin"},
@@ -20,7 +20,7 @@ local api_keys = {
     ["secret-key-3"] = {user_id = 3, role = "user"}
 }
 
--- 从请求头获取 API 密钥
+-- Get API key from request headers
 local headers = cd.req.get_headers()
 local api_key = headers["x-api-key"] or headers["authorization"]
 
@@ -31,7 +31,7 @@ if not api_key then
     cd.exit(401)
 end
 
--- 验证 API 密钥
+-- Validate API key
 local user_info = api_keys[api_key]
 if not user_info then
     cd.status = 401
@@ -40,26 +40,26 @@ if not user_info then
     cd.exit(401)
 end
 
--- 将用户信息存储在请求中供后续处理使用
+-- Store user information in request for subsequent processing
 candy.shared.set("current_user_" .. cd.req.get_uri(), user_info.user_id)
 
 cd.log(cd.INFO, "User authenticated: ", user_info.user_id, " (role: ", user_info.role, ")")
 ```
 
-## 2. 动态内容生成
+## 2. Dynamic Content Generation
 
 ```lua
 -- scripts/dynamic_content.lua
--- 根据请求参数生成动态内容
+-- Generate dynamic content based on request parameters
 
 local args = cd.req.get_uri_args()
 local template = args["template"] or "default"
 local user_id = args["user_id"] or "guest"
 
--- 记录请求
+-- Log request
 cd.log(cd.INFO, "Generating content for user: ", user_id, " with template: ", template)
 
--- 根据模板选择内容
+-- Select content based on template
 local content
 if template == "profile" then
     content = [[
@@ -101,29 +101,29 @@ cd.header["Content-Type"] = "text/html; charset=utf-8"
 cd.print(content)
 ```
 
-## 3. 请求限流
+## 3. Request Rate Limiting
 
 ```lua
 -- scripts/rate_limit.lua
--- 简单的请求限流实现
+-- Simple request rate limiting implementation
 
 local client_ip = "unknown"
 local headers = cd.req.get_headers()
 client_ip = headers["x-forwarded-for"] or headers["x-real-ip"] or "unknown"
 
--- 限制每分钟请求数
-local window = 60  -- 60秒窗口
-local limit = 10   -- 最大请求数
+-- Limit requests per minute
+local window = 60  -- 60-second window
+local limit = 10   -- Maximum number of requests
 
--- 生成客户端标识
+-- Generate client identifier
 local client_key = "rate_limit:" .. client_ip
 local current_time = cd.time()
 
--- 获取当前窗口内的请求数
+-- Get current request count within the window
 local request_count_str = candy.shared.get(client_key)
 local request_count = tonumber(request_count_str) or 0
 
--- 检查是否超过限制
+-- Check if limit is exceeded
 if request_count >= limit then
     cd.status = 429  -- Too Many Requests
     cd.header["Content-Type"] = "application/json"
@@ -133,42 +133,42 @@ if request_count >= limit then
     cd.exit(429)
 end
 
--- 增加请求数
+-- Increment request count
 request_count = request_count + 1
 candy.shared.set(client_key, tostring(request_count))
 
--- 设置过期时间
--- 注意：在真实环境中，您可能需要定期清理过期的计数器
+-- Set expiration time
+-- Note: In a real environment, you may need to periodically clean up expired counters
 candy.log("Request from ", client_ip, ", count: ", request_count)
 
 cd.log(cd.INFO, "Request allowed for IP: ", client_ip, " (count: ", request_count, ")")
 
--- 继续处理请求
+-- Continue processing request
 cd.status = 200
 cd.header["Content-Type"] = "application/json"
 cd.header["X-Rate-Limit-Remaining"] = tostring(limit - request_count)
 cd.print([[{"message": "Request processed successfully", "request_number": ]] .. request_count .. [[}]])
 ```
 
-## 4. 响应缓存
+## 4. Response Caching
 
 ```lua
 -- scripts/cache_example.lua
--- 简单的响应缓存实现
+-- Simple response caching implementation
 
 local cache_key = "cache:" .. cd.req.get_uri()
 local cached_response = candy.shared.get(cache_key)
 
--- 检查缓存是否存在且未过期
+-- Check if cache exists and hasn't expired
 if cached_response then
     cd.log(cd.INFO, "Cache hit for: ", cd.req.get_uri())
-    
-    -- 解析缓存的响应（简化版，实际应使用更复杂的序列化）
+
+    -- Parse cached response (simplified version, actual should use more complex serialization)
     local parts = {}
     for part in cached_response:gmatch("[^|]+") do
         table.insert(parts, part)
     end
-    
+
     if #parts >= 2 then
         cd.status = tonumber(parts[1]) or 200
         cd.print(parts[2])
@@ -176,11 +176,11 @@ if cached_response then
     end
 end
 
--- 缓存未命中，生成响应
+-- Cache miss, generate response
 cd.log(cd.INFO, "Cache miss for: ", cd.req.get_uri())
 
--- 模拟耗时的数据获取
-cd.sleep(0.1)  -- 模拟数据库查询等耗时操作
+-- Simulate time-consuming data retrieval
+cd.sleep(0.1)  -- Simulate time-consuming operations like database queries
 
 local response_data = {
     timestamp = cd.now(),
@@ -189,7 +189,7 @@ local response_data = {
     data = "Cached response content for " .. cd.req.get_uri()
 }
 
--- 生成响应
+-- Generate response
 local response_json = string.format(
     [[{"timestamp": %.3f, "uri": "%s", "method": "%s", "data": "%s"}]],
     response_data.timestamp,
@@ -198,42 +198,42 @@ local response_json = string.format(
     response_data.data
 )
 
--- 设置响应
+-- Set response
 cd.status = 200
 cd.header["Content-Type"] = "application/json"
 cd.header["X-Cache"] = "MISS"
 cd.print(response_json)
 
--- 缓存响应（有效期 300 秒）
+-- Cache response (expires in 300 seconds)
 local cache_value = tostring(200) .. "|" .. response_json
 candy.shared.set(cache_key, cache_value)
 
 cd.log(cd.INFO, "Response cached for: ", cd.req.get_uri())
 ```
 
-## 5. 请求验证和过滤
+## 5. Request Validation and Filtering
 
 ```lua
 -- scripts/validation_filter.lua
--- 请求验证和过滤中间件
+-- Request validation and filtering middleware
 
 local function validate_email(email)
-    -- 简单的邮箱验证（实际应用中应使用更严格的验证）
+    -- Simple email validation (should use stricter validation in actual applications)
     if not email then return false end
     return string.match(email, "^[%w._%-]+@[%w._%-]+$") ~= nil
 end
 
 local function validate_phone(phone)
-    -- 简单的电话号码验证
+    -- Simple phone number validation
     if not phone then return false end
     return string.match(phone, "^%d+$") ~= nil and string.len(phone) >= 10
 end
 
--- 获取 POST 数据
+-- Get POST data
 local post_args = cd.req.get_post_args()
 local errors = {}
 
--- 验证必填字段
+-- Validate required fields
 if not post_args["name"] or string.len(post_args["name"]) < 2 then
     table.insert(errors, "Name is required and must be at least 2 characters")
 end
@@ -246,11 +246,11 @@ if post_args["phone"] and not validate_phone(post_args["phone"]) then
     table.insert(errors, "Phone number must contain only digits and be at least 10 digits long")
 end
 
--- 检查是否有错误
+-- Check for errors
 if #errors > 0 then
     cd.status = 400
     cd.header["Content-Type"] = "application/json"
-    
+
     local error_json = [[{"errors": ["]]
     for i, error in ipairs(errors) do
         if i > 1 then
@@ -260,20 +260,20 @@ if #errors > 0 then
         end
     end
     error_json = error_json .. [[}]]
-    
+
     cd.print(error_json)
     cd.log(cd.WARN, "Validation failed: ", error_json)
     cd.exit(400)
 end
 
--- 验证通过，继续处理
+-- Validation passed, continue processing
 cd.log(cd.INFO, "Request validation passed for user: ", post_args["name"])
 
--- 清理输入数据（防止 XSS）
+-- Clean input data (prevent XSS)
 local clean_name = string.gsub(post_args["name"], "[<>]", "")
 local clean_email = string.gsub(post_args["email"], "[<>]", "")
 
--- 处理有效请求
+-- Process valid request
 cd.status = 200
 cd.header["Content-Type"] = "application/json"
 cd.print(string.format(
@@ -283,36 +283,36 @@ cd.print(string.format(
 ))
 ```
 
-## 6. 动态路由
+## 6. Dynamic Routing
 
 ```lua
 -- scripts/dynamic_router.lua
--- 动态路由处理
+-- Dynamic routing handling
 
 local path = cd.req.get_uri()
 local method = cd.req.get_method()
 local args = cd.req.get_uri_args()
 
--- 路由表
+-- Route table
 local routes = {
     GET = {
         ["/users"] = function()
             local page = tonumber(args["page"]) or 1
             local limit = tonumber(args["limit"]) or 10
-            
+
             return {
                 status = 200,
                 body = string.format([[{"users": [], "page": %d, "limit": %d, "total": 0}]], page, limit)
             }
         end,
-        
+
         ["/users/:id"] = function(id)
             return {
                 status = 200,
                 body = string.format([[{"id": %s, "name": "User %s", "email": "user%s@example.com"}]], id, id, id)
             }
         end,
-        
+
         ["/health"] = function()
             return {
                 status = 200,
@@ -320,51 +320,51 @@ local routes = {
             }
         end
     },
-    
+
     POST = {
         ["/users"] = function()
             local post_args = cd.req.get_post_args()
-            
+
             if not post_args["name"] or not post_args["email"] then
                 return {
                     status = 400,
                     body = [[{"error": "Name and email are required"}]]
                 }
             end
-            
+
             return {
                 status = 201,
-                body = string.format([[{"id": 123, "name": "%s", "email": "%s", "created_at": %d}]], 
+                body = string.format([[{"id": 123, "name": "%s", "email": "%s", "created_at": %d}]],
                                    post_args["name"], post_args["email"], cd.time())
             }
         end
     }
 }
 
--- 解析路径参数
+-- Parse path parameters
 local function match_route(path, method)
     local route_handlers = routes[method]
     if not route_handlers then
         return nil
     end
-    
-    -- 直接匹配
+
+    -- Direct match
     if route_handlers[path] then
         return route_handlers[path]()
     end
-    
-    -- 模式匹配（简化版）
+
+    -- Pattern matching (simplified version)
     if string.match(path, "^/users/%d+$") then
         local id = string.match(path, "^/users/(%d+)$")
         if routes.GET["/users/:id"] and method == "GET" then
             return routes.GET["/users/:id"](id)
         end
     end
-    
+
     return nil
 end
 
--- 执行路由
+-- Execute routing
 local response = match_route(path, method)
 
 if response then
@@ -378,67 +378,67 @@ else
 end
 ```
 
-## 7. 响应修改中间件
+## 7. Response Modification Middleware
 
 ```lua
 -- scripts/response_modifier.lua
--- 响应修改中间件，添加 CORS 头和其他安全头
+-- Response modification middleware, adding CORS headers and other security headers
 
--- 添加 CORS 头
+-- Add CORS headers
 cd.header["Access-Control-Allow-Origin"] = "*"
 cd.header["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
 cd.header["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-API-Key"
 
--- 添加安全头
+-- Add security headers
 cd.header["X-Content-Type-Options"] = "nosniff"
 cd.header["X-Frame-Options"] = "DENY"
 cd.header["X-XSS-Protection"] = "1; mode=block"
 cd.header["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
--- 添加自定义头
+-- Add custom headers
 cd.header["X-Powered-By"] = "Candy Lua Engine"
 cd.header["Server"] = "Candy/" .. candy.version
 
--- 如果是 OPTIONS 请求，直接返回
+-- If it's an OPTIONS request, return directly
 if cd.req.get_method() == "OPTIONS" then
     cd.status = 204
     cd.exit(204)
 end
 
--- 继续处理请求
+-- Continue processing request
 cd.log(cd.INFO, "Security headers added to response")
 ```
 
-## 8. 错误处理和恢复
+## 8. Error Handling and Recovery
 
 ```lua
 -- scripts/error_handler.lua
--- 全面的错误处理和恢复机制
+-- Comprehensive error handling and recovery mechanism
 
 local success, result = pcall(function()
-    -- 主要业务逻辑
+    -- Main business logic
     local args = cd.req.get_uri_args()
-    
-    -- 模拟可能出错的操作
+
+    -- Simulate potentially error-prone operations
     local operation = args["operation"] or "default"
-    
+
     if operation == "divide" then
         local num1 = tonumber(args["num1"]) or 10
         local num2 = tonumber(args["num2"]) or 2
-        
+
         if num2 == 0 then
             error("Division by zero")
         end
-        
+
         return {
             status = 200,
             body = string.format([[{"result": %f, "operation": "division"}]], num1 / num2)
         }
     elseif operation == "process" then
-        -- 模拟数据处理
+        -- Simulate data processing
         local data = args["data"] or "default data"
         local processed = string.upper(data)
-        
+
         return {
             status = 200,
             body = string.format([[{"original": "%s", "processed": "%s"}]], data, processed)
@@ -452,38 +452,38 @@ local success, result = pcall(function()
 end)
 
 if not success then
-    -- 错误处理
+    -- Error handling
     cd.log(cd.ERR, "Error in processing: ", result)
-    
+
     cd.status = 500
     cd.header["Content-Type"] = "application/json"
     cd.print([[{"error": "Internal server error", "details": "]] .. tostring(result) .. [["}]])
-    
-    -- 在生产环境中，可能不希望暴露详细的错误信息
+
+    -- In production environments, detailed error information may not be exposed
     -- cd.print([[{"error": "Internal server error"}]])
 else
-    -- 成功处理
+    -- Successful processing
     cd.status = result.status
     cd.header["Content-Type"] = "application/json"
     cd.print(result.body)
-    
+
     cd.log(cd.INFO, "Request processed successfully")
 end
 ```
 
-## 9. 数据库集成示例
+## 9. Database Integration Example
 
 ```lua
 -- scripts/database_integration.lua
--- 数据库集成示例（模拟）
+-- Database integration example (simulated)
 
--- 注意：Candy 目前不直接支持数据库连接
--- 这是一个概念示例，展示如何组织代码
+-- Note: Candy currently does not directly support database connections
+-- This is a conceptual example showing how to organize code
 
 local db_operations = {
-    -- 模拟数据库操作
+    -- Simulate database operations
     get_user = function(user_id)
-        -- 模拟从数据库获取用户
+        -- Simulate retrieving user from database
         if tonumber(user_id) and tonumber(user_id) > 0 then
             return {
                 id = tonumber(user_id),
@@ -494,10 +494,10 @@ local db_operations = {
         end
         return nil
     end,
-    
+
     create_user = function(name, email)
-        -- 模拟创建用户
-        local new_id = math.random(1000, 9999)  -- 模拟生成ID
+        -- Simulate creating user
+        local new_id = math.random(1000, 9999)  -- Simulate ID generation
         return {
             id = new_id,
             name = name,
@@ -543,23 +543,23 @@ end
 
 cd.status = status
 cd.header["Content-Type"] = "application/json"
-cd.print(require("cjson").encode(response))  -- 注意：需要相应的 JSON 库
+cd.print(require("cjson").encode(response))  -- Note: Requires corresponding JSON library
 ```
 
-## 10. 完整的 API 服务示例
+## 10. Complete API Service Example
 
 ```lua
 -- scripts/full_api_service.lua
--- 完整的 API 服务示例
+-- Complete API service example
 
--- 初始化应用状态
+-- Initialize application state
 local app = {
     name = "Candy API Service",
     version = candy.version,
     start_time = cd.time()
 }
 
--- 工具函数
+-- Utility functions
 local function json_response(data, status_code)
     status_code = status_code or 200
     cd.status = status_code
@@ -573,19 +573,19 @@ local function error_response(message, status_code)
     json_response({error = message}, status_code)
 end
 
--- API 路由处理
+-- API routing handling
 local function handle_request()
     local method = cd.req.get_method()
     local uri = cd.req.get_uri()
     local args = cd.req.get_uri_args()
-    
-    -- API 版本路由
+
+    -- API version routing
     if string.match(uri, "^/api/v1/") then
-        -- 提取资源路径
+        -- Extract resource path
         local resource = string.match(uri, "^/api/v1/(.+)")
-        
+
         if resource == "status" then
-            -- 状态端点
+            -- Status endpoint
             local uptime = cd.time() - app.start_time
             json_response({
                 status = "running",
@@ -594,27 +594,27 @@ local function handle_request()
                 uptime = uptime,
                 timestamp = cd.time()
             })
-            
+
         elseif resource == "metrics" then
-            -- 指标端点
+            -- Metrics endpoint
             local total_requests = tonumber(candy.shared.get("total_requests")) or 0
             json_response({
                 total_requests = total_requests,
-                active_connections = 1,  -- 简化处理
+                active_connections = 1,  -- Simplified processing
                 server_info = {
                     os = candy.os,
                     arch = candy.arch,
                     compiler = candy.compiler
                 }
             })
-            
+
         elseif string.match(resource, "^users/?") then
-            -- 用户相关端点
+            -- User-related endpoints
             if method == "GET" then
-                -- 获取用户列表
+                -- Get user list
                 local page = tonumber(args["page"]) or 1
                 local limit = tonumber(args["limit"]) or 10
-                
+
                 json_response({
                     users = {},
                     pagination = {
@@ -623,9 +623,9 @@ local function handle_request()
                         total = 0
                     }
                 })
-                
+
             elseif method == "POST" then
-                -- 创建用户
+                -- Create user
                 local post_args = cd.req.get_post_args()
                 if post_args["name"] and post_args["email"] then
                     json_response({
@@ -652,15 +652,15 @@ local function handle_request()
     end
 end
 
--- 增加请求计数
+-- Increment request count
 local current_requests = tonumber(candy.shared.get("total_requests")) or 0
 candy.shared.set("total_requests", tostring(current_requests + 1))
 
--- 记录请求
+-- Log request
 cd.log(cd.INFO, "API request: ", cd.req.get_method(), " ", cd.req.get_uri())
 
--- 处理请求
+-- Handle request
 handle_request()
 ```
 
-这些示例展示了如何使用 Candy 的 Lua 脚本功能实现各种常见的 Web 应用场景，包括认证、限流、缓存、验证、路由等功能。每个示例都包含了适当的错误处理和日志记录，体现了良好的实践。
+These examples demonstrate how to use Candy's Lua script functionality to implement various common web application scenarios, including authentication, rate limiting, caching, validation, routing, and more. Each example includes appropriate error handling and logging, demonstrating good practices.

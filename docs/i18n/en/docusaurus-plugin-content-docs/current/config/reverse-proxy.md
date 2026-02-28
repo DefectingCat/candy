@@ -1,16 +1,16 @@
 ---
-sidebar_label: 反向代理
+sidebar_label: Reverse Proxy
 sidebar_position: 4
-title: 反向代理
+title: Reverse Proxy
 ---
 
-## 反向代理概述
+## Reverse Proxy Overview
 
-Candy 支持将请求转发到后端服务器，提供反向代理功能。反向代理可以隐藏真实服务器地址、提供负载均衡、实现安全过滤和提高访问速度。
+Candy supports forwarding requests to backend servers, providing reverse proxy functionality. Reverse proxy can hide real server addresses, provide load balancing, implement security filtering, and improve access speed.
 
-## 基本配置
+## Basic Configuration
 
-### 1. 简单反向代理
+### 1. Simple Reverse Proxy
 
 ```toml
 [[host]]
@@ -20,12 +20,12 @@ server_name = "api.example.com"
 
 [[host.route]]
 location = "/api"
-proxy_pass = "http://localhost:3000"  # 后端服务器地址
-proxy_timeout = 10  # 连接超时（秒，默认：5）
-max_body_size = 1048576  # 最大请求体大小（字节，默认：无限制）
+proxy_pass = "http://localhost:3000"  # Backend server address
+proxy_timeout = 10  # Connection timeout (seconds, default: 5)
+max_body_size = 1048576  # Maximum request body size (bytes, default: unlimited)
 ```
 
-### 2. 带路径重写的反向代理
+### 2. Reverse Proxy with Path Rewrite
 
 ```toml
 [[host]]
@@ -34,11 +34,11 @@ port = 80
 
 [[host.route]]
 location = "/api"
-proxy_pass = "http://localhost:3000/v1"  # 将 /api 转发到 /v1
+proxy_pass = "http://localhost:3000/v1"  # Forward /api to /v1
 proxy_timeout = 10
 ```
 
-### 3. HTTPS 反向代理
+### 3. HTTPS Reverse Proxy
 
 ```toml
 [[host]]
@@ -50,57 +50,57 @@ certificate_key = "./ssl/server.key"
 
 [[host.route]]
 location = "/"
-proxy_pass = "https://api.example.com"  # 转发到 HTTPS 后端
+proxy_pass = "https://api.example.com"  # Forward to HTTPS backend
 proxy_timeout = 15
 ```
 
-## 高级配置
+## Advanced Configuration
 
-### 1. 超时和连接配置
+### 1. Timeout and Connection Configuration
 
 ```toml
 [[host.route]]
 location = "/api"
 proxy_pass = "http://localhost:3000"
-proxy_timeout = 30  # 连接超时（秒）
-max_body_size = 10485760  # 10MB 最大请求体
+proxy_timeout = 30  # Connection timeout (seconds)
+max_body_size = 10485760  # 10MB maximum request body
 ```
 
-### 2. 自定义请求和响应头
+### 2. Custom Request and Response Headers
 
 ```toml
 [[host.route]]
 location = "/api"
 proxy_pass = "http://localhost:3000"
 
-# 自定义响应头
+# Custom response headers
 [host.route.headers]
 X-Proxy-By = "Candy"
 X-API-Version = "1.0"
 Cache-Control = "public, max-age=3600"
 ```
 
-### 3. 错误处理
+### 3. Error Handling
 
 ```toml
 [[host.route]]
 location = "/api"
 proxy_pass = "http://localhost:3000"
 
-# 自定义 500 错误页面
+# Custom 500 error page
 [host.route.error_page]
 status = 500
 page = "/500.html"
 
-# 自定义 404 页面
+# Custom 404 page
 [host.route.not_found_page]
 status = 404
 page = "/404.html"
 ```
 
-## 正向代理
+## Forward Proxy
 
-Candy 也支持作为正向代理使用，但这通常用于特殊场景：
+Candy also supports forward proxy usage, though this is typically for special scenarios:
 
 ```toml
 [[host]]
@@ -110,18 +110,18 @@ server_name = "proxy.example.com"
 
 [[host.route]]
 location = "/"
-forward_proxy = true  # 启用正向代理
+forward_proxy = true  # Enable forward proxy
 proxy_timeout = 30
-max_body_size = 10485760  # 10MB 限制
+max_body_size = 10485760  # 10MB limit
 ```
 
-## 反向代理与负载均衡结合
+## Combining Reverse Proxy with Load Balancing
 
 ```toml
 log_level = "info"
 log_folder = "./logs"
 
-# 定义上游服务器组
+# Define upstream server group
 [[upstream]]
 name = "backend"
 method = "weightedroundrobin"
@@ -138,14 +138,14 @@ server_name = "api.example.com"
 
 [[host.route]]
 location = "/api"
-upstream = "backend"  # 引用上游服务器组
+upstream = "backend"  # Reference upstream server group
 proxy_timeout = 10
 max_body_size = 1048576
 ```
 
-## 常见使用场景
+## Common Usage Scenarios
 
-### 1. API 网关
+### 1. API Gateway
 
 ```toml
 [[host]]
@@ -153,35 +153,35 @@ ip = "0.0.0.0"
 port = 80
 server_name = "api.example.com"
 
-# 用户服务
+# User service
 [[host.route]]
 location = "/api/users"
 proxy_pass = "http://localhost:3001"
 proxy_timeout = 10
 max_body_size = 1048576
 
-# 订单服务
+# Order service
 [[host.route]]
 location = "/api/orders"
 proxy_pass = "http://localhost:3002"
 proxy_timeout = 15
 max_body_size = 5242880
 
-# 支付服务
+# Payment service
 [[host.route]]
 location = "/api/payments"
 upstream = "payment_servers"
 proxy_timeout = 30
 max_body_size = 2097152
 
-# 静态资源
+# Static resources
 [[host.route]]
 location = "/static"
 root = "./static"
 index = ["index.html"]
 ```
 
-### 2. 应用服务器代理
+### 2. Application Server Proxy
 
 ```toml
 [[host]]
@@ -189,13 +189,13 @@ ip = "0.0.0.0"
 port = 80
 server_name = "app.example.com"
 
-# 前端应用
+# Frontend application
 [[host.route]]
 location = "/"
 root = "./frontend/build"
 index = ["index.html"]
 
-# API 代理
+# API proxy
 [[host.route]]
 location = "/api"
 proxy_pass = "http://localhost:3000"
@@ -203,13 +203,13 @@ proxy_timeout = 10
 max_body_size = 1048576
 ```
 
-### 3. 多环境部署
+### 3. Multi-environment Deployment
 
 ```toml
 log_level = "info"
 log_folder = "./logs"
 
-# 开发环境
+# Development environment
 [[host]]
 ip = "0.0.0.0"
 port = 8080
@@ -219,7 +219,7 @@ server_name = "dev.example.com"
 location = "/"
 proxy_pass = "http://localhost:3000"
 
-# 测试环境
+# Testing environment
 [[host]]
 ip = "0.0.0.0"
 port = 8081
@@ -229,7 +229,7 @@ server_name = "test.example.com"
 location = "/"
 proxy_pass = "http://localhost:3001"
 
-# 生产环境
+# Production environment
 [[host]]
 ip = "0.0.0.0"
 port = 80
@@ -242,29 +242,29 @@ proxy_timeout = 30
 max_body_size = 10485760
 ```
 
-## 性能优化
+## Performance Optimization
 
-### 1. 超时设置
-
-```toml
-[[host.route]]
-location = "/api"
-proxy_pass = "http://localhost:3000"
-proxy_timeout = 10  # 设置合理的超时时间
-```
-
-### 2. 请求体大小限制
+### 1. Timeout Settings
 
 ```toml
 [[host.route]]
 location = "/api"
 proxy_pass = "http://localhost:3000"
-max_body_size = 10485760  # 10MB 限制
+proxy_timeout = 10  # Set reasonable timeout
 ```
 
-### 3. 启用 HTTP/2
+### 2. Request Body Size Limit
 
-Candy 默认支持 HTTP/2，无需额外配置：
+```toml
+[[host.route]]
+location = "/api"
+proxy_pass = "http://localhost:3000"
+max_body_size = 10485760  # 10MB limit
+```
+
+### 3. Enable HTTP/2
+
+Candy supports HTTP/2 by default, no additional configuration required:
 
 ```toml
 [[host]]
@@ -273,14 +273,14 @@ port = 443
 ssl = true
 certificate = "./ssl/server.crt"
 certificate_key = "./ssl/server.key"
-# 自动支持 HTTP/2
+# Automatically supports HTTP/2
 ```
 
-## 安全考虑
+## Security Considerations
 
-### 1. 限制允许的请求方法
+### 1. Limit Allowed Request Methods
 
-虽然 Candy 不直接支持，但可以通过 Lua 脚本实现：
+Although Candy doesn't support this directly, it can be achieved through Lua scripts:
 
 ```toml
 [[host.route]]
@@ -300,11 +300,11 @@ if not allowed_methods[method] then
     return
 end
 
--- 继续其他处理逻辑
+-- Continue with other processing logic
 candy.log("Valid method: " .. method)
 ```
 
-### 2. 访问控制
+### 2. Access Control
 
 ```toml
 [[host.route]]
@@ -323,36 +323,36 @@ if not auth_header or auth_header ~= "Bearer secret_token" then
     return
 end
 
--- 验证成功，继续代理请求
+-- Authentication successful, continue proxy request
 ctx:set_body("Welcome to admin panel")
 ```
 
-## 故障排除
+## Troubleshooting
 
-### 1. 连接超时
+### 1. Connection Timeout
 
 ```toml
-# 增加超时时间
+# Increase timeout time
 [[host.route]]
 location = "/api"
 proxy_pass = "http://localhost:3000"
-proxy_timeout = 60  # 增加到 60 秒
+proxy_timeout = 60  # Increase to 60 seconds
 ```
 
-### 2. 请求体过大
+### 2. Request Body Too Large
 
 ```toml
-# 增加请求体大小限制
+# Increase request body size limit
 [[host.route]]
 location = "/upload"
 proxy_pass = "http://localhost:3000"
 max_body_size = 52428800  # 50MB
 ```
 
-### 3. 健康检查
+### 3. Health Check
 
 ```toml
-# 使用多个后端服务器和负载均衡
+# Use multiple backend servers and load balancing
 [[upstream]]
 name = "backend"
 method = "weightedroundrobin"
@@ -363,11 +363,11 @@ server = [
 ]
 ```
 
-## 最佳实践
+## Best Practices
 
-1. **负载均衡**：使用上游服务器组提供高可用性
-2. **监控**：定期监控后端服务器响应时间
-3. **错误处理**：配置自定义错误页面提升用户体验
-4. **安全**：使用 HTTPS 和适当的访问控制
-5. **性能**：设置合理的超时和请求大小限制
-6. **日志**：启用详细日志记录以进行故障排除
+1. **Load Balancing**: Use upstream server groups for high availability
+2. **Monitoring**: Regularly monitor backend server response times
+3. **Error Handling**: Configure custom error pages to enhance user experience
+4. **Security**: Use HTTPS and appropriate access controls
+5. **Performance**: Set reasonable timeouts and request size limits
+6. **Logging**: Enable detailed logging for troubleshooting

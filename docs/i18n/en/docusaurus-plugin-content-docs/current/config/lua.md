@@ -1,56 +1,56 @@
 ---
-sidebar_label: Lua 脚本
+sidebar_label: Lua Scripts
 sidebar_position: 4
-title: Lua 脚本
+title: Lua Scripts
 ---
 
-# Lua 脚本
+# Lua Scripts
 
-Candy 支持使用 Lua 脚本作为路由处理方式，允许您编写自定义的 HTTP 请求处理逻辑。Candy 的 Lua 实现完全兼容 OpenResty 的 API，使您可以轻松地从 Nginx + Lua 环境迁移现有脚本。
+Candy supports using Lua scripts as a route handling method, allowing you to write custom HTTP request processing logic. Candy's Lua implementation is fully compatible with OpenResty's API, enabling you to easily migrate existing scripts from Nginx + Lua environments.
 
-## 概述
+## Overview
 
-Candy 的 Lua 脚本功能提供：
+Candy's Lua script functionality provides:
 
-- **OpenResty API 兼容**：支持大部分 OpenResty 的 API
-- **高性能**：使用 mlua 库实现，提供高效的 Lua 执行环境
-- **安全性**：沙箱执行环境，防止恶意脚本影响服务器
-- **可扩展性**：丰富的 API 接口，满足各种复杂需求
+- **OpenResty API Compatibility**: Supports most OpenResty APIs
+- **High Performance**: Implemented using the mlua library, providing an efficient Lua execution environment
+- **Security**: Sandboxed execution environment to prevent malicious scripts from affecting the server
+- **Extensibility**: Rich API interfaces to meet various complex requirements
 
-## 配置方法
+## Configuration Method
 
-在 `config.toml` 中添加路由配置：
+Add route configuration in `config.toml`:
 
 ```toml
 [[host.route]]
 location = "/api"
 lua_script = "scripts/api_handler.lua"
-lua_code_cache = true  # 启用代码缓存以提高性能
+lua_code_cache = true  # Enable code caching to improve performance
 ```
 
-## 文档结构
+## Document Structure
 
-本 Lua 脚本文档分为以下几个部分：
+This Lua script documentation is divided into the following sections:
 
-1. [Lua 脚本入门](./config/lua/intro.md) - Lua 脚本的基本概念和快速开始
-2. [请求 API](./config/lua/request-api.md) - 详细的请求处理 API 文档
-3. [响应 API](./config/lua/response-api.md) - 详细的响应处理 API 文档
-4. [日志和工具函数](./config/lua/logging-utils.md) - 日志记录和实用工具函数
-5. [实际应用示例](./config/lua/examples.md) - 各种实际应用场景的示例代码
-6. [性能优化与最佳实践](./config/lua/performance-best-practices.md) - 性能优化和最佳实践指南
+1. [Getting Started with Lua Scripts](./config/lua/intro.md) - Basic concepts and quick start for Lua scripts
+2. [Request API](./config/lua/request-api.md) - Detailed request processing API documentation
+3. [Response API](./config/lua/response-api.md) - Detailed response processing API documentation
+4. [Logging and Utility Functions](./config/lua/logging-utils.md) - Logging and utility functions
+5. [Practical Application Examples](./config/lua/examples.md) - Example code for various practical application scenarios
+6. [Performance Optimization and Best Practices](./config/lua/performance-best-practices.md) - Performance optimization and best practices guide
 
-## 主要特性
+## Main Features
 
-- **OpenResty API 兼容**：支持 `cd.req`、`cd.resp`、`cd.header` 等对象
-- **代码缓存**：支持 Lua 代码缓存以提高性能
-- **共享数据**：通过 `candy.shared` 实现跨请求数据共享
-- **日志系统**：集成的多级别日志记录功能
-- **请求/响应操作**：完整的请求和响应处理能力
+- **OpenResty API Compatible**: Supports objects like `cd.req`, `cd.resp`, `cd.header`
+- **Code Caching**: Supports Lua code caching to improve performance
+- **Shared Data**: Cross-request data sharing through `candy.shared`
+- **Logging System**: Integrated multi-level logging functionality
+- **Request/Response Operations**: Complete request and response processing capabilities
 
-## 限制
+## Limitations
 
-- 不支持异步操作
-- 脚本执行有时间限制
-- 内存使用有限制
-- 不能直接访问底层系统资源
-- 不支持 Lua C 扩展
+- Does not support asynchronous operations
+- Script execution has time limits
+- Memory usage is limited
+- Cannot directly access underlying system resources
+- Does not support Lua C extensions
