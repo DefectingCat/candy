@@ -3,7 +3,7 @@ use std::{net::SocketAddr, sync::LazyLock, time::Duration};
 use std::sync::Arc;
 
 use anyhow::anyhow;
-use axum::{Router, extract::DefaultBodyLimit, middleware, routing::get};
+use axum::{Router, extract::DefaultBodyLimit, middleware, routing::{get, any}};
 use axum_server::{Handle, tls_rustls::RustlsConfig};
 use dashmap::DashMap;
 use http::StatusCode;
@@ -313,17 +313,17 @@ pub async fn make_server(
         #[cfg(feature = "lua")]
         if host_route.lua_script.is_some() {
             let handler = if any_route_has_custom_compression {
-                get(lua::lua).layer(build_compression_layer(host_route, &compression))
+                any(lua::lua).layer(build_compression_layer(host_route, &compression))
             } else {
-                get(lua::lua)
+                any(lua::lua)
             };
 
             router = router.route(&host_route.location, handler);
             let wildcard_path = format!("{}{{*path}}", host_route.location);
             let wildcard_handler = if any_route_has_custom_compression {
-                get(lua::lua).layer(build_compression_layer(host_route, &compression))
+                any(lua::lua).layer(build_compression_layer(host_route, &compression))
             } else {
-                get(lua::lua)
+                any(lua::lua)
             };
             router = router.route(&wildcard_path, wildcard_handler);
 

@@ -103,7 +103,13 @@ pub async fn lua(
     let req_body = Arc::new(Mutex::new(Some(body_bytes.to_vec())));
 
     let host_config = {
-        let port_config = HOSTS.get(&port).ok_or(RouteError::BadRequest())?;
+        // 当使用 port: 0 时，会随机分配一个可用端口，但 HOSTS 中存储的键是 0
+        let mut port_to_use = port;
+        if !HOSTS.contains_key(&port_to_use) {
+            port_to_use = 0;
+        }
+
+        let port_config = HOSTS.get(&port_to_use).ok_or(RouteError::BadRequest())?;
 
         // 查找匹配的域名配置
         let host_config = if let Some(entry) = port_config.get(&Some(domain.clone())) {
@@ -126,11 +132,21 @@ pub async fn lua(
     };
 
     let route_map = &host_config.route_map;
-    tracing::debug!("Lua: Route map entries: {:?}", route_map);
 
     let parent_path = resolve_parent_path(&req_uri, path.as_ref());
+
+    // 尝试查找路由配置：先尝试带斜杠的路径，再尝试不带斜杠的
     let route_config = route_map
         .get(&parent_path)
+        .or_else(|| {
+            // 尝试去掉末尾斜杠
+            let trimmed = parent_path.trim_end_matches('/');
+            if trimmed != parent_path {
+                route_map.get(trimmed)
+            } else {
+                None
+            }
+        })
         .ok_or(RouteError::RouteNotFound())?;
     let lua_script = route_config
         .lua_script
