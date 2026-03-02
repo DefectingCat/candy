@@ -830,6 +830,16 @@ impl UserData for CandyReq {
             lua.create_string(&digest.0).map(mlua::Value::String)
         });
 
+        // sha1_bin(str): 计算字符串的 SHA-1 摘要
+        // 返回原始二进制形式 (20 字节)
+        methods.add_method_mut("sha1_bin", |lua, _this, str: mlua::BorrowedStr| {
+            use sha1::{Digest, Sha1};
+            let mut hasher = Sha1::new();
+            hasher.update(str.as_bytes());
+            let result = hasher.finalize();
+            lua.create_string(&result).map(mlua::Value::String)
+        });
+
         // log(log_level, ...): 记录日志消息
         // 将参数连接并记录到错误日志中，带有指定的日志级别
         methods.add_method_mut("log", |_, _this, args: mlua::MultiValue| {
@@ -1350,6 +1360,93 @@ impl UserData for RequestContext {
                         Ok(())
                     })?;
                     Ok(mlua::Value::Function(update_time_func))
+                }
+                "localtime" => {
+                    // localtime(): 返回本地时间字符串 (格式: yyyy-mm-dd hh:mm:ss)
+                    let localtime_func = lua.create_function(|lua, ()| {
+                        let now = chrono::Local::now();
+                        let formatted = now.format("%Y-%m-%d %H:%M:%S").to_string();
+                        lua.create_string(&formatted).map(mlua::Value::String)
+                    })?;
+                    Ok(mlua::Value::Function(localtime_func))
+                }
+                "utctime" => {
+                    // utctime(): 返回 UTC 时间字符串 (格式: yyyy-mm-dd hh:mm:ss)
+                    let utctime_func = lua.create_function(|lua, ()| {
+                        let now = chrono::Utc::now();
+                        let formatted = now.format("%Y-%m-%d %H:%M:%S").to_string();
+                        lua.create_string(&formatted).map(mlua::Value::String)
+                    })?;
+                    Ok(mlua::Value::Function(utctime_func))
+                }
+                "cookie_time" => {
+                    // cookie_time(sec): 格式化时间戳为 cookie 过期时间格式
+                    // 格式: "Thu, 18-Nov-10 11:27:35 GMT"
+                    let cookie_time_func =
+                        lua.create_function(|lua, sec: i64| {
+                            use chrono::{TimeZone, Utc};
+                            match Utc.timestamp_opt(sec, 0) {
+                                chrono::LocalResult::Single(dt) => {
+                                    // Cookie 格式: "Thu, 18-Nov-10 11:27:35 GMT"
+                                    let formatted = dt.format("%a, %d-%b-%y %H:%M:%S GMT").to_string();
+                                    lua.create_string(&formatted).map(mlua::Value::String)
+                                }
+                                _ => Ok(mlua::Value::Nil),
+                            }
+                        })?;
+                    Ok(mlua::Value::Function(cookie_time_func))
+                }
+                "http_time" => {
+                    // http_time(sec): 格式化时间戳为 HTTP 头时间格式
+                    // 格式: "Thu, 18 Nov 2010 11:27:35 GMT"
+                    let http_time_func =
+                        lua.create_function(|lua, sec: i64| {
+                            use chrono::{TimeZone, Utc};
+                            match Utc.timestamp_opt(sec, 0) {
+                                chrono::LocalResult::Single(dt) => {
+                                    // HTTP 格式: "Thu, 18 Nov 2010 11:27:35 GMT"
+                                    let formatted = dt.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
+                                    lua.create_string(&formatted).map(mlua::Value::String)
+                                }
+                                _ => Ok(mlua::Value::Nil),
+                            }
+                        })?;
+                    Ok(mlua::Value::Function(http_time_func))
+                }
+                "parse_http_time" => {
+                    // parse_http_time(str): 解析 HTTP 时间字符串为时间戳
+                    // 支持多种格式: RFC1123, RFC850, asctime
+                    let parse_http_time_func =
+                        lua.create_function(|lua, time_str: mlua::String| {
+                            let s = time_str.to_str()?;
+                            let s: &str = &s;
+
+                            // 尝试多种 HTTP 日期格式
+                            // RFC1123: "Thu, 18 Nov 2010 11:27:35 GMT"
+                            if let Ok(dt) = chrono::DateTime::parse_from_rfc2822(s) {
+                                return lua.pack(dt.timestamp());
+                            }
+
+                            // RFC850: "Thursday, 18-Nov-10 11:27:35 GMT"
+                            // 格式: "%A, %d-%b-%y %H:%M:%S GMT"
+                            if let Ok(dt) = chrono::DateTime::parse_from_str(
+                                s,
+                                "%A, %d-%b-%y %H:%M:%S GMT",
+                            ) {
+                                return lua.pack(dt.timestamp());
+                            }
+
+                            // 尝试 asctime 格式: "Thu Nov 18 11:27:35 2010"
+                            if let Ok(dt) =
+                                chrono::DateTime::parse_from_str(s, "%a %b %d %H:%M:%S %Y")
+                            {
+                                return lua.pack(dt.timestamp());
+                            }
+
+                            // 所有格式都解析失败
+                            Ok(mlua::Value::Nil)
+                        })?;
+                    Ok(mlua::Value::Function(parse_http_time_func))
                 }
                 // HTTP 方法常量
                 "HTTP_GET" => lua.pack(HTTP_GET),
@@ -2197,6 +2294,92 @@ mod tests {
             let digest = md5::compute(b"hello");
             let hex = format!("{:x}", digest);
             assert!(hex.chars().all(|c| !c.is_uppercase()));
+        }
+    }
+
+    // SHA1 tests
+    mod sha1_tests {
+        use sha1::{Digest, Sha1};
+
+        fn compute_sha1(data: &[u8]) -> [u8; 20] {
+            let mut hasher = Sha1::new();
+            hasher.update(data);
+            hasher.finalize().into()
+        }
+
+        fn to_hex(bytes: &[u8]) -> String {
+            bytes.iter().map(|b| format!("{:02x}", b)).collect()
+        }
+
+        #[test]
+        fn test_sha1_bin_hello() {
+            // SHA1("hello") = aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d
+            let digest = compute_sha1(b"hello");
+            let hex = to_hex(&digest);
+            assert_eq!(hex, "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d");
+        }
+
+        #[test]
+        fn test_sha1_bin_empty() {
+            // SHA1("") = da39a3ee5e6b4b0d3255bfef95601890afd80709
+            let digest = compute_sha1(b"");
+            let hex = to_hex(&digest);
+            assert_eq!(hex, "da39a3ee5e6b4b0d3255bfef95601890afd80709");
+        }
+
+        #[test]
+        fn test_sha1_bin_output_length() {
+            let digest = compute_sha1(b"test data");
+            assert_eq!(digest.len(), 20); // SHA1 always produces 20 bytes
+        }
+
+        #[test]
+        fn test_sha1_bin_known_values() {
+            // Test against known SHA1 values
+            assert_eq!(
+                to_hex(&compute_sha1(b"")),
+                "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+            );
+            assert_eq!(
+                to_hex(&compute_sha1(b"a")),
+                "86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"
+            );
+            assert_eq!(
+                to_hex(&compute_sha1(b"abc")),
+                "a9993e364706816aba3e25717850c26c9cd0d89d"
+            );
+            assert_eq!(
+                to_hex(&compute_sha1(b"message digest")),
+                "c12252ceda8be8994d5fa0290a47231c1d16aae3"
+            );
+        }
+
+        #[test]
+        fn test_sha1_bin_consistency() {
+            let data = b"consistent data";
+            let digest1 = compute_sha1(data);
+            let digest2 = compute_sha1(data);
+            assert_eq!(digest1, digest2);
+        }
+
+        #[test]
+        fn test_sha1_bin_different_inputs() {
+            let digest1 = compute_sha1(b"input1");
+            let digest2 = compute_sha1(b"input2");
+            assert_ne!(digest1, digest2);
+        }
+
+        #[test]
+        fn test_sha1_bin_unicode() {
+            let digest = compute_sha1("中文测试".as_bytes());
+            assert_eq!(digest.len(), 20);
+        }
+
+        #[test]
+        fn test_sha1_bin_long_string() {
+            let long_str = "a".repeat(1000);
+            let digest = compute_sha1(long_str.as_bytes());
+            assert_eq!(digest.len(), 20);
         }
     }
 
