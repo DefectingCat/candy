@@ -280,6 +280,40 @@ pub struct SettingHost {
     pub timeout: u16,
 }
 
+/// Lua 共享字典配置
+/// 定义共享内存区域的名称和大小
+#[derive(Deserialize, Clone, Debug)]
+pub struct LuaSharedDict {
+    /// 共享字典名称
+    pub name: String,
+    /// 共享内存大小（支持单位: k, m, g），例如 "10m" 表示 10MB
+    pub size: String,
+}
+
+impl LuaSharedDict {
+    /// 解析大小字符串为字节数
+    /// 支持格式: "10k", "10m", "1g" 或纯数字（字节）
+    pub fn parse_size(&self) -> Result<usize> {
+        let size_str = self.size.to_lowercase();
+        let (num, multiplier) = if size_str.ends_with('k') {
+            (&size_str[..size_str.len() - 1], 1024usize)
+        } else if size_str.ends_with('m') {
+            (&size_str[..size_str.len() - 1], 1024 * 1024)
+        } else if size_str.ends_with('g') {
+            (&size_str[..size_str.len() - 1], 1024 * 1024 * 1024)
+        } else {
+            (size_str.as_str(), 1)
+        };
+
+        let num: usize = num
+            .trim()
+            .parse()
+            .with_context(|| format!("Invalid size format: {}", self.size))?;
+
+        Ok(num * multiplier)
+    }
+}
+
 /// 完整的服务器配置
 #[derive(Deserialize, Clone, Debug, Default)]
 pub struct Settings {
@@ -296,6 +330,11 @@ pub struct Settings {
 
     /// 上游服务器组配置
     pub upstream: Option<Vec<Upstream>>,
+
+    /// Lua 共享字典配置
+    /// 类似 nginx 的 lua_shared_dict 指令
+    #[cfg(feature = "lua")]
+    pub lua_shared_dict: Option<Vec<LuaSharedDict>>,
 
     /// 虚拟主机列表
     pub host: Vec<SettingHost>,
@@ -367,6 +406,26 @@ impl Settings {
                         )
                         .into());
                     }
+                }
+            }
+        }
+
+        // 验证 Lua 共享字典配置
+        #[cfg(feature = "lua")]
+        if let Some(dicts) = &self.lua_shared_dict {
+            for (i, dict) in dicts.iter().enumerate() {
+                if dict.name.is_empty() {
+                    return Err(anyhow::anyhow!("Lua shared dict {} has empty name", i).into());
+                }
+
+                // 验证大小格式
+                if dict.parse_size().is_err() {
+                    return Err(anyhow::anyhow!(
+                        "Lua shared dict {} has invalid size format: {}",
+                        i,
+                        dict.size
+                    )
+                    .into());
                 }
             }
         }

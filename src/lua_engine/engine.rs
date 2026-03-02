@@ -1,3 +1,7 @@
+//! Lua 引擎核心实现
+//!
+//! 提供 Lua 虚拟机初始化、代码缓存和共享字典管理
+
 use std::sync::{Arc, LazyLock};
 
 use dashmap::DashMap;
@@ -5,6 +9,9 @@ use mlua::{Function, Lua};
 use tracing::{debug, info};
 
 use crate::consts::{ARCH, COMMIT, COMPILER, NAME, OS, VERSION};
+use crate::config::Settings;
+
+use super::shared_dict::SharedDict;
 
 // ============================================================================
 // HTTP 方法常量
@@ -93,7 +100,7 @@ pub struct LuaCodeCacheEntry {
     pub checksum: u64,
 }
 
-/// Lua 引擎实例，包含 Lua 虚拟机和代码缓存
+/// Lua 引擎实例，包含 Lua 虚拟机、代码缓存和共享字典
 pub struct LuaEngine {
     /// Lua 虚拟机实例
     pub lua: Lua,
@@ -101,6 +108,10 @@ pub struct LuaEngine {
     /// 键：脚本文件路径
     /// 值：(编译后的函数, 脚本内容的校验和)
     pub code_cache: Arc<DashMap<String, LuaCodeCacheEntry>>,
+    /// 共享字典存储
+    /// 键：字典名称
+    /// 值：SharedDict 实例
+    pub shared_dicts: Arc<DashMap<String, SharedDict>>,
 }
 
 impl Default for LuaEngine {
@@ -118,6 +129,7 @@ impl LuaEngine {
     pub fn new() -> Self {
         let lua = Lua::new();
         let code_cache = Arc::new(DashMap::new());
+        let shared_dicts = Arc::new(DashMap::new());
 
         // 创建主模块
         let module = lua.create_table().expect("Failed to create Lua module");
@@ -131,12 +143,118 @@ impl LuaEngine {
         // 注册 HTTP 常量
         Self::register_http_constants(&module);
 
+        // 注册 ngx.shared 模块
+        Self::register_shared_dicts(&lua, &shared_dicts);
+
         // 将 `candy` 模块设置为全局变量
         lua.globals()
             .set("candy", module)
             .expect("设置全局变量 candy 失败");
 
-        Self { lua, code_cache }
+        Self { lua, code_cache, shared_dicts }
+    }
+
+    /// 从配置创建 Lua 引擎实例
+    ///
+    /// # 参数
+    /// - `settings` - 服务器配置
+    pub fn from_settings(settings: &Settings) -> Self {
+        let lua = Lua::new();
+        let code_cache = Arc::new(DashMap::new());
+        let shared_dicts = Arc::new(DashMap::new());
+
+        // 初始化共享字典
+        if let Some(dicts) = &settings.lua_shared_dict {
+            for dict_config in dicts {
+                if let Ok(capacity) = dict_config.parse_size() {
+                    let dict = SharedDict::new(dict_config.name.clone(), capacity);
+                    shared_dicts.insert(dict_config.name.clone(), dict);
+                    info!(
+                        "Created shared dict '{}' with capacity {} bytes",
+                        dict_config.name, capacity
+                    );
+                }
+            }
+        }
+
+        // 创建主模块
+        let module = lua.create_table().expect("Failed to create Lua module");
+
+        // 注册日志函数
+        Self::register_log_function(&lua, &module);
+
+        // 注册版本信息常量
+        Self::register_version_info(&module);
+
+        // 注册 HTTP 常量
+        Self::register_http_constants(&module);
+
+        // 注册 ngx.shared 模块
+        Self::register_shared_dicts(&lua, &shared_dicts);
+
+        // 将 `candy` 模块设置为全局变量
+        lua.globals()
+            .set("candy", module)
+            .expect("设置全局变量 candy 失败");
+
+        Self { lua, code_cache, shared_dicts }
+    }
+
+    /// 初始化共享字典（动态添加）
+    ///
+    /// # 参数
+    /// - `name` - 字典名称
+    /// - `capacity` - 容量（字节）
+    pub fn init_shared_dict(&self, name: &str, capacity: usize) {
+        if !self.shared_dicts.contains_key(name) {
+            let dict = SharedDict::new(name.to_string(), capacity);
+            self.shared_dicts.insert(name.to_string(), dict);
+
+            // 注册到 Lua
+            let ngx_shared: mlua::Table = self
+                .lua
+                .globals()
+                .get::<mlua::Table>("ngx")
+                .and_then(|ngx: mlua::Table| ngx.get::<mlua::Table>("shared"))
+                .unwrap_or_else(|_| self.lua.create_table().unwrap());
+
+            if let Some(dict) = self.shared_dicts.get(name) {
+                let _ = ngx_shared.set(name, dict.clone());
+            }
+
+            let ngx: mlua::Table = self.lua.globals().get("ngx").unwrap_or_else(|_| self.lua.create_table().unwrap());
+            let _ = ngx.set("shared", ngx_shared);
+            let _ = self.lua.globals().set("ngx", ngx);
+
+            info!("Initialized shared dict '{}' with capacity {} bytes", name, capacity);
+        }
+    }
+
+    /// 注册共享字典到 Lua 全局变量
+    fn register_shared_dicts(lua: &Lua, shared_dicts: &Arc<DashMap<String, SharedDict>>) {
+        // 创建 ngx 表
+        let ngx = lua.create_table().expect("Failed to create ngx table");
+
+        // 创建 ngx.shared 表
+        let shared = lua.create_table().expect("Failed to create ngx.shared table");
+
+        // 注册所有共享字典
+        for entry in shared_dicts.iter() {
+            let name = entry.key();
+            let dict = entry.value();
+            shared
+                .set(name.clone(), dict.clone())
+                .expect("Failed to set shared dict");
+        }
+
+        // 设置 ngx.shared
+        ngx.set("shared", shared)
+            .expect("Failed to set ngx.shared");
+
+        // 设置全局变量 ngx
+        lua.globals()
+            .set("ngx", ngx)
+            .expect("Failed to set ngx global");
     }
 
     /// 清除所有 Lua 代码缓存
@@ -420,6 +538,7 @@ mod tests {
         // 测试 Lua 引擎是否能够正常创建
         let engine = LuaEngine::new();
         assert!(engine.lua.globals().contains_key("candy").unwrap());
+        assert!(engine.lua.globals().contains_key("ngx").unwrap());
     }
 
     #[test]
@@ -539,5 +658,132 @@ mod tests {
 
         // 打印统计信息
         engine.print_cache_stats();
+    }
+
+    #[test]
+    fn test_shared_dict_init() {
+        let engine = LuaEngine::new();
+
+        // 动态初始化共享字典
+        engine.init_shared_dict("dogs", 10 * 1024 * 1024);
+
+        // 验证字典已创建
+        assert!(engine.shared_dicts.contains_key("dogs"));
+
+        // 在 Lua 中访问
+        let result: bool = engine
+            .lua
+            .load(r#"
+                local dogs = ngx.shared.dogs
+                return dogs ~= nil
+            "#)
+            .eval()
+            .unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn test_shared_dict_get_set() {
+        let engine = LuaEngine::new();
+        engine.init_shared_dict("test", 1024 * 1024);
+
+        // 在 Lua 中 set 和 get，测试返回值
+        let (success, err, forcible, value): (bool, Option<String>, bool, String) = engine
+            .lua
+            .load(r#"
+                local test = ngx.shared.test
+                local succ, err, forcible = test:set("key", "value", 0, 42)
+                local val, flags = test:get("key")
+                return succ, err, forcible, val
+            "#)
+            .eval()
+            .unwrap();
+        assert!(success);
+        assert!(err.is_none());
+        assert!(!forcible);
+        assert_eq!(value, "value");
+    }
+
+    #[test]
+    fn test_shared_dict_set_with_forcible() {
+        let engine = LuaEngine::new();
+        // 创建一个很小的字典
+        engine.init_shared_dict("small", 100);
+
+        // 测试 LRU 淘汰
+        let (success, forcible): (bool, bool) = engine
+            .lua
+            .load(r#"
+                local small = ngx.shared.small
+                -- 填满容量
+                small:set("k1", "v1")
+                small:set("k2", "v2")
+                small:set("k3", "v3")
+                -- 添加一个需要淘汰的大条目
+                local succ, err, forcible = small:set("big", string.rep("x", 50))
+                return succ, forcible
+            "#)
+            .eval()
+            .unwrap();
+        assert!(success);
+        assert!(forcible);
+    }
+
+    #[test]
+    fn test_shared_dict_get_not_found() {
+        let engine = LuaEngine::new();
+        engine.init_shared_dict("test", 1024 * 1024);
+
+        // 获取不存在的键
+        let result: mlua::Value = engine
+            .lua
+            .load(r#"
+                local test = ngx.shared.test
+                local val, flags = test:get("nonexistent")
+                return val
+            "#)
+            .eval()
+            .unwrap();
+        assert!(matches!(result, mlua::Value::Nil));
+    }
+
+    #[test]
+    fn test_shared_dict_get_stale() {
+        let engine = LuaEngine::new();
+        engine.init_shared_dict("test", 1024 * 1024);
+
+        // 测试 get_stale 获取未过期条目
+        let (value, flags, stale): (String, i64, bool) = engine
+            .lua
+            .load(r#"
+                local test = ngx.shared.test
+                test:set("key", "value", 0, 42)
+                local val, flags, stale = test:get_stale("key")
+                return val, flags, stale
+            "#)
+            .eval()
+            .unwrap();
+        assert_eq!(value, "value");
+        assert_eq!(flags, 42);
+        assert!(!stale);
+
+        // 测试 get_stale 获取已过期条目
+        let (value, stale): (String, bool) = engine
+            .lua
+            .load(r#"
+                local test = ngx.shared.test
+                test:set("expired_key", "expired_value", 0.1, 0)
+                -- 等待过期
+                os.execute("sleep 0.15")
+                -- get 应该返回 nil
+                local val1 = test:get("expired_key")
+                -- get_stale 应该返回值并标记为过期
+                local val2, flags, stale = test:get_stale("expired_key")
+                return val2, stale
+            "#)
+            .eval()
+            .unwrap();
+        assert_eq!(value, "expired_value");
+        assert!(stale);
     }
 }

@@ -62,6 +62,13 @@
         "$ref": "#/definitions/Upstream"
       }
     },
+    "lua_shared_dict": {
+      "description": "Lua shared memory dictionaries (similar to nginx lua_shared_dict directive)",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/LuaSharedDict"
+      }
+    },
     "host": {
       "description": "List of virtual hosts",
       "type": "array",
@@ -116,6 +123,23 @@
         }
       },
       "required": ["server"]
+    },
+    "LuaSharedDict": {
+      "description": "Lua shared memory dictionary configuration",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Name of the shared dictionary (used to access via ngx.shared.name)",
+          "type": "string",
+          "minLength": 1
+        },
+        "size": {
+          "description": "Size of the shared memory zone (supports k, m, g suffixes, e.g. '10m' for 10MB)",
+          "type": "string",
+          "pattern": "^\\d+[kmgKMG]?$"
+        }
+      },
+      "required": ["name", "size"]
     },
     "SettingHost": {
       "description": "Virtual host configuration",
