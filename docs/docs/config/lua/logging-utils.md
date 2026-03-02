@@ -20,27 +20,38 @@ Candy 的 Lua 脚本提供了丰富的日志记录和工具函数，帮助开发
 
 ```lua
 -- 使用不同日志级别
-cd.log(cd.ERR, "Error occurred: ", error_msg)
-cd.log(cd.WARN, "Warning: ", warning_msg)
-cd.log(cd.INFO, "Info: ", info_msg)
-cd.log(cd.DEBUG, "Debug: ", debug_msg)
+cd.log(cd.LOG_ERR, "Error occurred: ", error_msg)
+cd.log(cd.LOG_WARN, "Warning: ", warning_msg)
+cd.log(cd.LOG_INFO, "Info: ", info_msg)
+cd.log(cd.LOG_DEBUG, "Debug: ", debug_msg)
 
 -- 记录多个参数
 local user_id = 123
 local action = "login"
-cd.log(cd.INFO, "User ", user_id, " performed action: ", action)
+cd.log(cd.LOG_INFO, "User ", user_id, " performed action: ", action)
+```
+
+### `cd.req.log(level, ...)`
+
+通过请求对象记录日志。
+
+```lua
+-- 与 cd.log 功能相同
+cd.req.log(cd.LOG_INFO, "Request processed")
 ```
 
 ### 日志级别常量
 
-- `cd.EMERG` (2) - 紧急
-- `cd.ALERT` (4) - 警报
-- `cd.CRIT` (8) - 严重
-- `cd.ERR` (16) - 错误
-- `cd.WARN` (32) - 警告
-- `cd.NOTICE` (64) - 通知
-- `cd.INFO` (128) - 信息
-- `cd.DEBUG` (255) - 调试
+| 常量 | 值 | 说明 |
+|------|-----|------|
+| `cd.LOG_EMERG` | 2 | 紧急 |
+| `cd.LOG_ALERT` | 4 | 警报 |
+| `cd.LOG_CRIT` | 8 | 严重 |
+| `cd.LOG_ERR` | 16 | 错误 |
+| `cd.LOG_WARN` | 32 | 警告 |
+| `cd.LOG_NOTICE` | 64 | 通知 |
+| `cd.LOG_INFO` | 128 | 信息 |
+| `cd.LOG_DEBUG` | 255 | 调试 |
 
 ## 工具函数
 
@@ -155,25 +166,27 @@ local user_id = 123
 candy.log("User ", user_id, " accessed the system")
 ```
 
-### `candy.shared`
+### `ngx.shared` 共享字典
 
-共享数据存储，用于在请求之间共享数据。
+共享字典用于在请求之间共享数据。需要在配置文件中预先定义。
 
 ```lua
--- 设置共享数据
-candy.shared.set("counter", "100")
+-- 访问共享字典（需要在 config.toml 中定义）
+local cache = ngx.shared.cache
 
--- 获取共享数据
-local counter = candy.shared.get("counter")
+-- 设置数据
+cache:set("counter", "100")
+
+-- 获取数据
+local counter = cache:get("counter")
 cd.print("Counter: ", counter)
 
--- 递增计数器示例
-local current_count = tonumber(candy.shared.get("request_counter")) or 0
-current_count = current_count + 1
-candy.shared.set("request_counter", tostring(current_count))
-
-cd.print("Request number: ", current_count)
+-- 递增计数器
+local new_val = cache:incr("request_counter", 1, 0)
+cd.print("Request number: ", new_val)
 ```
+
+> **详细文档**：请参阅 [共享字典 API](./shared-dict.md) 获取完整的 API 文档。
 
 ## 时间函数
 
@@ -215,12 +228,11 @@ cd.print("Today is: ", today)  -- 例如: 2023-12-25
 ### 请求计数器
 
 ```lua
--- 实现一个简单的请求计数器
-local counter = tonumber(candy.shared.get("total_requests")) or 0
-counter = counter + 1
-candy.shared.set("total_requests", tostring(counter))
+-- 使用共享字典实现请求计数器
+local cache = ngx.shared.cache
+local count = cache:incr("total_requests", 1, 0)
 
-cd.print("Total requests served: ", counter)
+cd.print("Total requests served: ", count)
 ```
 
 ### 响应时间测量
@@ -246,9 +258,10 @@ cd.print(result)
 
 ```lua
 -- 跟踪用户活动
+local cache = ngx.shared.cache
 local user_id = get_user_id()  -- 假设这是一个获取用户ID的函数
-local last_activity = candy.shared.get("user_" .. user_id .. "_last_active")
-candy.shared.set("user_" .. user_id .. "_last_active", tostring(cd.time()))
+
+cache:set("user_" .. user_id .. "_last_active", tostring(cd.time()))
 
 cd.print("User ", user_id, " activity recorded")
 ```

@@ -1,8 +1,0 @@
-{
-  "label": "Lua Scripts",
-  "position": 4,
-  "link": {
-    "type": "generated-index",
-    "description": "Candy's Lua script functionality is fully compatible with OpenResty API, providing powerful HTTP request processing capabilities."
-  }
-}

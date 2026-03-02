@@ -36,16 +36,19 @@ lua_code_cache = true  # 启用代码缓存以提高性能
 2. [请求 API](./config/lua/request-api.md) - 详细的请求处理 API 文档
 3. [响应 API](./config/lua/response-api.md) - 详细的响应处理 API 文档
 4. [日志和工具函数](./config/lua/logging-utils.md) - 日志记录和实用工具函数
-5. [实际应用示例](./config/lua/examples.md) - 各种实际应用场景的示例代码
-6. [性能优化与最佳实践](./config/lua/performance-best-practices.md) - 性能优化和最佳实践指南
+5. [共享字典 API](./config/lua/shared-dict.md) - 跨请求数据共享
+6. [加密和编码函数](./config/lua/crypto-encoding.md) - 哈希、加密和编码工具
+7. [实际应用示例](./config/lua/examples.md) - 各种实际应用场景的示例代码
+8. [性能优化与最佳实践](./config/lua/performance-best-practices.md) - 性能优化和最佳实践指南
 
 ## 主要特性
 
 - **OpenResty API 兼容**：支持 `cd.req`、`cd.resp`、`cd.header` 等对象
 - **代码缓存**：支持 Lua 代码缓存以提高性能
-- **共享数据**：通过 `candy.shared` 实现跨请求数据共享
+- **共享数据**：通过 `ngx.shared` 实现跨请求数据共享
 - **日志系统**：集成的多级别日志记录功能
 - **请求/响应操作**：完整的请求和响应处理能力
+- **加密工具**：MD5、SHA-1、HMAC、Base64 等加密和编码函数
 
 ## 限制
 

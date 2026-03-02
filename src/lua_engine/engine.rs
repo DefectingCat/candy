@@ -1107,7 +1107,7 @@ mod tests {
         assert_eq!(val2, Some("c".to_string()));
         assert_eq!(val3, Some("b".to_string()));
         assert!(val4.is_none()); // 空列表返回 nil
-        assert!(len.is_none()); // 键不存在
+        assert_eq!(len, Some(0)); // 键不存在时 llen 返回 0（视为空列表）
     }
 
     #[test]

@@ -221,6 +221,66 @@ else
 end
 ```
 
+## 请求头操作
+
+### `cd.req.set_header(name, value)`
+
+设置请求头。
+
+**参数**：
+- `name` - 头名称
+- `value` - 字符串、数组或 nil（nil 表示删除）
+
+```lua
+-- 设置单个头
+cd.req.set_header("X-Custom", "value")
+
+-- 设置多值头
+cd.req.set_header("Accept", {"text/html", "application/json"})
+
+-- 删除头
+cd.req.set_header("X-Old-Header", nil)
+```
+
+### `cd.req.clear_header(name)`
+
+清除指定的请求头。
+
+```lua
+cd.req.clear_header("X-Custom-Header")
+```
+
+## 其他请求方法
+
+### `cd.req.is_internal()`
+
+判断是否为内部请求（在 Candy 中始终返回 `false`）。
+
+```lua
+if cd.req.is_internal() then
+    cd.say("This is an internal request")
+else
+    cd.say("This is an external request")
+end
+```
+
+### `cd.req.raw_header(no_request_line?)`
+
+获取原始请求头字符串。
+
+**参数**：
+- `no_request_line` - 是否排除请求行（默认 false）
+
+```lua
+-- 包含请求行
+local full_header = cd.req.raw_header()
+-- GET /path HTTP/1.1\r\nHost: example.com\r\n...
+
+-- 不包含请求行
+local headers_only = cd.req.raw_header(true)
+-- Host: example.com\r\n...
+```
+
 ## 实用工具函数
 
 ### `cd.req.escape_uri(str)`
@@ -295,16 +355,46 @@ cd.say("Active: ", args["active"])  -- true
 
 ### HTTP 状态码常量
 
+**1xx 信息响应**：
+- `cd.HTTP_CONTINUE` (100)
+- `cd.HTTP_SWITCHING_PROTOCOLS` (101)
+
+**2xx 成功**：
 - `cd.HTTP_OK` (200)
 - `cd.HTTP_CREATED` (201)
+- `cd.HTTP_ACCEPTED` (202)
 - `cd.HTTP_NO_CONTENT` (204)
 - `cd.HTTP_PARTIAL_CONTENT` (206)
+
+**3xx 重定向**：
+- `cd.HTTP_SPECIAL_RESPONSE` (300)
 - `cd.HTTP_MOVED_PERMANENTLY` (301)
 - `cd.HTTP_MOVED_TEMPORARILY` (302)
+- `cd.HTTP_SEE_OTHER` (303)
 - `cd.HTTP_NOT_MODIFIED` (304)
+- `cd.HTTP_TEMPORARY_REDIRECT` (307)
+
+**4xx 客户端错误**：
 - `cd.HTTP_BAD_REQUEST` (400)
 - `cd.HTTP_UNAUTHORIZED` (401)
+- `cd.HTTP_PAYMENT_REQUIRED` (402)
 - `cd.HTTP_FORBIDDEN` (403)
 - `cd.HTTP_NOT_FOUND` (404)
+- `cd.HTTP_NOT_ALLOWED` (405)
+- `cd.HTTP_NOT_ACCEPTABLE` (406)
+- `cd.HTTP_REQUEST_TIMEOUT` (408)
+- `cd.HTTP_CONFLICT` (409)
+- `cd.HTTP_GONE` (410)
+- `cd.HTTP_UPGRADE_REQUIRED` (426)
+- `cd.HTTP_TOO_MANY_REQUESTS` (429)
+- `cd.HTTP_CLOSE` (444)
+- `cd.HTTP_ILLEGAL` (451)
+
+**5xx 服务器错误**：
 - `cd.HTTP_INTERNAL_SERVER_ERROR` (500)
+- `cd.HTTP_METHOD_NOT_IMPLEMENTED` (501)
+- `cd.HTTP_BAD_GATEWAY` (502)
 - `cd.HTTP_SERVICE_UNAVAILABLE` (503)
+- `cd.HTTP_GATEWAY_TIMEOUT` (504)
+- `cd.HTTP_VERSION_NOT_SUPPORTED` (505)
+- `cd.HTTP_INSUFFICIENT_STORAGE` (507)

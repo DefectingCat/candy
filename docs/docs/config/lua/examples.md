@@ -107,46 +107,37 @@ cd.print(content)
 -- scripts/rate_limit.lua
 -- 简单的请求限流实现
 
+local limit = ngx.shared.rate_limit  -- 需要在 config.toml 中定义
+
 local client_ip = "unknown"
 local headers = cd.req.get_headers()
 client_ip = headers["x-forwarded-for"] or headers["x-real-ip"] or "unknown"
 
 -- 限制每分钟请求数
-local window = 60  -- 60秒窗口
-local limit = 10   -- 最大请求数
+local max_requests = 10
 
 -- 生成客户端标识
 local client_key = "rate_limit:" .. client_ip
-local current_time = cd.time()
 
--- 获取当前窗口内的请求数
-local request_count_str = candy.shared.get(client_key)
-local request_count = tonumber(request_count_str) or 0
+-- 获取当前请求数
+local request_count = limit:incr(client_key, 1, 0, 60)  -- 60秒过期
 
 -- 检查是否超过限制
-if request_count >= limit then
+if request_count > max_requests then
     cd.status = 429  -- Too Many Requests
     cd.header["Content-Type"] = "application/json"
     cd.header["Retry-After"] = "60"
     cd.print([[{"error": "Rate limit exceeded", "retry_after": 60}]])
-    cd.log(cd.WARN, "Rate limit exceeded for IP: ", client_ip)
+    cd.log(cd.LOG_WARN, "Rate limit exceeded for IP: ", client_ip)
     cd.exit(429)
 end
 
--- 增加请求数
-request_count = request_count + 1
-candy.shared.set(client_key, tostring(request_count))
-
--- 设置过期时间
--- 注意：在真实环境中，您可能需要定期清理过期的计数器
-candy.log("Request from ", client_ip, ", count: ", request_count)
-
-cd.log(cd.INFO, "Request allowed for IP: ", client_ip, " (count: ", request_count, ")")
+cd.log(cd.LOG_INFO, "Request allowed for IP: ", client_ip, " (count: ", request_count, ")")
 
 -- 继续处理请求
 cd.status = 200
 cd.header["Content-Type"] = "application/json"
-cd.header["X-Rate-Limit-Remaining"] = tostring(limit - request_count)
+cd.header["X-Rate-Limit-Remaining"] = tostring(max_requests - request_count)
 cd.print([[{"message": "Request processed successfully", "request_number": ]] .. request_count .. [[}]])
 ```
 
@@ -156,34 +147,29 @@ cd.print([[{"message": "Request processed successfully", "request_number": ]] ..
 -- scripts/cache_example.lua
 -- 简单的响应缓存实现
 
+local cache = ngx.shared.cache  -- 需要在 config.toml 中定义
 local cache_key = "cache:" .. cd.req.get_uri()
-local cached_response = candy.shared.get(cache_key)
+local cached_response = cache:get(cache_key)
 
 -- 检查缓存是否存在且未过期
 if cached_response then
-    cd.log(cd.INFO, "Cache hit for: ", cd.req.get_uri())
-    
-    -- 解析缓存的响应（简化版，实际应使用更复杂的序列化）
-    local parts = {}
-    for part in cached_response:gmatch("[^|]+") do
-        table.insert(parts, part)
-    end
-    
-    if #parts >= 2 then
-        cd.status = tonumber(parts[1]) or 200
-        cd.print(parts[2])
-        cd.exit(200)
-    end
+    cd.log(cd.LOG_INFO, "Cache hit for: ", cd.req.get_uri())
+
+    cd.status = 200
+    cd.header["Content-Type"] = "application/json"
+    cd.header["X-Cache"] = "HIT"
+    cd.print(cached_response)
+    cd.exit(200)
 end
 
 -- 缓存未命中，生成响应
-cd.log(cd.INFO, "Cache miss for: ", cd.req.get_uri())
+cd.log(cd.LOG_INFO, "Cache miss for: ", cd.req.get_uri())
 
 -- 模拟耗时的数据获取
 cd.sleep(0.1)  -- 模拟数据库查询等耗时操作
 
 local response_data = {
-    timestamp = cd.now(),
+    timestamp = cd.time(),
     uri = cd.req.get_uri(),
     method = cd.req.get_method(),
     data = "Cached response content for " .. cd.req.get_uri()
@@ -191,7 +177,7 @@ local response_data = {
 
 -- 生成响应
 local response_json = string.format(
-    [[{"timestamp": %.3f, "uri": "%s", "method": "%s", "data": "%s"}]],
+    [[{"timestamp": %d, "uri": "%s", "method": "%s", "data": "%s"}]],
     response_data.timestamp,
     response_data.uri,
     response_data.method,
@@ -205,10 +191,9 @@ cd.header["X-Cache"] = "MISS"
 cd.print(response_json)
 
 -- 缓存响应（有效期 300 秒）
-local cache_value = tostring(200) .. "|" .. response_json
-candy.shared.set(cache_key, cache_value)
+cache:set(cache_key, response_json, 300)
 
-cd.log(cd.INFO, "Response cached for: ", cd.req.get_uri())
+cd.log(cd.LOG_INFO, "Response cached for: ", cd.req.get_uri())
 ```
 
 ## 5. 请求验证和过滤
@@ -250,24 +235,24 @@ end
 if #errors > 0 then
     cd.status = 400
     cd.header["Content-Type"] = "application/json"
-    
+
     local error_json = [[{"errors": ["]]
-    for i, error in ipairs(errors) do
+    for i, err in ipairs(errors) do
         if i > 1 then
-            error_json = error_json .. [[, "]] .. error .. [["]]
+            error_json = error_json .. [[, "]] .. err .. [["]]
         else
-            error_json = error_json .. error .. [["]]
+            error_json = error_json .. err .. [["]]
         end
     end
     error_json = error_json .. [[}]]
-    
+
     cd.print(error_json)
-    cd.log(cd.WARN, "Validation failed: ", error_json)
+    cd.log(cd.LOG_WARN, "Validation failed: ", error_json)
     cd.exit(400)
 end
 
 -- 验证通过，继续处理
-cd.log(cd.INFO, "Request validation passed for user: ", post_args["name"])
+cd.log(cd.LOG_INFO, "Request validation passed for user: ", post_args["name"])
 
 -- 清理输入数据（防止 XSS）
 local clean_name = string.gsub(post_args["name"], "[<>]", "")
@@ -406,7 +391,7 @@ if cd.req.get_method() == "OPTIONS" then
 end
 
 -- 继续处理请求
-cd.log(cd.INFO, "Security headers added to response")
+cd.log(cd.LOG_INFO, "Security headers added to response")
 ```
 
 ## 8. 错误处理和恢复
@@ -418,18 +403,18 @@ cd.log(cd.INFO, "Security headers added to response")
 local success, result = pcall(function()
     -- 主要业务逻辑
     local args = cd.req.get_uri_args()
-    
+
     -- 模拟可能出错的操作
     local operation = args["operation"] or "default"
-    
+
     if operation == "divide" then
         local num1 = tonumber(args["num1"]) or 10
         local num2 = tonumber(args["num2"]) or 2
-        
+
         if num2 == 0 then
             error("Division by zero")
         end
-        
+
         return {
             status = 200,
             body = string.format([[{"result": %f, "operation": "division"}]], num1 / num2)
@@ -438,7 +423,7 @@ local success, result = pcall(function()
         -- 模拟数据处理
         local data = args["data"] or "default data"
         local processed = string.upper(data)
-        
+
         return {
             status = 200,
             body = string.format([[{"original": "%s", "processed": "%s"}]], data, processed)
@@ -453,12 +438,12 @@ end)
 
 if not success then
     -- 错误处理
-    cd.log(cd.ERR, "Error in processing: ", result)
-    
+    cd.log(cd.LOG_ERR, "Error in processing: ", result)
+
     cd.status = 500
     cd.header["Content-Type"] = "application/json"
     cd.print([[{"error": "Internal server error", "details": "]] .. tostring(result) .. [["}]])
-    
+
     -- 在生产环境中，可能不希望暴露详细的错误信息
     -- cd.print([[{"error": "Internal server error"}]])
 else
@@ -466,8 +451,8 @@ else
     cd.status = result.status
     cd.header["Content-Type"] = "application/json"
     cd.print(result.body)
-    
-    cd.log(cd.INFO, "Request processed successfully")
+
+    cd.log(cd.LOG_INFO, "Request processed successfully")
 end
 ```
 
@@ -494,7 +479,7 @@ local db_operations = {
         end
         return nil
     end,
-    
+
     create_user = function(name, email)
         -- 模拟创建用户
         local new_id = math.random(1000, 9999)  -- 模拟生成ID
@@ -526,24 +511,25 @@ if method == "GET" then
     else
         status = 400
         response = {error = "User ID required"}
-    elseif method == "POST" then
-        local post_args = cd.req.get_post_args()
-        if post_args["name"] and post_args["email"] then
-            local new_user = db_operations.create_user(post_args["name"], post_args["email"])
-            response = {user = new_user, message = "User created successfully"}
-        else
-            status = 400
-            response = {error = "Name and email required"}
-        end
-    else
-        status = 405
-        response = {error = "Method not allowed"}
     end
+elseif method == "POST" then
+    local post_args = cd.req.get_post_args()
+    if post_args["name"] and post_args["email"] then
+        local new_user = db_operations.create_user(post_args["name"], post_args["email"])
+        response = {user = new_user, message = "User created successfully"}
+    else
+        status = 400
+        response = {error = "Name and email required"}
+    end
+else
+    status = 405
+    response = {error = "Method not allowed"}
 end
 
 cd.status = status
 cd.header["Content-Type"] = "application/json"
-cd.print(require("cjson").encode(response))  -- 注意：需要相应的 JSON 库
+-- 注意：Candy 不内置 JSON 库，需要手动序列化或使用外部库
+cd.print([[{"status": ]] .. status .. [[}]])
 ```
 
 ## 10. 完整的 API 服务示例
@@ -551,6 +537,8 @@ cd.print(require("cjson").encode(response))  -- 注意：需要相应的 JSON �
 ```lua
 -- scripts/full_api_service.lua
 -- 完整的 API 服务示例
+
+local metrics = ngx.shared.metrics  -- 需要在 config.toml 中定义
 
 -- 初始化应用状态
 local app = {
@@ -564,13 +552,12 @@ local function json_response(data, status_code)
     status_code = status_code or 200
     cd.status = status_code
     cd.header["Content-Type"] = "application/json"
-    cd.header["X-Response-Time"] = tostring(cd.now())
-    cd.print(require("cjson").encode(data))
+    cd.print(data)
 end
 
 local function error_response(message, status_code)
     status_code = status_code or 400
-    json_response({error = message}, status_code)
+    json_response(string.format([[{"error": "%s"}]], message), status_code)
 end
 
 -- API 路由处理
@@ -578,66 +565,48 @@ local function handle_request()
     local method = cd.req.get_method()
     local uri = cd.req.get_uri()
     local args = cd.req.get_uri_args()
-    
+
     -- API 版本路由
     if string.match(uri, "^/api/v1/") then
         -- 提取资源路径
         local resource = string.match(uri, "^/api/v1/(.+)")
-        
+
         if resource == "status" then
             -- 状态端点
             local uptime = cd.time() - app.start_time
-            json_response({
-                status = "running",
-                service = app.name,
-                version = app.version,
-                uptime = uptime,
-                timestamp = cd.time()
-            })
-            
+            json_response(string.format(
+                [[{"status": "running", "service": "%s", "version": "%s", "uptime": %d, "timestamp": %d}]],
+                app.name, app.version, uptime, cd.time()
+            ))
+
         elseif resource == "metrics" then
             -- 指标端点
-            local total_requests = tonumber(candy.shared.get("total_requests")) or 0
-            json_response({
-                total_requests = total_requests,
-                active_connections = 1,  -- 简化处理
-                server_info = {
-                    os = candy.os,
-                    arch = candy.arch,
-                    compiler = candy.compiler
-                }
-            })
-            
+            local total_requests = metrics:get("total_requests") or 0
+            json_response(string.format(
+                [[{"total_requests": %d, "server_info": {"os": "%s", "arch": "%s"}}]],
+                total_requests, candy.os, candy.arch
+            ))
+
         elseif string.match(resource, "^users/?") then
             -- 用户相关端点
             if method == "GET" then
                 -- 获取用户列表
                 local page = tonumber(args["page"]) or 1
                 local limit = tonumber(args["limit"]) or 10
-                
-                json_response({
-                    users = {},
-                    pagination = {
-                        page = page,
-                        limit = limit,
-                        total = 0
-                    }
-                })
-                
+
+                json_response(string.format(
+                    [[{"users": [], "pagination": {"page": %d, "limit": %d, "total": 0}}]],
+                    page, limit
+                ))
+
             elseif method == "POST" then
                 -- 创建用户
                 local post_args = cd.req.get_post_args()
                 if post_args["name"] and post_args["email"] then
-                    json_response({
-                        success = true,
-                        message = "User created",
-                        user = {
-                            id = math.random(1000, 9999),
-                            name = post_args["name"],
-                            email = post_args["email"],
-                            created_at = cd.time()
-                        }
-                    }, 201)
+                    json_response(string.format(
+                        [[{"success": true, "message": "User created", "user": {"id": %d, "name": "%s", "email": "%s", "created_at": %d}}]],
+                        math.random(1000, 9999), post_args["name"], post_args["email"], cd.time()
+                    ), 201)
                 else
                     error_response("Name and email are required", 400)
                 end
@@ -653,11 +622,10 @@ local function handle_request()
 end
 
 -- 增加请求计数
-local current_requests = tonumber(candy.shared.get("total_requests")) or 0
-candy.shared.set("total_requests", tostring(current_requests + 1))
+metrics:incr("total_requests", 1, 0)
 
 -- 记录请求
-cd.log(cd.INFO, "API request: ", cd.req.get_method(), " ", cd.req.get_uri())
+cd.log(cd.LOG_INFO, "API request: ", cd.req.get_method(), " ", cd.req.get_uri())
 
 -- 处理请求
 handle_request()

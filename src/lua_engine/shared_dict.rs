@@ -216,25 +216,19 @@ impl SharedDict {
     /// 当内存不足时，会尝试：
     /// 1. 先清理过期条目
     /// 2. 如果仍不足，按 LRU 策略淘汰最近最少使用的条目
-    pub fn set(
-        &self,
-        key: &str,
-        value: Vec<u8>,
-        ttl: Option<f64>,
-        flags: u32,
-    ) -> SetResult {
+    pub fn set(&self, key: &str, value: Vec<u8>, ttl: Option<f64>, flags: u32) -> SetResult {
         let entry_size = key.len() + value.len() + 32;
         let mut forcible = false;
 
         // 检查容量
         if !self.has_capacity(entry_size) {
             // 先尝试清理过期条目
-            self.flush_expired();
+            self.flush_expired(None);
 
             // 如果仍然不足，使用 LRU 淘汰
             if !self.has_capacity(entry_size) {
                 forcible = self.evict_lru(entry_size);
-                
+
                 // 淘汰后仍然不足
                 if !self.has_capacity(entry_size) {
                     return SetResult {
@@ -290,7 +284,7 @@ impl SharedDict {
             if freed >= required_size {
                 break;
             }
-            
+
             // 不要淘汰正在设置的键
             if self.data.remove(&key).is_some() {
                 freed += size;
@@ -345,24 +339,18 @@ impl SharedDict {
     /// 当内存不足时，会尝试：
     /// 1. 先清理过期条目
     /// 2. 如果仍不足，按 LRU 策略淘汰最近最少使用的条目
-    pub fn add(
-        &self,
-        key: &str,
-        value: Vec<u8>,
-        ttl: Option<f64>,
-        flags: u32,
-    ) -> SetResult {
+    pub fn add(&self, key: &str, value: Vec<u8>, ttl: Option<f64>, flags: u32) -> SetResult {
         // 检查键是否存在（需要检查过期）
-        if let Some(entry) = self.data.get(key) {
-            if !entry.is_expired() {
-                return SetResult {
-                    success: false,
-                    err: Some("exists".to_string()),
-                    forcible: false,
-                };
-            }
-            // 键已过期，可以覆盖
+        if let Some(entry) = self.data.get(key)
+            && !entry.is_expired()
+        {
+            return SetResult {
+                success: false,
+                err: Some("exists".to_string()),
+                forcible: false,
+            };
         }
+        // 键已过期，可以覆盖
 
         let entry_size = key.len() + value.len() + 32;
         let mut forcible = false;
@@ -370,7 +358,7 @@ impl SharedDict {
         // 检查容量
         if !self.has_capacity(entry_size) {
             // 先清理过期条目
-            self.flush_expired();
+            self.flush_expired(None);
 
             // 如果仍然不足，使用 LRU 淘汰
             if !self.has_capacity(entry_size) {
@@ -415,12 +403,12 @@ impl SharedDict {
         flags: u32,
     ) -> Result<bool, SharedDictError> {
         // 检查键是否存在（需要检查过期）
-        if let Some(entry) = self.data.get(key) {
-            if !entry.is_expired() {
-                return Ok(false);
-            }
-            // 键已过期，可以覆盖
+        if let Some(entry) = self.data.get(key)
+            && !entry.is_expired()
+        {
+            return Ok(false);
         }
+        // 键已过期，可以覆盖
 
         let entry_size = key.len() + value.len() + 32;
 
@@ -449,13 +437,7 @@ impl SharedDict {
     /// 当内存不足时，会尝试：
     /// 1. 先清理过期条目
     /// 2. 如果仍不足，按 LRU 策略淘汰最近最少使用的条目
-    pub fn replace(
-        &self,
-        key: &str,
-        value: Vec<u8>,
-        ttl: Option<f64>,
-        flags: u32,
-    ) -> SetResult {
+    pub fn replace(&self, key: &str, value: Vec<u8>, ttl: Option<f64>, flags: u32) -> SetResult {
         // 检查键是否存在且未过期
         if let Some(entry) = self.data.get(key) {
             if entry.is_expired() {
@@ -523,7 +505,7 @@ impl SharedDict {
                             new_value: None,
                             err: Some("not found".to_string()),
                             forcible: None,
-                        }
+                        };
                     }
                 };
                 return self.incr_init(key, init_val, value, init_ttl);
@@ -537,7 +519,7 @@ impl SharedDict {
                         new_value: None,
                         err: Some("not a number".to_string()),
                         forcible: None,
-                    }
+                    };
                 }
             };
             let current: f64 = match current.trim().parse() {
@@ -547,14 +529,16 @@ impl SharedDict {
                         new_value: None,
                         err: Some("not a number".to_string()),
                         forcible: None,
-                    }
+                    };
                 }
             };
 
             let new_value = current + value;
             let new_entry = SharedDictEntry::full(
                 new_value.to_string().into_bytes(),
-                entry.expires_at.map(|exp| exp.duration_since(Instant::now())),
+                entry
+                    .expires_at
+                    .map(|exp| exp.duration_since(Instant::now())),
                 entry.user_flags,
             );
 
@@ -576,26 +560,20 @@ impl SharedDict {
                     new_value: None,
                     err: Some("not found".to_string()),
                     forcible: None,
-                }
+                };
             }
         };
         self.incr_init(key, init_val, value, init_ttl)
     }
 
-    fn incr_init(
-        &self,
-        key: &str,
-        init: f64,
-        value: f64,
-        ttl: Option<f64>,
-    ) -> IncrResult {
+    fn incr_init(&self, key: &str, init: f64, value: f64, ttl: Option<f64>) -> IncrResult {
         let new_value = init + value;
         let entry_size = key.len() + new_value.to_string().len() + 32;
         let mut forcible = false;
 
         if !self.has_capacity(entry_size) {
             // 先清理过期条目
-            self.flush_expired();
+            self.flush_expired(None);
 
             // 如果仍不足，使用 LRU 淘汰
             if !self.has_capacity(entry_size) {
@@ -740,7 +718,7 @@ impl SharedDict {
                 return ListPopResult {
                     value: None,
                     err: None,
-                }
+                };
             }
         };
 
@@ -786,35 +764,37 @@ impl SharedDict {
                     self.data.insert(key.to_string(), cloned_entry);
                 }
 
-                return ListPopResult {
+                ListPopResult {
                     value: Some(value),
                     err: None,
-                };
+                }
             }
-            StoredValue::Scalar(_) => {
-                return ListPopResult {
-                    value: None,
-                    err: Some("value not a list".to_string()),
-                };
-            }
+            StoredValue::Scalar(_) => ListPopResult {
+                value: None,
+                err: Some("value not a list".to_string()),
+            },
         }
     }
 
     /// 获取列表长度
+    ///
+    /// 根据 nginx 规范，如果 key 不存在，视为空列表返回 0
     pub fn llen(&self, key: &str) -> ListLenResult {
         let entry = match self.data.get(key) {
             Some(e) => e,
             None => {
+                // key 不存在，视为空列表，返回 0
                 return ListLenResult {
-                    length: None,
+                    length: Some(0),
                     err: None,
-                }
+                };
             }
         };
 
         if entry.is_expired() {
+            // 过期条目视为不存在，返回 0
             return ListLenResult {
-                length: None,
+                length: Some(0),
                 err: None,
             };
         }
@@ -836,42 +816,85 @@ impl SharedDict {
         self.data.clear();
     }
 
-    /// 清除所有过期条目
+    /// 清除过期条目
+    ///
+    /// # 参数
+    /// - `max_count` - 最大清除数量，0 或 None 表示无限制
     ///
     /// # 返回值
-    /// 清除的条目数量
-    pub fn flush_expired(&self) -> usize {
-        let mut count = 0;
-        self.data.retain(|_, entry| {
-            if entry.is_expired() {
-                count += 1;
-                false
-            } else {
-                true
+    /// 实际清除的条目数量
+    ///
+    /// # nginx 规范
+    /// - max_count 为 0 或未提供时，清除所有过期条目
+    /// - max_count > 0 时，最多清除指定数量的过期条目
+    pub fn flush_expired(&self, max_count: Option<usize>) -> usize {
+        let limit = max_count.filter(|&n| n > 0);
+
+        match limit {
+            None => {
+                // 无限制，清除所有过期条目
+                let mut count = 0;
+                self.data.retain(|_, entry| {
+                    if entry.is_expired() {
+                        count += 1;
+                        false
+                    } else {
+                        true
+                    }
+                });
+                count
             }
-        });
-        count
+            Some(limit) => {
+                // 限制数量，逐个删除
+                let mut count = 0;
+                let keys_to_remove: Vec<String> = self
+                    .data
+                    .iter()
+                    .filter(|entry| entry.is_expired())
+                    .take(limit)
+                    .map(|entry| entry.key().clone())
+                    .collect();
+
+                for key in keys_to_remove {
+                    if self.data.remove(&key).is_some() {
+                        count += 1;
+                    }
+                }
+                count
+            }
+        }
     }
 
     /// 获取所有键
     ///
     /// # 参数
-    /// - `max_count` - 最大返回数量，None 表示无限制
+    /// - `max_count` - 最大返回数量
+    ///   - None：默认最多返回 1024 个键
+    ///   - Some(0)：返回所有键（无限制）
+    ///   - Some(n) 其中 n > 0：最多返回 n 个键
     ///
     /// # 返回值
     /// 键列表
+    ///
+    /// # nginx 规范
+    /// - 默认最多返回 1024 个键
+    /// - max_count 为 0 时返回所有键
+    /// - max_count > 0 时返回最多 max_count 个键
     pub fn get_keys(&self, max_count: Option<usize>) -> Vec<String> {
-        let keys: Vec<String> = self
-            .data
+        const DEFAULT_MAX_KEYS: usize = 1024;
+
+        let limit = match max_count {
+            None => DEFAULT_MAX_KEYS,  // 默认限制 1024
+            Some(0) => usize::MAX,     // 0 表示无限制
+            Some(n) => n,              // 用户指定限制
+        };
+
+        self.data
             .iter()
             .filter(|entry| !entry.is_expired())
+            .take(limit)
             .map(|entry| entry.key().clone())
-            .collect();
-
-        match max_count {
-            Some(n) if n > 0 && keys.len() > n => keys.into_iter().take(n).collect(),
-            _ => keys,
-        }
+            .collect()
     }
 
     /// 获取条目数量（不含过期条目）
@@ -968,14 +991,15 @@ impl UserData for SharedDict {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         // dict:get(key)
         // 返回: value, flags 或 nil
-        methods.add_method("get", |lua, this, key: String| {
-            match this.get(&key) {
-                Some((value, flags)) => {
-                    let value_str = lua.create_string(&value)?;
-                    Ok((mlua::Value::String(value_str), mlua::Value::Integer(flags as i64)))
-                }
-                None => Ok((mlua::Value::Nil, mlua::Value::Nil)),
+        methods.add_method("get", |lua, this, key: String| match this.get(&key) {
+            Some((value, flags)) => {
+                let value_str = lua.create_string(&value)?;
+                Ok((
+                    mlua::Value::String(value_str),
+                    mlua::Value::Integer(flags as i64),
+                ))
             }
+            None => Ok((mlua::Value::Nil, mlua::Value::Nil)),
         });
 
         // dict:get_stale(key)
@@ -1003,7 +1027,7 @@ impl UserData for SharedDict {
                 let flags = flags.unwrap_or(0);
 
                 let result = this.set(&key, value_bytes, exptime, flags);
-                
+
                 let success = result.success;
                 let err = match result.err {
                     Some(e) => mlua::Value::String(lua.create_string(&e)?),
@@ -1028,7 +1052,7 @@ impl UserData for SharedDict {
                 let result: Result<(mlua::Value, mlua::Value), mlua::Error> = match this.safe_set(&key, value_bytes, exptime, flags) {
                     Ok(_) => Ok((mlua::Value::Boolean(true), mlua::Value::Nil)),
                     Err(SharedDictError::NoMemory) => Ok((mlua::Value::Nil, mlua::Value::String(lua.create_string("no memory")?))),
-                    Err(e) => Ok((mlua::Value::Nil, mlua::Value::String(lua.create_string(&e.to_string())?))),
+                    Err(e) => Ok((mlua::Value::Nil, mlua::Value::String(lua.create_string(e.to_string())?))),
                 };
                 result
             },
@@ -1068,7 +1092,7 @@ impl UserData for SharedDict {
                     Ok(true) => Ok((mlua::Value::Boolean(true), mlua::Value::Nil)),
                     Ok(false) => Ok((mlua::Value::Boolean(false), mlua::Value::String(lua.create_string("exists")?))),
                     Err(SharedDictError::NoMemory) => Ok((mlua::Value::Nil, mlua::Value::String(lua.create_string("no memory")?))),
-                    Err(e) => Ok((mlua::Value::Nil, mlua::Value::String(lua.create_string(&e.to_string())?))),
+                    Err(e) => Ok((mlua::Value::Nil, mlua::Value::String(lua.create_string(e.to_string())?))),
                 };
                 result
             },
@@ -1098,11 +1122,7 @@ impl UserData for SharedDict {
         // dict:delete(key)
         // 返回: true 或 nil
         methods.add_method("delete", |_, this, key: String| {
-            let result: Option<bool> = if this.delete(&key) {
-                Some(true)
-            } else {
-                None
-            };
+            let result: Option<bool> = if this.delete(&key) { Some(true) } else { None };
             Ok(result)
         });
 
@@ -1147,9 +1167,8 @@ impl UserData for SharedDict {
 
         // dict:flush_expired(max_count?)
         // 返回: flushed_count
-        methods.add_method("flush_expired", |_, this, _max_count: Option<usize>| {
-            // Note: OpenResty 的 max_count 参数在当前实现中未完全支持
-            let count = this.flush_expired();
+        methods.add_method("flush_expired", |_, this, max_count: Option<usize>| {
+            let count = this.flush_expired(max_count);
             Ok(count)
         });
 
@@ -1250,7 +1269,11 @@ fn lua_value_to_bytes(value: &mlua::Value) -> Result<Vec<u8>, mlua::Error> {
         mlua::Value::String(s) => Ok(s.as_bytes().to_vec()),
         mlua::Value::Integer(i) => Ok(i.to_string().into_bytes()),
         mlua::Value::Number(n) => Ok(n.to_string().into_bytes()),
-        mlua::Value::Boolean(b) => Ok(if *b { b"true".to_vec() } else { b"false".to_vec() }),
+        mlua::Value::Boolean(b) => Ok(if *b {
+            b"true".to_vec()
+        } else {
+            b"false".to_vec()
+        }),
         mlua::Value::Nil => Ok(Vec::new()),
         _ => Err(mlua::Error::external(anyhow::anyhow!(
             "value must be a string, number, boolean, or nil"
@@ -1275,7 +1298,7 @@ mod tests {
         assert!(result.success);
         assert!(result.err.is_none());
         assert!(!result.forcible);
-        
+
         let (value, flags) = dict.get("key1").unwrap();
         assert_eq!(value, b"value1");
         assert_eq!(flags, 0);
@@ -1349,7 +1372,11 @@ mod tests {
         let result = dict.add("k3", b"v3".to_vec(), None, 0);
         assert!(result.success);
         // 应该触发了 LRU 淘汰
-        assert!(result.forcible, "Expected forcible=true, but got success={}, err={:?}", result.success, result.err);
+        assert!(
+            result.forcible,
+            "Expected forcible=true, but got success={}, err={:?}",
+            result.success, result.err
+        );
     }
 
     #[test]
@@ -1429,12 +1456,22 @@ mod tests {
         // 弹出最后一个元素
         let result = dict.lpop("mylist");
         assert_eq!(result.value, Some(b"b".to_vec()));
-        // 列表为空后键被删除
-        assert!(dict.llen("mylist").length.is_none());
+        // 列表为空后键被删除，llen 返回 0（视为空列表）
+        assert_eq!(dict.llen("mylist").length, Some(0));
 
         // 空列表/不存在的键弹出返回 nil
         let result = dict.lpop("mylist");
         assert!(result.value.is_none());
+    }
+
+    #[test]
+    fn test_shared_dict_llen_non_existent() {
+        let dict = SharedDict::new("test".to_string(), 1024);
+
+        // 不存在的 key，llen 返回 0（视为空列表）
+        let result = dict.llen("nonexistent");
+        assert_eq!(result.length, Some(0));
+        assert!(result.err.is_none());
     }
 
     #[test]
@@ -1626,11 +1663,36 @@ mod tests {
         // 等待 key1 过期
         std::thread::sleep(Duration::from_millis(100));
 
-        let count = dict.flush_expired();
+        let count = dict.flush_expired(None);
         assert_eq!(count, 1);
 
         // key2 应该还在
         assert!(dict.get("key2").is_some());
+    }
+
+    #[test]
+    fn test_shared_dict_flush_expired_with_limit() {
+        let dict = SharedDict::new("test".to_string(), 1024);
+
+        // 创建 3 个很快过期的键
+        dict.set("key1", b"value1".to_vec(), Some(0.05), 0);
+        dict.set("key2", b"value2".to_vec(), Some(0.05), 0);
+        dict.set("key3", b"value3".to_vec(), Some(0.05), 0);
+        dict.set("key4", b"value4".to_vec(), None, 0);
+
+        // 等待过期
+        std::thread::sleep(Duration::from_millis(100));
+
+        // 限制最多清除 2 个
+        let count = dict.flush_expired(Some(2));
+        assert_eq!(count, 2);
+
+        // 还剩 1 个过期键
+        let count = dict.flush_expired(None);
+        assert_eq!(count, 1);
+
+        // key4 应该还在
+        assert!(dict.get("key4").is_some());
     }
 
     #[test]
@@ -1641,6 +1703,7 @@ mod tests {
         dict.set("key2", b"value2".to_vec(), None, 0);
         dict.set("key3", b"value3".to_vec(), None, 0);
 
+        // 默认最多返回 1024 个键（当前只有 3 个）
         let keys = dict.get_keys(None);
         assert_eq!(keys.len(), 3);
         assert!(keys.contains(&"key1".to_string()));
@@ -1650,6 +1713,28 @@ mod tests {
         // 限制数量
         let keys = dict.get_keys(Some(2));
         assert_eq!(keys.len(), 2);
+
+        // max_count=0 表示无限制
+        let keys = dict.get_keys(Some(0));
+        assert_eq!(keys.len(), 3);
+    }
+
+    #[test]
+    fn test_shared_dict_get_keys_default_limit() {
+        let dict = SharedDict::new("test".to_string(), 1024 * 1024);
+
+        // 创建超过 1024 个键
+        for i in 0..1100 {
+            dict.set(&format!("key{}", i), b"value".to_vec(), None, 0);
+        }
+
+        // 默认最多返回 1024 个
+        let keys = dict.get_keys(None);
+        assert_eq!(keys.len(), 1024);
+
+        // max_count=0 返回所有
+        let keys = dict.get_keys(Some(0));
+        assert_eq!(keys.len(), 1100);
     }
 
     #[test]
@@ -1697,11 +1782,11 @@ mod tests {
 
         // 添加一个需要 LRU 淘汰的大条目
         let result = dict.set("big_key", "x".repeat(50).into_bytes(), None, 0);
-        
+
         // 应该成功，但 forcible 为 true
         assert!(result.success);
         assert!(result.forcible);
-        
+
         // key1 和 key2 应该仍然存在（最近访问过）
         // key3, key4, 或 key5 可能被淘汰
     }

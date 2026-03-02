@@ -38,11 +38,12 @@ local function expensive_calculation()
     return result
 end
 
--- 好的做法：缓存计算结果
-local cached_result = candy.shared.get("expensive_result")
+-- 好的做法：使用共享字典缓存计算结果
+local cache = ngx.shared.cache
+local cached_result = cache:get("expensive_result")
 if not cached_result then
     cached_result = tostring(expensive_calculation())
-    candy.shared.set("expensive_result", cached_result)
+    cache:set("expensive_result", cached_result, 3600)  -- 缓存1小时
 end
 ```
 
@@ -75,16 +76,14 @@ local response = table.concat(parts)
 共享数据是跨请求的，合理使用可以提高性能，但要注意并发问题：
 
 ```lua
+local cache = ngx.shared.cache
+
 -- 正确使用共享数据
-local counter = tonumber(candy.shared.get("request_count")) or 0
-counter = counter + 1
-candy.shared.set("request_count", tostring(counter))
+local counter = cache:incr("request_count", 1, 0)
 
 -- 对于复杂操作，考虑原子性
 local function atomic_increment(key, increment)
-    local current = tonumber(candy.shared.get(key)) or 0
-    candy.shared.set(key, tostring(current + increment))
-    return current + increment
+    return cache:incr(key, increment, 0)
 end
 ```
 
@@ -178,16 +177,16 @@ cd.print(safe_output)
 
 ```lua
 -- 调试信息
-cd.log(cd.DEBUG, "Processing request for user: ", user_id)
+cd.log(cd.LOG_DEBUG, "Processing request for user: ", user_id)
 
 -- 一般信息
-cd.log(cd.INFO, "User logged in: ", user_id)
+cd.log(cd.LOG_INFO, "User logged in: ", user_id)
 
 -- 警告
-cd.log(cd.WARN, "Deprecated API endpoint accessed")
+cd.log(cd.LOG_WARN, "Deprecated API endpoint accessed")
 
 -- 错误
-cd.log(cd.ERR, "Database connection failed: ", error_message)
+cd.log(cd.LOG_ERR, "Database connection failed: ", error_message)
 ```
 
 ### 6. 避免阻塞操作
@@ -219,7 +218,7 @@ local response_time = end_time - start_time
 
 -- 记录慢请求
 if response_time > 1.0 then  -- 1秒以上
-    cd.log(cd.WARN, "Slow request detected: ", response_time, " seconds")
+    cd.log(cd.LOG_WARN, "Slow request detected: ", response_time, " seconds")
 end
 
 -- 添加响应时间头
@@ -230,17 +229,16 @@ cd.header["X-Response-Time"] = string.format("%.3f", response_time)
 
 ```lua
 -- 监控请求频率
-local req_count = tonumber(candy.shared.get("req_per_minute")) or 0
-req_count = req_count + 1
-candy.shared.set("req_per_minute", tostring(req_count))
+local metrics = ngx.shared.metrics  -- 需要在 config.toml 中定义
+local req_count = metrics:incr("req_per_minute", 1, 0)
 
--- 每分钟重置（需要定时任务）
+-- 每分钟重置（需要定时任务或应用层逻辑）
 local current_minute = math.floor(cd.time() / 60)
-local last_reset = tonumber(candy.shared.get("last_reset_minute")) or 0
+local last_reset = metrics:get("last_reset_minute") or 0
 
 if current_minute > last_reset then
-    candy.shared.set("req_per_minute", "0")
-    candy.shared.set("last_reset_minute", tostring(current_minute))
+    metrics:set("req_per_minute", "0")
+    metrics:set("last_reset_minute", tostring(current_minute))
 end
 ```
 
@@ -285,16 +283,18 @@ end
 将配置参数外部化：
 
 ```lua
--- 使用共享数据存储配置
+-- 使用共享字典存储配置
+local config_cache = ngx.shared.config  -- 需要在 config.toml 中定义
+
 local config = {
-    rate_limit = tonumber(candy.shared.get("rate_limit")) or 100,
-    cache_ttl = tonumber(candy.shared.get("cache_ttl")) or 300,
-    debug_mode = candy.shared.get("debug_mode") == "true"
+    rate_limit = tonumber(config_cache:get("rate_limit")) or 100,
+    cache_ttl = tonumber(config_cache:get("cache_ttl")) or 300,
+    debug_mode = config_cache:get("debug_mode") == "true"
 }
 
 -- 根据配置调整行为
 if config.debug_mode then
-    cd.log(cd.DEBUG, "Debug mode enabled")
+    cd.log(cd.LOG_DEBUG, "Debug mode enabled")
 end
 ```
 
@@ -307,9 +307,12 @@ end
 local debug_mode = args["debug"] == "true" or false
 
 if debug_mode then
-    cd.log(cd.DEBUG, "Method: ", cd.req.get_method())
-    cd.log(cd.DEBUG, "URI: ", cd.req.get_uri())
-    cd.log(cd.DEBUG, "Headers: ", require("cjson").encode(cd.req.get_headers()))
+    cd.log(cd.LOG_DEBUG, "Method: ", cd.req.get_method())
+    cd.log(cd.LOG_DEBUG, "URI: ", cd.req.get_uri())
+    local headers = cd.req.get_headers()
+    for name, value in pairs(headers) do
+        cd.log(cd.LOG_DEBUG, "Header: ", name, " = ", value)
+    end
 end
 ```
 
@@ -321,7 +324,7 @@ local function profile_function(func, ...)
     local start = cd.now()
     local result = func(...)
     local elapsed = cd.now() - start
-    cd.log(cd.DEBUG, "Function took ", elapsed, " seconds")
+    cd.log(cd.LOG_DEBUG, "Function took ", elapsed, " seconds")
     return result
 end
 
