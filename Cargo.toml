@@ -50,6 +50,10 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_repr = "0.1.20"
 # tools
 thiserror = "2.0.18"
+base64 = "0.22.1"
+crc32fast = "1.4.2"
+hmac = "0.12.1"
+sha1 = "0.10.6"
 # core
 tokio = { version = "1.49.0", features = [
     "rt-multi-thread",

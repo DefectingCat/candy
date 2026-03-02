@@ -742,6 +742,94 @@ impl UserData for CandyReq {
             },
         );
 
+        // encode_base64(str, no_padding?): 将字符串编码为 base64
+        // no_padding 为 true 时，不添加填充字符 '='
+        methods.add_method_mut(
+            "encode_base64",
+            |lua, _this, (str, no_padding): (mlua::String, Option<bool>)| {
+                let bytes = str.as_bytes();
+                let encoded = if no_padding.unwrap_or(false) {
+                    ::base64::Engine::encode(
+                        &::base64::engine::general_purpose::STANDARD_NO_PAD,
+                        bytes,
+                    )
+                } else {
+                    ::base64::Engine::encode(&::base64::engine::general_purpose::STANDARD, bytes)
+                };
+                lua.create_string(&encoded).map(mlua::Value::String)
+            },
+        );
+
+        // decode_base64(str): 将 base64 字符串解码为原始字节
+        // 如果字符串不是有效的 base64，返回 nil
+        methods.add_method_mut("decode_base64", |lua, _this, str: mlua::String| {
+            let encoded = str.as_bytes();
+            match ::base64::Engine::decode(
+                &::base64::engine::general_purpose::STANDARD,
+                encoded,
+            ) {
+                Ok(bytes) => lua.create_string(&bytes).map(mlua::Value::String),
+                Err(_) => Ok(mlua::Value::Nil),
+            }
+        });
+
+        // crc32_short(str): 计算字符串的 CRC-32 校验和
+        // 适用于较短的输入（小于 30-60 字节）
+        // 返回 32 位无符号整数
+        methods.add_method_mut("crc32_short", |lua, _this, str: mlua::BorrowedStr| {
+            let checksum = crc32fast::hash(str.as_bytes());
+            lua.pack(checksum)
+        });
+
+        // crc32_long(str): 计算字符串的 CRC-32 校验和
+        // 适用于较长的输入（大于 30-60 字节）
+        // 结果与 crc32_short 完全相同
+        methods.add_method_mut("crc32_long", |lua, _this, str: mlua::BorrowedStr| {
+            let checksum = crc32fast::hash(str.as_bytes());
+            lua.pack(checksum)
+        });
+
+        // hmac_sha1(secret_key, str): 计算 HMAC-SHA1 摘要
+        // 返回原始二进制形式的 HMAC-SHA1 摘要
+        // 可使用 encode_base64 进行文本编码
+        methods.add_method_mut(
+            "hmac_sha1",
+            |lua, _this, (secret_key, str): (mlua::BorrowedStr, mlua::BorrowedStr)| {
+                use hmac::{Hmac, Mac};
+                use sha1::Sha1;
+
+                type HmacSha1 = Hmac<Sha1>;
+
+                let mut mac = match HmacSha1::new_from_slice(secret_key.as_bytes()) {
+                    Ok(m) => m,
+                    Err(_) => {
+                        return Err(mlua::Error::external(anyhow::anyhow!(
+                            "Invalid HMAC key"
+                        )));
+                    }
+                };
+                mac.update(str.as_bytes());
+                let result = mac.finalize();
+                let code_bytes = result.into_bytes();
+                lua.create_string(&code_bytes).map(mlua::Value::String)
+            },
+        );
+
+        // md5(str): 计算字符串的 MD5 摘要
+        // 返回十六进制字符串形式 (32 字符小写)
+        methods.add_method_mut("md5", |lua, _this, str: mlua::BorrowedStr| {
+            let digest = md5::compute(str.as_bytes());
+            let hex = format!("{:x}", digest);
+            lua.create_string(&hex).map(mlua::Value::String)
+        });
+
+        // md5_bin(str): 计算字符串的 MD5 摘要
+        // 返回原始二进制形式 (16 字节)
+        methods.add_method_mut("md5_bin", |lua, _this, str: mlua::BorrowedStr| {
+            let digest = md5::compute(str.as_bytes());
+            lua.create_string(&digest.0).map(mlua::Value::String)
+        });
+
         // log(log_level, ...): 记录日志消息
         // 将参数连接并记录到错误日志中，带有指定的日志级别
         methods.add_method_mut("log", |_, _this, args: mlua::MultiValue| {
@@ -1757,6 +1845,358 @@ mod tests {
 
             assert!(state.post_args.is_some());
             assert_eq!(state.post_args.as_ref().unwrap().0[0].0, "name");
+        }
+    }
+
+    // Base64 encoding/decoding tests
+    mod base64_tests {
+        use ::base64::{Engine, engine::general_purpose};
+
+        #[test]
+        fn test_encode_base64_simple() {
+            let encoded = Engine::encode(&general_purpose::STANDARD, "hello");
+            assert_eq!(encoded, "aGVsbG8=");
+        }
+
+        #[test]
+        fn test_encode_base64_empty() {
+            let encoded = Engine::encode(&general_purpose::STANDARD, "");
+            assert_eq!(encoded, "");
+        }
+
+        #[test]
+        fn test_encode_base64_with_padding() {
+            // "hello" = 5 bytes, need padding
+            let encoded = Engine::encode(&general_purpose::STANDARD, "hello");
+            assert!(encoded.ends_with('='));
+        }
+
+        #[test]
+        fn test_encode_base64_no_padding() {
+            let encoded = Engine::encode(&general_purpose::STANDARD_NO_PAD, "hello");
+            assert!(!encoded.ends_with('='));
+        }
+
+        #[test]
+        fn test_encode_base64_binary() {
+            let bytes: Vec<u8> = vec![0x00, 0x01, 0x02, 0xff, 0xfe];
+            let encoded = Engine::encode(&general_purpose::STANDARD, &bytes);
+            assert_eq!(encoded, "AAEC//4=");
+        }
+
+        #[test]
+        fn test_decode_base64_simple() {
+            let decoded = Engine::decode(&general_purpose::STANDARD, "aGVsbG8=").unwrap();
+            assert_eq!(String::from_utf8_lossy(&decoded), "hello");
+        }
+
+        #[test]
+        fn test_decode_base64_empty() {
+            let decoded = Engine::decode(&general_purpose::STANDARD, "").unwrap();
+            assert!(decoded.is_empty());
+        }
+
+        #[test]
+        fn test_decode_base64_invalid() {
+            let result = Engine::decode(&general_purpose::STANDARD, "!!invalid!!");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_decode_base64_missing_padding() {
+            // Standard decoder requires padding, so missing padding should fail
+            let result = Engine::decode(&general_purpose::STANDARD, "aGVsbG8");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_encode_decode_roundtrip() {
+            let original = "The quick brown fox jumps over the lazy dog";
+            let encoded = Engine::encode(&general_purpose::STANDARD, original);
+            let decoded = Engine::decode(&general_purpose::STANDARD, &encoded).unwrap();
+            assert_eq!(String::from_utf8_lossy(&decoded), original);
+        }
+
+        #[test]
+        fn test_encode_base64_unicode() {
+            let encoded = Engine::encode(&general_purpose::STANDARD, "中文测试");
+            assert!(!encoded.is_empty());
+            let decoded = Engine::decode(&general_purpose::STANDARD, &encoded).unwrap();
+            assert_eq!(String::from_utf8_lossy(&decoded), "中文测试");
+        }
+
+        #[test]
+        fn test_encode_base64_long_string() {
+            let long_str = "a".repeat(1000);
+            let encoded = Engine::encode(&general_purpose::STANDARD, &long_str);
+            let decoded = Engine::decode(&general_purpose::STANDARD, &encoded).unwrap();
+            assert_eq!(String::from_utf8_lossy(&decoded), long_str);
+        }
+    }
+
+    // CRC32 tests
+    mod crc32_tests {
+        #[test]
+        fn test_crc32_empty() {
+            let checksum = crc32fast::hash(b"");
+            assert_eq!(checksum, 0);
+        }
+
+        #[test]
+        fn test_crc32_hello() {
+            let checksum = crc32fast::hash(b"hello");
+            // CRC32 of "hello" is a known value
+            assert_eq!(checksum, 907060870);
+        }
+
+        #[test]
+        fn test_crc32_short_string() {
+            // Test with a short string (< 30 bytes)
+            let checksum = crc32fast::hash(b"short test string");
+            assert_ne!(checksum, 0);
+        }
+
+        #[test]
+        fn test_crc32_long_string() {
+            // Test with a long string (> 60 bytes)
+            let long_str = "a".repeat(100);
+            let checksum = crc32fast::hash(long_str.as_bytes());
+            assert_ne!(checksum, 0);
+        }
+
+        #[test]
+        fn test_crc32_consistency() {
+            // crc32_short and crc32_long should produce identical results
+            let data = b"test data for consistency check";
+            let checksum1 = crc32fast::hash(data);
+            let checksum2 = crc32fast::hash(data);
+            assert_eq!(checksum1, checksum2);
+        }
+
+        #[test]
+        fn test_crc32_unicode() {
+            let checksum = crc32fast::hash("中文测试".as_bytes());
+            assert_ne!(checksum, 0);
+        }
+
+        #[test]
+        fn test_crc32_binary() {
+            let bytes: Vec<u8> = vec![0x00, 0x01, 0x02, 0xff, 0xfe, 0xfd];
+            let checksum = crc32fast::hash(&bytes);
+            assert_ne!(checksum, 0);
+        }
+
+        #[test]
+        fn test_crc32_known_values() {
+            // Test against known CRC32 values
+            // "123456789" has a well-known CRC32 value
+            assert_eq!(crc32fast::hash(b"123456789"), 0xCBF43926);
+        }
+
+        #[test]
+        fn test_crc32_different_inputs() {
+            let checksum1 = crc32fast::hash(b"hello");
+            let checksum2 = crc32fast::hash(b"world");
+            assert_ne!(checksum1, checksum2);
+        }
+    }
+
+    // HMAC-SHA1 tests
+    mod hmac_sha1_tests {
+        use ::base64::{Engine, engine::general_purpose};
+        use hmac::{Hmac, Mac};
+        use sha1::Sha1;
+
+        type HmacSha1 = Hmac<Sha1>;
+
+        fn compute_hmac_sha1(key: &[u8], data: &[u8]) -> Vec<u8> {
+            let mut mac = HmacSha1::new_from_slice(key).unwrap();
+            mac.update(data);
+            mac.finalize().into_bytes().to_vec()
+        }
+
+        #[test]
+        fn test_hmac_sha1_basic() {
+            // Test from OpenResty documentation
+            let key = "thisisverysecretstuff";
+            let src = "some string we want to sign";
+            let digest = compute_hmac_sha1(key.as_bytes(), src.as_bytes());
+            let encoded = Engine::encode(&general_purpose::STANDARD, &digest);
+            assert_eq!(encoded, "R/pvxzHC4NLtj7S+kXFg/NePTmk=");
+        }
+
+        #[test]
+        fn test_hmac_sha1_empty_string() {
+            let key = "secret";
+            let digest = compute_hmac_sha1(key.as_bytes(), b"");
+            assert_eq!(digest.len(), 20); // SHA1 produces 20 bytes
+        }
+
+        #[test]
+        fn test_hmac_sha1_empty_key() {
+            let digest = compute_hmac_sha1(b"", b"test data");
+            assert_eq!(digest.len(), 20);
+        }
+
+        #[test]
+        fn test_hmac_sha1_rfc_test_case() {
+            // Test case from RFC 2202
+            // Key = 0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b (20 bytes of 0x0b)
+            // Data = "Hi There"
+            let key = [0x0b; 20];
+            let data = b"Hi There";
+            let digest = compute_hmac_sha1(&key, data);
+            // Expected: b617318655057264e28bc0b6fb378c8ef146be00
+            let expected: [u8; 20] = [
+                0xb6, 0x17, 0x31, 0x86, 0x55, 0x05, 0x72, 0x64, 0xe2, 0x8b,
+                0xc0, 0xb6, 0xfb, 0x37, 0x8c, 0x8e, 0xf1, 0x46, 0xbe, 0x00,
+            ];
+            assert_eq!(digest.as_slice(), expected);
+        }
+
+        #[test]
+        fn test_hmac_sha1_consistency() {
+            let key = b"secret_key";
+            let data = b"test data";
+            let digest1 = compute_hmac_sha1(key, data);
+            let digest2 = compute_hmac_sha1(key, data);
+            assert_eq!(digest1, digest2);
+        }
+
+        #[test]
+        fn test_hmac_sha1_different_keys() {
+            let data = b"test data";
+            let digest1 = compute_hmac_sha1(b"key1", data);
+            let digest2 = compute_hmac_sha1(b"key2", data);
+            assert_ne!(digest1, digest2);
+        }
+
+        #[test]
+        fn test_hmac_sha1_different_data() {
+            let key = b"secret_key";
+            let digest1 = compute_hmac_sha1(key, b"data1");
+            let digest2 = compute_hmac_sha1(key, b"data2");
+            assert_ne!(digest1, digest2);
+        }
+
+        #[test]
+        fn test_hmac_sha1_output_length() {
+            let digest = compute_hmac_sha1(b"key", b"data");
+            assert_eq!(digest.len(), 20); // SHA1 always produces 20 bytes
+        }
+
+        #[test]
+        fn test_hmac_sha1_unicode() {
+            let key = "密钥";
+            let data = "中文数据";
+            let digest = compute_hmac_sha1(key.as_bytes(), data.as_bytes());
+            assert_eq!(digest.len(), 20);
+        }
+
+        #[test]
+        fn test_hmac_sha1_long_key() {
+            // Key longer than block size (64 bytes for SHA1)
+            let key = "a".repeat(100);
+            let data = b"test";
+            let digest = compute_hmac_sha1(key.as_bytes(), data);
+            assert_eq!(digest.len(), 20);
+        }
+    }
+
+    // MD5 tests
+    mod md5_tests {
+        #[test]
+        fn test_md5_hello() {
+            // Test from OpenResty documentation
+            let digest = md5::compute(b"hello");
+            let hex = format!("{:x}", digest);
+            assert_eq!(hex, "5d41402abc4b2a76b9719d911017c592");
+        }
+
+        #[test]
+        fn test_md5_empty() {
+            let digest = md5::compute(b"");
+            let hex = format!("{:x}", digest);
+            assert_eq!(hex, "d41d8cd98f00b204e9800998ecf8427e");
+        }
+
+        #[test]
+        fn test_md5_bin_length() {
+            let digest = md5::compute(b"test");
+            assert_eq!(digest.0.len(), 16); // MD5 produces 16 bytes
+        }
+
+        #[test]
+        fn test_md5_bin_vs_hex_consistency() {
+            let data = b"test data";
+            let digest = md5::compute(data);
+            let hex = format!("{:x}", digest);
+
+            // Convert hex back to bytes and compare
+            let mut bytes = Vec::new();
+            for i in 0..hex.len() / 2 {
+                let byte = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap();
+                bytes.push(byte);
+            }
+            assert_eq!(bytes.as_slice(), digest.0);
+        }
+
+        #[test]
+        fn test_md5_known_values() {
+            // Test against known MD5 values
+            assert_eq!(
+                format!("{:x}", md5::compute(b"")),
+                "d41d8cd98f00b204e9800998ecf8427e"
+            );
+            assert_eq!(
+                format!("{:x}", md5::compute(b"a")),
+                "0cc175b9c0f1b6a831c399e269772661"
+            );
+            assert_eq!(
+                format!("{:x}", md5::compute(b"abc")),
+                "900150983cd24fb0d6963f7d28e17f72"
+            );
+            assert_eq!(
+                format!("{:x}", md5::compute(b"message digest")),
+                "f96b697d7cb7938d525a2f31aaf161d0"
+            );
+        }
+
+        #[test]
+        fn test_md5_consistency() {
+            let data = b"consistent data";
+            let digest1 = md5::compute(data);
+            let digest2 = md5::compute(data);
+            assert_eq!(digest1, digest2);
+        }
+
+        #[test]
+        fn test_md5_different_inputs() {
+            let digest1 = md5::compute(b"input1");
+            let digest2 = md5::compute(b"input2");
+            assert_ne!(digest1, digest2);
+        }
+
+        #[test]
+        fn test_md5_unicode() {
+            let digest = md5::compute("中文测试".as_bytes());
+            let hex = format!("{:x}", digest);
+            assert_eq!(hex.len(), 32);
+        }
+
+        #[test]
+        fn test_md5_long_string() {
+            let long_str = "a".repeat(1000);
+            let digest = md5::compute(long_str.as_bytes());
+            assert_eq!(digest.0.len(), 16);
+        }
+
+        #[test]
+        fn test_md5_lower_case() {
+            // MD5 hex output should be lowercase
+            let digest = md5::compute(b"hello");
+            let hex = format!("{:x}", digest);
+            assert!(hex.chars().all(|c| !c.is_uppercase()));
         }
     }
 
