@@ -848,4 +848,289 @@ mod tests {
         assert_eq!(value, "expired_value");
         assert!(stale);
     }
+
+    #[test]
+    fn test_shared_dict_add_lua() {
+        let engine = LuaEngine::new();
+        engine.init_shared_dict("test", 1024 * 1024);
+
+        // 测试 add 方法
+        let (success1, err1, forcible1, success2, err2): (bool, Option<String>, bool, bool, Option<String>) = engine
+            .lua
+            .load(r#"
+                local test = ngx.shared.test
+                -- 添加新键
+                local succ, err, forcible = test:add("key1", "value1")
+                local success1, err1, forcible1 = succ, err, forcible
+                -- 再次添加相同键
+                local succ, err, forcible = test:add("key1", "value2")
+                return success1, err1, forcible1, succ, err
+            "#)
+            .eval()
+            .unwrap();
+        assert!(success1);
+        assert!(err1.is_none());
+        assert!(!forcible1);
+        assert!(!success2);
+        assert_eq!(err2, Some("exists".to_string()));
+    }
+
+    #[test]
+    fn test_shared_dict_add_with_lru_lua() {
+        let engine = LuaEngine::new();
+        engine.init_shared_dict("small", 100);
+
+        // 测试 add 的 LRU 淘汰
+        let (success, forcible): (bool, bool) = engine
+            .lua
+            .load(r#"
+                local small = ngx.shared.small
+                -- 填满容量
+                small:set("k1", "v1")
+                small:set("k2", "v2")
+                -- add 新键需要 LRU 淘汰
+                local succ, err, forcible = small:add("k3", "v3")
+                return succ, forcible
+            "#)
+            .eval()
+            .unwrap();
+        assert!(success);
+        assert!(forcible);
+    }
+
+    #[test]
+    fn test_shared_dict_safe_add_lua() {
+        let engine = LuaEngine::new();
+        engine.init_shared_dict("small", 100);
+
+        // 测试 safe_add
+        let (ok1, err1, ok2, err2): (Option<bool>, Option<String>, Option<bool>, Option<String>) = engine
+            .lua
+            .load(r#"
+                local small = ngx.shared.small
+                -- 添加新键
+                local ok, err = small:safe_add("k1", "v1")
+                local ok1, err1 = ok, err
+                -- 再次添加相同键
+                local ok, err = small:safe_add("k1", "v2")
+                -- 内存不足时不淘汰，返回 nil
+                small:safe_add("k2", "v2")
+                local ok, err = small:safe_add("k3", "v3")
+                return ok1, err1, ok, err
+            "#)
+            .eval()
+            .unwrap();
+        assert_eq!(ok1, Some(true));
+        assert!(err1.is_none());
+        assert!(ok2.is_none()); // 内存不足返回 nil
+        assert_eq!(err2, Some("no memory".to_string()));
+    }
+
+    #[test]
+    fn test_shared_dict_replace_lua() {
+        let engine = LuaEngine::new();
+        engine.init_shared_dict("test", 1024 * 1024);
+
+        // 测试 replace 方法
+        let (success1, err1, success2, err2, value): (bool, Option<String>, bool, Option<String>, String) = engine
+            .lua
+            .load(r#"
+                local test = ngx.shared.test
+                -- 替换不存在的键
+                local succ, err, forcible = test:replace("key1", "value1")
+                local success1, err1 = succ, err
+                -- 设置后替换
+                test:set("key1", "value1")
+                local succ, err, forcible = test:replace("key1", "value2")
+                local success2, err2 = succ, err
+                -- 获取值
+                local val = test:get("key1")
+                return success1, err1, success2, err2, val
+            "#)
+            .eval()
+            .unwrap();
+        assert!(!success1);
+        assert_eq!(err1, Some("not found".to_string()));
+        assert!(success2);
+        assert!(err2.is_none());
+        assert_eq!(value, "value2");
+    }
+
+    #[test]
+    fn test_shared_dict_delete_lua() {
+        let engine = LuaEngine::new();
+        engine.init_shared_dict("test", 1024 * 1024);
+
+        // 测试 delete 方法
+        let (result1, result2): (Option<bool>, Option<bool>) = engine
+            .lua
+            .load(r#"
+                local test = ngx.shared.test
+                test:set("key1", "value1")
+                -- 删除存在的键
+                local ok = test:delete("key1")
+                local result1 = ok
+                -- 删除不存在的键
+                local ok = test:delete("key1")
+                local result2 = ok
+                return result1, result2
+            "#)
+            .eval()
+            .unwrap();
+        assert_eq!(result1, Some(true));
+        assert!(result2.is_none()); // OpenResty 返回 nil 而不是 false
+    }
+
+    #[test]
+    fn test_shared_dict_incr_lua() {
+        let engine = LuaEngine::new();
+        engine.init_shared_dict("test", 1024 * 1024);
+
+        // 测试 incr 方法
+        let (val1, err1, val2, val4): (Option<i64>, Option<String>, Option<i64>, Option<f64>) = engine
+            .lua
+            .load(r#"
+                local test = ngx.shared.test
+                -- 不存在的键，无初始值
+                local val, err, forcible = test:incr("key1", 1)
+                local val1, err1 = val, err
+                -- 不存在的键，有初始值
+                local val, err, forcible = test:incr("key2", 5, 0)
+                local val2 = val
+                -- 已存在的键
+                local val, err, forcible = test:incr("key2", 3)
+                -- 浮点数
+                local val, err, forcible = test:incr("key2", 0.5)
+                local val4 = val
+                return val1, err1, val2, val4
+            "#)
+            .eval()
+            .unwrap();
+        assert!(val1.is_none());
+        assert_eq!(err1, Some("not found".to_string()));
+        assert_eq!(val2, Some(5));
+        assert_eq!(val4, Some(8.5));
+    }
+
+    #[test]
+    fn test_shared_dict_incr_with_forcible_lua() {
+        let engine = LuaEngine::new();
+        engine.init_shared_dict("small", 80);
+
+        // 测试 incr 的 forcible 返回值
+        let (forcible1, forcible2, forcible3): (Option<bool>, Option<bool>, Option<bool>) = engine
+            .lua
+            .load(r#"
+                local small = ngx.shared.small
+                -- 填满容量
+                small:set("k1", "v1")
+                small:set("k2", "v2")
+                -- incr 新键需要 LRU 淘汰
+                local val, err, forcible = small:incr("k3", 1, 0)
+                local forcible1 = forcible
+                -- 更新现有键，forcible = false
+                local val, err, forcible = small:incr("k3", 1)
+                local forcible2 = forcible
+                -- 不存在的键无 init，forcible = nil
+                local val, err, forcible = small:incr("nonexistent", 1)
+                local forcible3 = forcible
+                return forcible1, forcible2, forcible3
+            "#)
+            .eval()
+            .unwrap();
+        assert!(forcible1.unwrap()); // 创建新键时触发了 LRU
+        assert_eq!(forcible2, Some(false)); // 更新现有键，forcible = false
+        assert!(forcible3.is_none()); // 不存在的键无 init，forcible = nil
+    }
+
+    #[test]
+    fn test_shared_dict_lpush_rpush_lua() {
+        let engine = LuaEngine::new();
+        engine.init_shared_dict("test", 1024 * 1024);
+
+        // 测试 lpush/rpush
+        let (len1, len2, len3, len4): (Option<i64>, Option<i64>, Option<i64>, Option<i64>) = engine
+            .lua
+            .load(r#"
+                local test = ngx.shared.test
+                -- lpush 新列表
+                local len, err = test:lpush("mylist", "value1")
+                local len1 = len
+                -- rpush 添加到尾部
+                local len, err = test:rpush("mylist", "value2")
+                local len2 = len
+                -- lpush 添加到头部
+                local len, err = test:lpush("mylist", "value0")
+                local len3 = len
+                -- llen 获取长度
+                local len, err = test:llen("mylist")
+                local len4 = len
+                return len1, len2, len3, len4
+            "#)
+            .eval()
+            .unwrap();
+        assert_eq!(len1, Some(1));
+        assert_eq!(len2, Some(2));
+        assert_eq!(len3, Some(3));
+        assert_eq!(len4, Some(3));
+    }
+
+    #[test]
+    fn test_shared_dict_lpop_rpop_lua() {
+        let engine = LuaEngine::new();
+        engine.init_shared_dict("test", 1024 * 1024);
+
+        // 测试 lpop/rpop
+        let (val1, val2, val3, val4, len): (Option<String>, Option<String>, Option<String>, Option<String>, Option<i64>) = engine
+            .lua
+            .load(r#"
+                local test = ngx.shared.test
+                -- 创建列表: [a, b, c]
+                test:rpush("mylist", "a")
+                test:rpush("mylist", "b")
+                test:rpush("mylist", "c")
+                -- lpop 从头部弹出
+                local val1, err = test:lpop("mylist")
+                -- rpop 从尾部弹出
+                local val2, err = test:rpop("mylist")
+                -- 弹出最后一个
+                local val3, err = test:lpop("mylist")
+                -- 空列表弹出
+                local val4, err = test:lpop("mylist")
+                -- 获取长度
+                local len, err = test:llen("mylist")
+                return val1, val2, val3, val4, len
+            "#)
+            .eval()
+            .unwrap();
+        assert_eq!(val1, Some("a".to_string()));
+        assert_eq!(val2, Some("c".to_string()));
+        assert_eq!(val3, Some("b".to_string()));
+        assert!(val4.is_none()); // 空列表返回 nil
+        assert!(len.is_none()); // 键不存在
+    }
+
+    #[test]
+    fn test_shared_dict_list_not_a_list_lua() {
+        let engine = LuaEngine::new();
+        engine.init_shared_dict("test", 1024 * 1024);
+
+        // 测试对非列表值操作
+        let (err1, err2): (Option<String>, Option<String>) = engine
+            .lua
+            .load(r#"
+                local test = ngx.shared.test
+                -- 设置标量值
+                test:set("key", "value")
+                -- 尝试 lpush 到标量
+                local len, err1 = test:lpush("key", "item")
+                -- 尝试 lpop 标量
+                local val, err2 = test:lpop("key")
+                return err1, err2
+            "#)
+            .eval()
+            .unwrap();
+        assert_eq!(err1, Some("value not a list".to_string()));
+        assert_eq!(err2, Some("value not a list".to_string()));
+    }
 }

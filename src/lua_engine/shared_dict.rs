@@ -9,11 +9,30 @@ use std::time::{Duration, Instant};
 use dashmap::DashMap;
 use mlua::{UserData, UserDataMethods};
 
+/// 存储的值类型
+#[derive(Clone, Debug)]
+pub enum StoredValue {
+    /// 标量值（字符串/数字）
+    Scalar(Vec<u8>),
+    /// 列表值
+    List(Vec<Vec<u8>>),
+}
+
+impl StoredValue {
+    /// 获取估算大小
+    pub fn estimated_size(&self) -> usize {
+        match self {
+            StoredValue::Scalar(v) => v.len(),
+            StoredValue::List(items) => items.iter().map(|v| v.len()).sum(),
+        }
+    }
+}
+
 /// 共享字典中的值条目
 #[derive(Clone, Debug)]
 pub struct SharedDictEntry {
     /// 存储的值
-    pub value: Vec<u8>,
+    pub value: StoredValue,
     /// 过期时间（None 表示永不过期）
     pub expires_at: Option<Instant>,
     /// 用户标志位（用于 set/get_stale）
@@ -23,10 +42,20 @@ pub struct SharedDictEntry {
 }
 
 impl SharedDictEntry {
-    /// 创建新的条目
+    /// 创建新的条目（标量值）
     pub fn new(value: Vec<u8>) -> Self {
         Self {
-            value,
+            value: StoredValue::Scalar(value),
+            expires_at: None,
+            user_flags: 0,
+            last_access: Instant::now(),
+        }
+    }
+
+    /// 创建列表条目
+    pub fn new_list() -> Self {
+        Self {
+            value: StoredValue::List(Vec::new()),
             expires_at: None,
             user_flags: 0,
             last_access: Instant::now(),
@@ -36,7 +65,7 @@ impl SharedDictEntry {
     /// 创建带过期时间的条目
     pub fn with_ttl(value: Vec<u8>, ttl: Duration) -> Self {
         Self {
-            value,
+            value: StoredValue::Scalar(value),
             expires_at: Some(Instant::now() + ttl),
             user_flags: 0,
             last_access: Instant::now(),
@@ -46,7 +75,7 @@ impl SharedDictEntry {
     /// 创建带标志位的条目
     pub fn with_flags(value: Vec<u8>, flags: u32) -> Self {
         Self {
-            value,
+            value: StoredValue::Scalar(value),
             expires_at: None,
             user_flags: flags,
             last_access: Instant::now(),
@@ -56,7 +85,7 @@ impl SharedDictEntry {
     /// 创建完整的条目
     pub fn full(value: Vec<u8>, ttl: Option<Duration>, flags: u32) -> Self {
         Self {
-            value,
+            value: StoredValue::Scalar(value),
             expires_at: ttl.map(|t| Instant::now() + t),
             user_flags: flags,
             last_access: Instant::now(),
@@ -89,6 +118,11 @@ impl SharedDictEntry {
     pub fn touch(&mut self) {
         self.last_access = Instant::now();
     }
+
+    /// 获取条目的估算大小
+    pub fn estimated_size(&self) -> usize {
+        self.value.estimated_size()
+    }
 }
 
 /// 共享字典
@@ -120,7 +154,7 @@ impl SharedDict {
             .iter()
             .map(|entry| {
                 // 估算条目大小：键长度 + 值长度 + 元数据开销
-                entry.key().len() + entry.value().value.len() + 32
+                entry.key().len() + entry.value().estimated_size() + 32
             })
             .sum()
     }
@@ -144,7 +178,11 @@ impl SharedDict {
             return None;
         }
 
-        Some((entry.value.clone(), entry.user_flags))
+        // 只返回标量值
+        match &entry.value {
+            StoredValue::Scalar(v) => Some((v.clone(), entry.user_flags)),
+            StoredValue::List(_) => None, // 列表类型不能用 get 获取
+        }
     }
 
     /// 获取键对应的值（包含过期条目）
@@ -155,7 +193,12 @@ impl SharedDict {
     pub fn get_stale(&self, key: &str) -> Option<(Vec<u8>, u32, bool)> {
         let entry = self.data.get(key)?;
         let is_stale = entry.is_stale();
-        Some((entry.value.clone(), entry.user_flags, is_stale))
+
+        // 只返回标量值
+        match &entry.value {
+            StoredValue::Scalar(v) => Some((v.clone(), entry.user_flags, is_stale)),
+            StoredValue::List(_) => None, // 列表类型不能用 get_stale 获取
+        }
     }
 
     /// 设置键值对
@@ -231,7 +274,7 @@ impl SharedDict {
             .map(|entry| {
                 let key = entry.key().clone();
                 let access_time = entry.last_access;
-                let size = key.len() + entry.value.len() + 32;
+                let size = key.len() + entry.value.estimated_size() + 32;
                 (key, access_time, size)
             })
             .collect();
@@ -292,30 +335,54 @@ impl SharedDict {
 
     /// 添加键值对（仅在键不存在时成功）
     ///
+    /// 类似 set 方法，但仅在键不存在时存储。
+    /// 如果键已存在且未过期，返回 success=false, err="exists"。
+    ///
     /// # 返回值
-    /// - `Ok(true)` - 添加成功
-    /// - `Ok(false)` - 键已存在
-    /// - `Err(SharedDictError::NoMemory)` - 内存不足
+    /// - `SetResult` - 包含 success, err, forcible
+    ///
+    /// # LRU 淘汰策略
+    /// 当内存不足时，会尝试：
+    /// 1. 先清理过期条目
+    /// 2. 如果仍不足，按 LRU 策略淘汰最近最少使用的条目
     pub fn add(
         &self,
         key: &str,
         value: Vec<u8>,
         ttl: Option<f64>,
         flags: u32,
-    ) -> Result<bool, SharedDictError> {
-        // 检查键是否存在
-        if self.data.contains_key(key) {
-            return Ok(false);
+    ) -> SetResult {
+        // 检查键是否存在（需要检查过期）
+        if let Some(entry) = self.data.get(key) {
+            if !entry.is_expired() {
+                return SetResult {
+                    success: false,
+                    err: Some("exists".to_string()),
+                    forcible: false,
+                };
+            }
+            // 键已过期，可以覆盖
         }
 
         let entry_size = key.len() + value.len() + 32;
+        let mut forcible = false;
 
         // 检查容量
         if !self.has_capacity(entry_size) {
+            // 先清理过期条目
             self.flush_expired();
 
+            // 如果仍然不足，使用 LRU 淘汰
             if !self.has_capacity(entry_size) {
-                return Err(SharedDictError::NoMemory);
+                forcible = self.evict_lru(entry_size);
+
+                if !self.has_capacity(entry_size) {
+                    return SetResult {
+                        success: false,
+                        err: Some("no memory".to_string()),
+                        forcible,
+                    };
+                }
             }
         }
 
@@ -324,15 +391,22 @@ impl SharedDict {
 
         self.data.insert(key.to_string(), entry);
 
-        Ok(true)
+        SetResult {
+            success: true,
+            err: None,
+            forcible,
+        }
     }
 
     /// 安全添加键值对
     ///
+    /// 类似 add 方法，但不会淘汰任何未过期条目。
+    /// 当内存不足时，立即返回错误。
+    ///
     /// # 返回值
     /// - `Ok(true)` - 添加成功
-    /// - `Ok(false)` - 键已存在
-    /// - `Err(SharedDictError::NoMemory)` - 内存不足（不会删除现有条目）
+    /// - `Ok(false)` - 键已存在（未过期）
+    /// - `Err(SharedDictError::NoMemory)` - 内存不足
     pub fn safe_add(
         &self,
         key: &str,
@@ -340,14 +414,17 @@ impl SharedDict {
         ttl: Option<f64>,
         flags: u32,
     ) -> Result<bool, SharedDictError> {
-        // 检查键是否存在
-        if self.data.contains_key(key) {
-            return Ok(false);
+        // 检查键是否存在（需要检查过期）
+        if let Some(entry) = self.data.get(key) {
+            if !entry.is_expired() {
+                return Ok(false);
+            }
+            // 键已过期，可以覆盖
         }
 
         let entry_size = key.len() + value.len() + 32;
 
-        // 检查容量（不清理过期条目）
+        // 检查容量（不清理过期条目，不淘汰 LRU 条目）
         if !self.has_capacity(entry_size) {
             return Err(SharedDictError::NoMemory);
         }
@@ -360,30 +437,45 @@ impl SharedDict {
         Ok(true)
     }
 
-    /// 替换键值对（仅在键存在时成功）
+    /// 替换键值对（仅在键存在且未过期时成功）
+    ///
+    /// 类似 set 方法，但仅在键存在时存储。
+    /// 如果键不存在或已过期，返回 success=false, err="not found"。
     ///
     /// # 返回值
-    /// - `Ok(true)` - 替换成功
-    /// - `Ok(false)` - 键不存在
-    /// - `Err(SharedDictError::NoMemory)` - 内存不足
+    /// - `SetResult` - 包含 success, err, forcible
+    ///
+    /// # LRU 淘汰策略
+    /// 当内存不足时，会尝试：
+    /// 1. 先清理过期条目
+    /// 2. 如果仍不足，按 LRU 策略淘汰最近最少使用的条目
     pub fn replace(
         &self,
         key: &str,
         value: Vec<u8>,
         ttl: Option<f64>,
         flags: u32,
-    ) -> Result<bool, SharedDictError> {
-        // 检查键是否存在
-        if !self.data.contains_key(key) {
-            return Ok(false);
+    ) -> SetResult {
+        // 检查键是否存在且未过期
+        if let Some(entry) = self.data.get(key) {
+            if entry.is_expired() {
+                return SetResult {
+                    success: false,
+                    err: Some("not found".to_string()),
+                    forcible: false,
+                };
+            }
+            // 键存在且未过期，可以替换
+        } else {
+            return SetResult {
+                success: false,
+                err: Some("not found".to_string()),
+                forcible: false,
+            };
         }
 
-        let result = self.set(key, value, ttl, flags);
-        if result.success {
-            Ok(true)
-        } else {
-            Err(SharedDictError::NoMemory)
-        }
+        // 使用 set 方法进行替换
+        self.set(key, value, ttl, flags)
     }
 
     /// 删除键
@@ -399,37 +491,65 @@ impl SharedDict {
     ///
     /// # 参数
     /// - `key` - 键
-    /// - `value` - 增量（可以为负数）
+    /// - `value` - 增量（可以为负数或浮点数）
     /// - `init` - 初始值（如果键不存在）
     /// - `init_ttl` - 初始值的过期时间
     ///
     /// # 返回值
-    /// - `Ok(new_value)` - 增加后的新值
-    /// - `Err(SharedDictError::NoMemory)` - 内存不足
-    /// - `Err(SharedDictError::NotANumber)` - 现有值不是数字
+    /// - `IncrResult` - 包含 new_value, err, forcible
+    ///
+    /// # 行为
+    /// - 键不存在或已过期时，如果 init 未指定，返回 "not found"
+    /// - 键不存在或已过期时，如果 init 指定，创建新键并设置 init + value
+    /// - 原值不是数字时，返回 "not a number"
+    /// - 创建新键时使用 LRU 淘汰（与 add 方法类似）
     pub fn incr(
         &self,
         key: &str,
-        value: i64,
-        init: Option<i64>,
+        value: f64,
+        init: Option<f64>,
         init_ttl: Option<f64>,
-    ) -> Result<i64, SharedDictError> {
+    ) -> IncrResult {
         // 尝试获取现有值
         if let Some(entry) = self.data.get(key) {
             if entry.is_expired() {
                 // 过期条目，使用初始值
                 drop(entry);
 
-                let init_val = init.ok_or(SharedDictError::NotFound)?;
+                let init_val = match init {
+                    Some(v) => v,
+                    None => {
+                        return IncrResult {
+                            new_value: None,
+                            err: Some("not found".to_string()),
+                            forcible: None,
+                        }
+                    }
+                };
                 return self.incr_init(key, init_val, value, init_ttl);
             }
 
             // 解析现有值
-            let current = String::from_utf8_lossy(&entry.value);
-            let current: i64 = current
-                .trim()
-                .parse()
-                .map_err(|_| SharedDictError::NotANumber)?;
+            let current = match &entry.value {
+                StoredValue::Scalar(v) => String::from_utf8_lossy(v),
+                StoredValue::List(_) => {
+                    return IncrResult {
+                        new_value: None,
+                        err: Some("not a number".to_string()),
+                        forcible: None,
+                    }
+                }
+            };
+            let current: f64 = match current.trim().parse() {
+                Ok(v) => v,
+                Err(_) => {
+                    return IncrResult {
+                        new_value: None,
+                        err: Some("not a number".to_string()),
+                        forcible: None,
+                    }
+                }
+            };
 
             let new_value = current + value;
             let new_entry = SharedDictEntry::full(
@@ -441,34 +561,274 @@ impl SharedDict {
             drop(entry);
             self.data.insert(key.to_string(), new_entry);
 
-            return Ok(new_value);
+            return IncrResult {
+                new_value: Some(new_value),
+                err: None,
+                forcible: Some(false), // 更新现有键，不涉及淘汰
+            };
         }
 
         // 键不存在，使用初始值
-        let init_val = init.ok_or(SharedDictError::NotFound)?;
+        let init_val = match init {
+            Some(v) => v,
+            None => {
+                return IncrResult {
+                    new_value: None,
+                    err: Some("not found".to_string()),
+                    forcible: None,
+                }
+            }
+        };
         self.incr_init(key, init_val, value, init_ttl)
     }
 
     fn incr_init(
         &self,
         key: &str,
-        init: i64,
-        value: i64,
+        init: f64,
+        value: f64,
         ttl: Option<f64>,
-    ) -> Result<i64, SharedDictError> {
-        let entry_size = key.len() + 32;
+    ) -> IncrResult {
+        let new_value = init + value;
+        let entry_size = key.len() + new_value.to_string().len() + 32;
+        let mut forcible = false;
 
         if !self.has_capacity(entry_size) {
-            return Err(SharedDictError::NoMemory);
+            // 先清理过期条目
+            self.flush_expired();
+
+            // 如果仍不足，使用 LRU 淘汰
+            if !self.has_capacity(entry_size) {
+                forcible = self.evict_lru(entry_size);
+
+                if !self.has_capacity(entry_size) {
+                    return IncrResult {
+                        new_value: None,
+                        err: Some("no memory".to_string()),
+                        forcible: Some(forcible),
+                    };
+                }
+            }
         }
 
-        let new_value = init + value;
         let ttl_duration = ttl.filter(|&t| t > 0.0).map(Duration::from_secs_f64);
         let entry = SharedDictEntry::full(new_value.to_string().into_bytes(), ttl_duration, 0);
 
         self.data.insert(key.to_string(), entry);
 
-        Ok(new_value)
+        IncrResult {
+            new_value: Some(new_value),
+            err: None,
+            forcible: Some(forcible),
+        }
+    }
+
+    /// 在列表头部插入元素
+    ///
+    /// # 返回值
+    /// - `ListResult` - 包含 length, err
+    pub fn lpush(&self, key: &str, value: Vec<u8>) -> ListResult {
+        self.list_push(key, value, true)
+    }
+
+    /// 在列表尾部插入元素
+    ///
+    /// # 返回值
+    /// - `ListResult` - 包含 length, err
+    pub fn rpush(&self, key: &str, value: Vec<u8>) -> ListResult {
+        self.list_push(key, value, false)
+    }
+
+    /// 通用列表插入方法
+    fn list_push(&self, key: &str, value: Vec<u8>, at_head: bool) -> ListResult {
+        let additional_size = key.len() + value.len() + 32;
+
+        // 检查现有条目
+        if let Some(entry) = self.data.get(key) {
+            if entry.is_expired() {
+                // 过期条目，删除后创建新列表
+                drop(entry);
+                self.data.remove(key);
+            } else {
+                // 检查是否为列表类型
+                match &entry.value {
+                    StoredValue::List(_) => {
+                        // 是列表，可以添加
+                        let mut cloned_entry = entry.clone();
+                        drop(entry);
+
+                        let len = {
+                            let items = match &mut cloned_entry.value {
+                                StoredValue::List(items) => items,
+                                _ => unreachable!(),
+                            };
+
+                            let additional = value.len();
+
+                            // 检查容量（不淘汰）
+                            if !self.has_capacity(additional) {
+                                return ListResult {
+                                    length: None,
+                                    err: Some("no memory".to_string()),
+                                };
+                            }
+
+                            if at_head {
+                                items.insert(0, value);
+                            } else {
+                                items.push(value);
+                            }
+
+                            items.len()
+                        };
+
+                        cloned_entry.touch();
+                        self.data.insert(key.to_string(), cloned_entry);
+
+                        return ListResult {
+                            length: Some(len),
+                            err: None,
+                        };
+                    }
+                    StoredValue::Scalar(_) => {
+                        // 不是列表
+                        return ListResult {
+                            length: None,
+                            err: Some("value not a list".to_string()),
+                        };
+                    }
+                }
+            }
+        }
+
+        // 键不存在，创建新列表
+        if !self.has_capacity(additional_size) {
+            return ListResult {
+                length: None,
+                err: Some("no memory".to_string()),
+            };
+        }
+
+        let mut entry = SharedDictEntry::new_list();
+        if let StoredValue::List(ref mut items) = entry.value {
+            items.push(value);
+        }
+
+        self.data.insert(key.to_string(), entry);
+
+        ListResult {
+            length: Some(1),
+            err: None,
+        }
+    }
+
+    /// 从列表头部弹出元素
+    pub fn lpop(&self, key: &str) -> ListPopResult {
+        self.list_pop(key, true)
+    }
+
+    /// 从列表尾部弹出元素
+    pub fn rpop(&self, key: &str) -> ListPopResult {
+        self.list_pop(key, false)
+    }
+
+    /// 通用列表弹出方法
+    fn list_pop(&self, key: &str, from_head: bool) -> ListPopResult {
+        let entry = match self.data.get(key) {
+            Some(e) => e,
+            None => {
+                return ListPopResult {
+                    value: None,
+                    err: None,
+                }
+            }
+        };
+
+        if entry.is_expired() {
+            return ListPopResult {
+                value: None,
+                err: None,
+            };
+        }
+
+        match &entry.value {
+            StoredValue::List(items) => {
+                if items.is_empty() {
+                    return ListPopResult {
+                        value: None,
+                        err: None,
+                    };
+                }
+
+                let mut cloned_entry = entry.clone();
+                drop(entry);
+
+                let (value, is_empty) = {
+                    let items = match &mut cloned_entry.value {
+                        StoredValue::List(items) => items,
+                        _ => unreachable!(),
+                    };
+
+                    let value = if from_head {
+                        items.remove(0)
+                    } else {
+                        items.pop().unwrap()
+                    };
+
+                    (value, items.is_empty())
+                };
+
+                // 如果列表为空，删除整个条目
+                if is_empty {
+                    self.data.remove(key);
+                } else {
+                    cloned_entry.touch();
+                    self.data.insert(key.to_string(), cloned_entry);
+                }
+
+                return ListPopResult {
+                    value: Some(value),
+                    err: None,
+                };
+            }
+            StoredValue::Scalar(_) => {
+                return ListPopResult {
+                    value: None,
+                    err: Some("value not a list".to_string()),
+                };
+            }
+        }
+    }
+
+    /// 获取列表长度
+    pub fn llen(&self, key: &str) -> ListLenResult {
+        let entry = match self.data.get(key) {
+            Some(e) => e,
+            None => {
+                return ListLenResult {
+                    length: None,
+                    err: None,
+                }
+            }
+        };
+
+        if entry.is_expired() {
+            return ListLenResult {
+                length: None,
+                err: None,
+            };
+        }
+
+        match &entry.value {
+            StoredValue::List(items) => ListLenResult {
+                length: Some(items.len()),
+                err: None,
+            },
+            StoredValue::Scalar(_) => ListLenResult {
+                length: None,
+                err: Some("value not a list".to_string()),
+            },
+        }
     }
 
     /// 清除所有条目
@@ -562,6 +922,44 @@ pub struct SetResult {
     pub forcible: bool,
 }
 
+/// incr 操作的结果
+#[derive(Clone, Debug)]
+pub struct IncrResult {
+    /// 新值（如果成功）
+    pub new_value: Option<f64>,
+    /// 错误信息（如果有）
+    pub err: Option<String>,
+    /// 是否强制淘汰了其他条目（仅在创建新键时有意义）
+    pub forcible: Option<bool>,
+}
+
+/// 列表操作的结果（lpush/rpush）
+#[derive(Clone, Debug)]
+pub struct ListResult {
+    /// 列表长度（如果成功）
+    pub length: Option<usize>,
+    /// 错误信息（如果有）
+    pub err: Option<String>,
+}
+
+/// 列表弹出操作的结果（lpop/rpop）
+#[derive(Clone, Debug)]
+pub struct ListPopResult {
+    /// 弹出的值（如果成功）
+    pub value: Option<Vec<u8>>,
+    /// 错误信息（如果有）
+    pub err: Option<String>,
+}
+
+/// 列表长度操作的结果（llen）
+#[derive(Clone, Debug)]
+pub struct ListLenResult {
+    /// 列表长度（如果成功）
+    pub length: Option<usize>,
+    /// 错误信息（如果有）
+    pub err: Option<String>,
+}
+
 // ============================================================================
 // Lua UserData 实现
 // ============================================================================
@@ -637,53 +1035,63 @@ impl UserData for SharedDict {
         );
 
         // dict:add(key, value, exptime?, flags?)
-        // 返回: success, err
+        // 返回: success, err, forcible
         methods.add_method(
             "add",
             |lua, this, (key, value, exptime, flags): (String, mlua::Value, Option<f64>, Option<u32>)| {
                 let value_bytes = lua_value_to_bytes(&value)?;
                 let flags = flags.unwrap_or(0);
 
-                match this.add(&key, value_bytes, exptime, flags) {
-                    Ok(true) => Ok((true, mlua::Value::Nil)),
-                    Ok(false) => Ok((false, mlua::Value::String(lua.create_string("exists")?))),
-                    Err(SharedDictError::NoMemory) => Ok((false, mlua::Value::String(lua.create_string("no memory")?))),
-                    Err(e) => Ok((false, mlua::Value::String(lua.create_string(&e.to_string())?))),
-                }
+                let result = this.add(&key, value_bytes, exptime, flags);
+
+                let success = result.success;
+                let err = match result.err {
+                    Some(e) => mlua::Value::String(lua.create_string(&e)?),
+                    None => mlua::Value::Nil,
+                };
+                let forcible = result.forcible;
+
+                Ok((success, err, forcible))
             },
         );
 
         // dict:safe_add(key, value, exptime?, flags?)
-        // 返回: success, err
+        // 返回: ok, err
+        // ok: true 表示成功，nil 表示失败
         methods.add_method(
             "safe_add",
             |lua, this, (key, value, exptime, flags): (String, mlua::Value, Option<f64>, Option<u32>)| {
                 let value_bytes = lua_value_to_bytes(&value)?;
                 let flags = flags.unwrap_or(0);
 
-                match this.safe_add(&key, value_bytes, exptime, flags) {
-                    Ok(true) => Ok((true, mlua::Value::Nil)),
-                    Ok(false) => Ok((false, mlua::Value::String(lua.create_string("exists")?))),
-                    Err(SharedDictError::NoMemory) => Ok((false, mlua::Value::String(lua.create_string("no memory")?))),
-                    Err(e) => Ok((false, mlua::Value::String(lua.create_string(&e.to_string())?))),
-                }
+                let result: Result<(mlua::Value, mlua::Value), mlua::Error> = match this.safe_add(&key, value_bytes, exptime, flags) {
+                    Ok(true) => Ok((mlua::Value::Boolean(true), mlua::Value::Nil)),
+                    Ok(false) => Ok((mlua::Value::Boolean(false), mlua::Value::String(lua.create_string("exists")?))),
+                    Err(SharedDictError::NoMemory) => Ok((mlua::Value::Nil, mlua::Value::String(lua.create_string("no memory")?))),
+                    Err(e) => Ok((mlua::Value::Nil, mlua::Value::String(lua.create_string(&e.to_string())?))),
+                };
+                result
             },
         );
 
         // dict:replace(key, value, exptime?, flags?)
-        // 返回: success, err
+        // 返回: success, err, forcible
         methods.add_method(
             "replace",
             |lua, this, (key, value, exptime, flags): (String, mlua::Value, Option<f64>, Option<u32>)| {
                 let value_bytes = lua_value_to_bytes(&value)?;
                 let flags = flags.unwrap_or(0);
 
-                match this.replace(&key, value_bytes, exptime, flags) {
-                    Ok(true) => Ok((true, mlua::Value::Nil)),
-                    Ok(false) => Ok((false, mlua::Value::String(lua.create_string("not found")?))),
-                    Err(SharedDictError::NoMemory) => Ok((false, mlua::Value::String(lua.create_string("no memory")?))),
-                    Err(e) => Ok((false, mlua::Value::String(lua.create_string(&e.to_string())?))),
-                }
+                let result = this.replace(&key, value_bytes, exptime, flags);
+
+                let success = result.success;
+                let err = match result.err {
+                    Some(e) => mlua::Value::String(lua.create_string(&e)?),
+                    None => mlua::Value::Nil,
+                };
+                let forcible = result.forcible;
+
+                Ok((success, err, forcible))
             },
         );
 
@@ -699,18 +1107,35 @@ impl UserData for SharedDict {
         });
 
         // dict:incr(key, value, init?, init_ttl?)
-        // 返回: new_value, err
+        // 返回: newval, err, forcible
         methods.add_method(
             "incr",
-            |lua, this, (key, value, init, init_ttl): (String, i64, Option<i64>, Option<f64>)| {
-                let result: Result<(mlua::Value, mlua::Value), mlua::Error> = match this.incr(&key, value, init, init_ttl) {
-                    Ok(new_value) => Ok((mlua::Value::Integer(new_value), mlua::Value::Nil)),
-                    Err(SharedDictError::NotFound) => Ok((mlua::Value::Nil, mlua::Value::String(lua.create_string("not found")?))),
-                    Err(SharedDictError::NotANumber) => Ok((mlua::Value::Nil, mlua::Value::String(lua.create_string("not a number")?))),
-                    Err(SharedDictError::NoMemory) => Ok((mlua::Value::Nil, mlua::Value::String(lua.create_string("no memory")?))),
-                    Err(e) => Ok((mlua::Value::Nil, mlua::Value::String(lua.create_string(&e.to_string())?))),
+            |lua, this, (key, value, init, init_ttl): (String, f64, Option<f64>, Option<f64>)| {
+                let result = this.incr(&key, value, init, init_ttl);
+
+                let newval = match result.new_value {
+                    Some(v) => {
+                        // 如果是整数，返回整数，否则返回浮点数
+                        if v.fract() == 0.0 && v.is_finite() {
+                            mlua::Value::Integer(v as i64)
+                        } else {
+                            mlua::Value::Number(v)
+                        }
+                    }
+                    None => mlua::Value::Nil,
                 };
-                result
+
+                let err = match result.err {
+                    Some(e) => mlua::Value::String(lua.create_string(&e)?),
+                    None => mlua::Value::Nil,
+                };
+
+                let forcible = match result.forcible {
+                    Some(v) => mlua::Value::Boolean(v),
+                    None => mlua::Value::Nil,
+                };
+
+                Ok((newval, err, forcible))
             },
         );
 
@@ -739,12 +1164,83 @@ impl UserData for SharedDict {
             Ok(table)
         });
 
-        // TODO: 实现列表操作
         // dict:lpush(key, value)
+        // 返回: length, err
+        methods.add_method("lpush", |lua, this, (key, value): (String, mlua::Value)| {
+            let value_bytes = lua_value_to_bytes(&value)?;
+            let result = this.lpush(&key, value_bytes);
+
+            let length = result.length.map(|l| l as i64);
+            let err = match result.err {
+                Some(e) => mlua::Value::String(lua.create_string(&e)?),
+                None => mlua::Value::Nil,
+            };
+
+            Ok((length, err))
+        });
+
         // dict:rpush(key, value)
+        // 返回: length, err
+        methods.add_method("rpush", |lua, this, (key, value): (String, mlua::Value)| {
+            let value_bytes = lua_value_to_bytes(&value)?;
+            let result = this.rpush(&key, value_bytes);
+
+            let length = result.length.map(|l| l as i64);
+            let err = match result.err {
+                Some(e) => mlua::Value::String(lua.create_string(&e)?),
+                None => mlua::Value::Nil,
+            };
+
+            Ok((length, err))
+        });
+
         // dict:lpop(key)
+        // 返回: value, err
+        methods.add_method("lpop", |lua, this, key: String| {
+            let result = this.lpop(&key);
+
+            let value = match result.value {
+                Some(v) => mlua::Value::String(lua.create_string(&v)?),
+                None => mlua::Value::Nil,
+            };
+            let err = match result.err {
+                Some(e) => mlua::Value::String(lua.create_string(&e)?),
+                None => mlua::Value::Nil,
+            };
+
+            Ok((value, err))
+        });
+
         // dict:rpop(key)
+        // 返回: value, err
+        methods.add_method("rpop", |lua, this, key: String| {
+            let result = this.rpop(&key);
+
+            let value = match result.value {
+                Some(v) => mlua::Value::String(lua.create_string(&v)?),
+                None => mlua::Value::Nil,
+            };
+            let err = match result.err {
+                Some(e) => mlua::Value::String(lua.create_string(&e)?),
+                None => mlua::Value::Nil,
+            };
+
+            Ok((value, err))
+        });
+
         // dict:llen(key)
+        // 返回: length, err
+        methods.add_method("llen", |lua, this, key: String| {
+            let result = this.llen(&key);
+
+            let length = result.length.map(|l| l as i64);
+            let err = match result.err {
+                Some(e) => mlua::Value::String(lua.create_string(&e)?),
+                None => mlua::Value::Nil,
+            };
+
+            Ok((length, err))
+        });
     }
 }
 
@@ -802,6 +1298,227 @@ mod tests {
     }
 
     #[test]
+    fn test_shared_dict_add() {
+        let dict = SharedDict::new("test".to_string(), 1024);
+
+        // 添加新键
+        let result = dict.add("key1", b"value1".to_vec(), None, 0);
+        assert!(result.success);
+        assert!(result.err.is_none());
+        assert!(!result.forcible);
+
+        // 添加已存在的键
+        let result = dict.add("key1", b"value2".to_vec(), None, 0);
+        assert!(!result.success);
+        assert_eq!(result.err, Some("exists".to_string()));
+
+        // 验证值未改变
+        let (value, _) = dict.get("key1").unwrap();
+        assert_eq!(value, b"value1");
+    }
+
+    #[test]
+    fn test_shared_dict_add_with_expired_key() {
+        let dict = SharedDict::new("test".to_string(), 1024);
+
+        // 设置一个很快过期的键
+        dict.set("key1", b"value1".to_vec(), Some(0.05), 0);
+
+        // 等待过期
+        std::thread::sleep(Duration::from_millis(100));
+
+        // 过期后 add 应该成功
+        let result = dict.add("key1", b"value2".to_vec(), None, 0);
+        assert!(result.success);
+
+        // 验证新值
+        let (value, _) = dict.get("key1").unwrap();
+        assert_eq!(value, b"value2");
+    }
+
+    #[test]
+    fn test_shared_dict_add_lru_eviction() {
+        let dict = SharedDict::new("test".to_string(), 80);
+
+        // 填满容量 (每个条目约 40 bytes: 2 + 2 + 32 overhead = ~36 bytes)
+        // 第一个条目: ~36 bytes
+        dict.set("k1", b"v1".to_vec(), None, 0);
+        // 第二个条目: ~36 bytes, total ~72 bytes
+        dict.set("k2", b"v2".to_vec(), None, 0);
+        // 第三个条目需要 LRU 淘汰，因为 72 + 36 > 80
+        let result = dict.add("k3", b"v3".to_vec(), None, 0);
+        assert!(result.success);
+        // 应该触发了 LRU 淘汰
+        assert!(result.forcible, "Expected forcible=true, but got success={}, err={:?}", result.success, result.err);
+    }
+
+    #[test]
+    fn test_shared_dict_safe_add() {
+        let dict = SharedDict::new("test".to_string(), 100);
+
+        // 添加新键
+        let result = dict.safe_add("key1", b"value1".to_vec(), None, 0);
+        assert!(result.is_ok());
+
+        // 添加已存在的键
+        let result = dict.safe_add("key1", b"value2".to_vec(), None, 0);
+        assert!(matches!(result, Ok(false)));
+
+        // 内存不足
+        let large_value = vec![0u8; 200];
+        let result = dict.safe_add("key2", large_value, None, 0);
+        assert!(matches!(result, Err(SharedDictError::NoMemory)));
+    }
+
+    #[test]
+    fn test_shared_dict_safe_add_with_expired_key() {
+        let dict = SharedDict::new("test".to_string(), 1024);
+
+        // 设置一个很快过期的键
+        dict.set("key1", b"value1".to_vec(), Some(0.05), 0);
+
+        // 等待过期
+        std::thread::sleep(Duration::from_millis(100));
+
+        // 过期后 safe_add 应该成功
+        let result = dict.safe_add("key1", b"value2".to_vec(), None, 0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_shared_dict_lpush_rpush() {
+        let dict = SharedDict::new("test".to_string(), 1024);
+
+        // lpush 新列表
+        let result = dict.lpush("mylist", b"value1".to_vec());
+        assert_eq!(result.length, Some(1));
+        assert!(result.err.is_none());
+
+        // rpush 添加到尾部
+        let result = dict.rpush("mylist", b"value2".to_vec());
+        assert_eq!(result.length, Some(2));
+
+        // lpush 添加到头部
+        let result = dict.lpush("mylist", b"value0".to_vec());
+        assert_eq!(result.length, Some(3));
+
+        // 检查列表长度
+        let result = dict.llen("mylist");
+        assert_eq!(result.length, Some(3));
+    }
+
+    #[test]
+    fn test_shared_dict_lpop_rpop() {
+        let dict = SharedDict::new("test".to_string(), 1024);
+
+        // 创建列表: [a, b, c]
+        dict.rpush("mylist", b"a".to_vec());
+        dict.rpush("mylist", b"b".to_vec());
+        dict.rpush("mylist", b"c".to_vec());
+
+        // lpop 从头部弹出
+        let result = dict.lpop("mylist");
+        assert_eq!(result.value, Some(b"a".to_vec()));
+        assert_eq!(dict.llen("mylist").length, Some(2));
+
+        // rpop 从尾部弹出
+        let result = dict.rpop("mylist");
+        assert_eq!(result.value, Some(b"c".to_vec()));
+        assert_eq!(dict.llen("mylist").length, Some(1));
+
+        // 弹出最后一个元素
+        let result = dict.lpop("mylist");
+        assert_eq!(result.value, Some(b"b".to_vec()));
+        // 列表为空后键被删除
+        assert!(dict.llen("mylist").length.is_none());
+
+        // 空列表/不存在的键弹出返回 nil
+        let result = dict.lpop("mylist");
+        assert!(result.value.is_none());
+    }
+
+    #[test]
+    fn test_shared_dict_list_not_a_list() {
+        let dict = SharedDict::new("test".to_string(), 1024);
+
+        // 设置标量值
+        dict.set("key", b"value".to_vec(), None, 0);
+
+        // 尝试 lpush 到标量
+        let result = dict.lpush("key", b"item".to_vec());
+        assert_eq!(result.err, Some("value not a list".to_string()));
+
+        // 尝试 lpop 标量
+        let result = dict.lpop("key");
+        assert_eq!(result.err, Some("value not a list".to_string()));
+    }
+
+    #[test]
+    fn test_shared_dict_list_no_memory() {
+        let dict = SharedDict::new("test".to_string(), 50);
+
+        // 小列表应该成功
+        let result = dict.lpush("mylist", b"small".to_vec());
+        assert!(result.length.is_some());
+
+        // 大列表应该失败
+        let large_value = vec![0u8; 100];
+        let result = dict.rpush("mylist", large_value);
+        assert_eq!(result.err, Some("no memory".to_string()));
+    }
+
+    #[test]
+    fn test_shared_dict_replace() {
+        let dict = SharedDict::new("test".to_string(), 1024);
+
+        // 替换不存在的键
+        let result = dict.replace("key1", b"value1".to_vec(), None, 0);
+        assert!(!result.success);
+        assert_eq!(result.err, Some("not found".to_string()));
+
+        // 设置后替换
+        dict.set("key1", b"value1".to_vec(), None, 0);
+        let result = dict.replace("key1", b"value2".to_vec(), None, 0);
+        assert!(result.success);
+
+        let (value, _) = dict.get("key1").unwrap();
+        assert_eq!(value, b"value2");
+    }
+
+    #[test]
+    fn test_shared_dict_replace_with_expired_key() {
+        let dict = SharedDict::new("test".to_string(), 1024);
+
+        // 设置一个很快过期的键
+        dict.set("key1", b"value1".to_vec(), Some(0.05), 0);
+
+        // 等待过期
+        std::thread::sleep(Duration::from_millis(100));
+
+        // 过期后 replace 应该失败
+        let result = dict.replace("key1", b"value2".to_vec(), None, 0);
+        assert!(!result.success);
+        assert_eq!(result.err, Some("not found".to_string()));
+    }
+
+    #[test]
+    fn test_shared_dict_replace_with_lru() {
+        let dict = SharedDict::new("test".to_string(), 150);
+
+        // 设置多个键填满容量
+        dict.set("key1", b"v1".to_vec(), None, 0);
+        dict.set("key2", b"v2".to_vec(), None, 0);
+        dict.set("key3", b"v3".to_vec(), None, 0);
+
+        // replace key1 为一个更大的值，可能需要 LRU 淘汰
+        // 因为新值比旧值大，可能需要淘汰其他条目
+        let large_value = vec![0u8; 80];
+        let result = dict.replace("key1", large_value, None, 0);
+        assert!(result.success);
+        // forcible 取决于是否需要淘汰其他条目
+    }
+
+    #[test]
     fn test_shared_dict_delete() {
         let dict = SharedDict::new("test".to_string(), 1024);
 
@@ -812,56 +1529,70 @@ mod tests {
     }
 
     #[test]
-    fn test_shared_dict_add() {
-        let dict = SharedDict::new("test".to_string(), 1024);
-
-        // 添加新键
-        assert!(dict.add("key1", b"value1".to_vec(), None, 0).unwrap());
-
-        // 添加已存在的键
-        assert!(!dict.add("key1", b"value2".to_vec(), None, 0).unwrap());
-
-        // 验证值未改变
-        let (value, _) = dict.get("key1").unwrap();
-        assert_eq!(value, b"value1");
-    }
-
-    #[test]
-    fn test_shared_dict_replace() {
-        let dict = SharedDict::new("test".to_string(), 1024);
-
-        // 替换不存在的键
-        assert!(!dict.replace("key1", b"value1".to_vec(), None, 0).unwrap());
-
-        // 设置后替换
-        dict.set("key1", b"value1".to_vec(), None, 0);
-        assert!(dict.replace("key1", b"value2".to_vec(), None, 0).unwrap());
-
-        let (value, _) = dict.get("key1").unwrap();
-        assert_eq!(value, b"value2");
-    }
-
-    #[test]
     fn test_shared_dict_incr() {
         let dict = SharedDict::new("test".to_string(), 1024);
 
         // 不存在的键，无初始值
-        assert!(matches!(
-            dict.incr("key1", 1, None, None),
-            Err(SharedDictError::NotFound)
-        ));
+        let result = dict.incr("key1", 1.0, None, None);
+        assert!(result.new_value.is_none());
+        assert_eq!(result.err, Some("not found".to_string()));
 
         // 不存在的键，有初始值
-        let result = dict.incr("key1", 5, Some(0), None).unwrap();
-        assert_eq!(result, 5);
+        let result = dict.incr("key1", 5.0, Some(0.0), None);
+        assert_eq!(result.new_value, Some(5.0));
+        assert!(result.err.is_none());
 
         // 已存在的键
-        let result = dict.incr("key1", 3, None, None).unwrap();
-        assert_eq!(result, 8);
+        let result = dict.incr("key1", 3.0, None, None);
+        assert_eq!(result.new_value, Some(8.0));
 
         // 负增量
-        let result = dict.incr("key1", -2, None, None).unwrap();
-        assert_eq!(result, 6);
+        let result = dict.incr("key1", -2.0, None, None);
+        assert_eq!(result.new_value, Some(6.0));
+
+        // 浮点数
+        let result = dict.incr("key1", 0.5, None, None);
+        assert_eq!(result.new_value, Some(6.5));
+    }
+
+    #[test]
+    fn test_shared_dict_incr_not_a_number() {
+        let dict = SharedDict::new("test".to_string(), 1024);
+
+        // 设置非数字值
+        dict.set("key1", b"not a number".to_vec(), None, 0);
+
+        // 尝试增加
+        let result = dict.incr("key1", 1.0, None, None);
+        assert!(result.new_value.is_none());
+        assert_eq!(result.err, Some("not a number".to_string()));
+    }
+
+    #[test]
+    fn test_shared_dict_incr_with_lru() {
+        let dict = SharedDict::new("test".to_string(), 80);
+
+        // 填满容量
+        dict.set("k1", b"v1".to_vec(), None, 0);
+        dict.set("k2", b"v2".to_vec(), None, 0);
+
+        // incr 新键需要 LRU 淘汰
+        let result = dict.incr("k3", 1.0, Some(0.0), None);
+        assert_eq!(result.new_value, Some(1.0));
+        assert!(result.forcible.unwrap()); // 应该触发了 LRU 淘汰
+    }
+
+    #[test]
+    fn test_shared_dict_incr_update_no_forcible() {
+        let dict = SharedDict::new("test".to_string(), 1024);
+
+        // 设置初始值
+        dict.set("key1", b"10".to_vec(), None, 0);
+
+        // 更新现有键不应该触发 LRU
+        let result = dict.incr("key1", 5.0, None, None);
+        assert_eq!(result.new_value, Some(15.0));
+        assert_eq!(result.forcible, Some(false)); // 更新现有键，forcible = false
     }
 
     #[test]
