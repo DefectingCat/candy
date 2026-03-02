@@ -260,6 +260,9 @@ impl SharedDict {
 
     /// 安全设置键值对（仅在内存充足时设置）
     ///
+    /// 与 set 方法类似，但不会淘汰任何未过期条目。
+    /// 当内存不足时，立即返回错误而不是强制淘汰。
+    ///
     /// # 返回值
     /// - `Ok(true)` - 设置成功，覆盖了旧值
     /// - `Ok(false)` - 设置成功，是新键
@@ -273,7 +276,7 @@ impl SharedDict {
     ) -> Result<bool, SharedDictError> {
         let entry_size = key.len() + value.len() + 32;
 
-        // 检查容量（不清理过期条目）
+        // 检查容量（不清理过期条目，不淘汰 LRU 条目）
         if !self.has_capacity(entry_size) {
             return Err(SharedDictError::NoMemory);
         }
@@ -615,18 +618,21 @@ impl UserData for SharedDict {
         );
 
         // dict:safe_set(key, value, exptime?, flags?)
-        // 返回: success, err
+        // 返回: ok, err
+        // ok: true 表示成功，nil 表示失败（不是 false）
+        // err: 错误信息，如 "no memory"
         methods.add_method(
             "safe_set",
             |lua, this, (key, value, exptime, flags): (String, mlua::Value, Option<f64>, Option<u32>)| {
                 let value_bytes = lua_value_to_bytes(&value)?;
                 let flags = flags.unwrap_or(0);
 
-                match this.safe_set(&key, value_bytes, exptime, flags) {
-                    Ok(_) => Ok((true, mlua::Value::Nil)),
-                    Err(SharedDictError::NoMemory) => Ok((false, mlua::Value::String(lua.create_string("no memory")?))),
-                    Err(e) => Ok((false, mlua::Value::String(lua.create_string(&e.to_string())?))),
-                }
+                let result: Result<(mlua::Value, mlua::Value), mlua::Error> = match this.safe_set(&key, value_bytes, exptime, flags) {
+                    Ok(_) => Ok((mlua::Value::Boolean(true), mlua::Value::Nil)),
+                    Err(SharedDictError::NoMemory) => Ok((mlua::Value::Nil, mlua::Value::String(lua.create_string("no memory")?))),
+                    Err(e) => Ok((mlua::Value::Nil, mlua::Value::String(lua.create_string(&e.to_string())?))),
+                };
+                result
             },
         );
 
@@ -967,6 +973,52 @@ mod tests {
         
         // key1 和 key2 应该仍然存在（最近访问过）
         // key3, key4, 或 key5 可能被淘汰
+    }
+
+    #[test]
+    fn test_shared_dict_safe_set() {
+        let dict = SharedDict::new("test".to_string(), 100);
+
+        // 小数据应该成功
+        let result = dict.safe_set("key1", b"short".to_vec(), None, 0);
+        assert!(result.is_ok());
+
+        // 大数据应该失败（不淘汰任何条目）
+        let large_value = vec![0u8; 200];
+        let result = dict.safe_set("key2", large_value, None, 0);
+        assert!(matches!(result, Err(SharedDictError::NoMemory)));
+
+        // key1 应该仍然存在（safe_set 不会淘汰它）
+        assert!(dict.get("key1").is_some());
+    }
+
+    #[test]
+    fn test_shared_dict_safe_set_vs_set() {
+        let dict = SharedDict::new("test".to_string(), 100);
+
+        // 填满容量
+        dict.set("key1", b"value1".to_vec(), None, 0);
+        dict.set("key2", b"value2".to_vec(), None, 0);
+
+        // set 会淘汰 LRU 条目
+        let set_result = dict.set("key3", b"value3".to_vec(), None, 0);
+        assert!(set_result.success);
+        assert!(set_result.forcible); // 淘汰了其他条目
+
+        // 重置字典
+        dict.flush_all();
+
+        // 再次填满
+        dict.set("key1", b"value1".to_vec(), None, 0);
+        dict.set("key2", b"value2".to_vec(), None, 0);
+
+        // safe_set 不会淘汰，直接返回错误
+        let safe_result = dict.safe_set("key3", b"value3".to_vec(), None, 0);
+        assert!(matches!(safe_result, Err(SharedDictError::NoMemory)));
+
+        // key1 和 key2 应该仍然存在
+        assert!(dict.get("key1").is_some());
+        assert!(dict.get("key2").is_some());
     }
 
     #[test]

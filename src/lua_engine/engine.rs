@@ -748,6 +748,68 @@ mod tests {
     }
 
     #[test]
+    fn test_shared_dict_safe_set_lua() {
+        let engine = LuaEngine::new();
+        // 创建一个小容量字典
+        engine.init_shared_dict("small", 100);
+
+        // 测试 safe_set 在内存不足时返回 nil
+        let (ok, err): (Option<bool>, Option<String>) = engine
+            .lua
+            .load(r#"
+                local small = ngx.shared.small
+                -- 填满容量
+                small:safe_set("k1", "v1")
+                small:safe_set("k2", "v2")
+                -- 尝试添加更多（应该失败）
+                local ok, err = small:safe_set("k3", "v3")
+                return ok, err
+            "#)
+            .eval()
+            .unwrap();
+        // ok 应该是 nil（不是 false）
+        assert!(ok.is_none());
+        assert_eq!(err, Some("no memory".to_string()));
+    }
+
+    #[test]
+    fn test_shared_dict_safe_set_vs_set_lua() {
+        let engine = LuaEngine::new();
+        engine.init_shared_dict("small", 100);
+
+        // 对比 set 和 safe_set 的行为
+        let (set_forcible, safe_ok): (bool, Option<bool>) = engine
+            .lua
+            .load(r#"
+                local small = ngx.shared.small
+                
+                -- 使用 set 填满容量
+                local succ, err, forcible = small:set("k1", "v1")
+                small:set("k2", "v2")
+                
+                -- set 会淘汰 LRU，返回 forcible=true
+                local succ, err, forcible = small:set("k3", "v3")
+                local set_forcible = forcible
+                
+                -- 清空
+                small:flush_all()
+                
+                -- 再次填满
+                small:safe_set("k1", "v1")
+                small:safe_set("k2", "v2")
+                
+                -- safe_set 不会淘汰，返回 nil
+                local ok, err = small:safe_set("k3", "v3")
+                
+                return set_forcible, ok
+            "#)
+            .eval()
+            .unwrap();
+        assert!(set_forcible); // set 淘汰了条目
+        assert!(safe_ok.is_none()); // safe_set 返回 nil
+    }
+
+    #[test]
     fn test_shared_dict_get_stale() {
         let engine = LuaEngine::new();
         engine.init_shared_dict("test", 1024 * 1024);
