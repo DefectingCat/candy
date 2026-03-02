@@ -1,41 +1,71 @@
-# Website
+# Candy Documentation
 
-This website is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
+基于 [Docusaurus 3](https://docusaurus.io/) 构建的 Candy 文档站点。
 
-### Installation
+## 开发
 
-```
-$ yarn
-```
+```bash
+# 安装依赖
+pnpm install
 
-### Local Development
-
-```
-$ yarn start
+# 启动开发服务器
+pnpm start
 ```
 
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
+开发服务器启动后自动打开浏览器窗口，支持热重载。
 
-### Build
+## 构建
 
-```
-$ yarn build
-```
-
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
-
-### Deployment
-
-Using SSH:
-
-```
-$ USE_SSH=true yarn deploy
+```bash
+pnpm build
 ```
 
-Not using SSH:
+生成静态文件至 `build` 目录，可部署至任意静态文件服务器。
+
+## 部署
+
+### GitHub Pages
+
+```bash
+# 使用 SSH
+USE_SSH=true pnpm deploy
+
+# 使用 HTTPS
+GIT_USER=<username> pnpm deploy
+```
+
+### 其他平台
+
+构建后将 `build` 目录部署至任意静态托管服务（Vercel、Netlify、Cloudflare Pages 等）。
+
+## 目录结构
 
 ```
-$ GIT_USER=<Your GitHub username> yarn deploy
+docs/
+├── docs/          # 文档源文件
+│   ├── intro.md
+│   ├── quick-start.md
+│   ├── faq.md
+│   └── config/    # 配置相关文档
+├── blog/          # 博客文章
+├── src/           # 自定义组件与样式
+├── static/        # 静态资源
+└── docusaurus.config.ts
 ```
 
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+## 添加文档
+
+1. 在 `docs/` 目录创建 Markdown 文件
+2. 更新 `sidebars.ts` 添加侧边栏入口
+3. 使用相对路径引用图片等资源
+
+## 配置
+
+主配置文件 `docusaurus.config.ts` 包含：
+
+- 站点元数据（标题、URL、描述）
+- 导航栏与页脚
+- 主题与样式
+- 插件配置
+
+详细配置参考 [Docusaurus 官方文档](https://docusaurus.io/docs/configuration)。
