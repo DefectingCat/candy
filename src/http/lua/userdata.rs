@@ -3,9 +3,21 @@ use http::{HeaderName, HeaderValue};
 use mlua::{UserData, UserDataMethods};
 
 use super::{
-    constants::*,
     structures::{CandyHeaders, CandyReq, CandyResp, RequestContext},
     utils::UriArgs,
+};
+use crate::lua_engine::{
+    HTTP_ACCEPTED, HTTP_BAD_GATEWAY, HTTP_BAD_REQUEST, HTTP_CLOSE, HTTP_CONFLICT, HTTP_CONTINUE,
+    HTTP_COPY, HTTP_CREATED, HTTP_DELETE, HTTP_FORBIDDEN, HTTP_GATEWAY_TIMEOUT, HTTP_GET,
+    HTTP_GONE, HTTP_HEAD, HTTP_ILLEGAL, HTTP_INSUFFICIENT_STORAGE, HTTP_INTERNAL_SERVER_ERROR,
+    HTTP_LOCK, HTTP_METHOD_NOT_IMPLEMENTED, HTTP_MKCOL, HTTP_MOVE, HTTP_MOVED_PERMANENTLY,
+    HTTP_MOVED_TEMPORARILY, HTTP_NO_CONTENT, HTTP_NOT_ACCEPTABLE, HTTP_NOT_ALLOWED, HTTP_NOT_FOUND,
+    HTTP_NOT_MODIFIED, HTTP_OK, HTTP_OPTIONS, HTTP_PARTIAL_CONTENT, HTTP_PATCH,
+    HTTP_PAYMENT_REQUIRED, HTTP_POST, HTTP_PROPFIND, HTTP_PROPPATCH, HTTP_PUT,
+    HTTP_REQUEST_TIMEOUT, HTTP_SEE_OTHER, HTTP_SERVICE_UNAVAILABLE, HTTP_SPECIAL_RESPONSE,
+    HTTP_SWITCHING_PROTOCOLS, HTTP_TEMPORARY_REDIRECT, HTTP_TOO_MANY_REQUESTS, HTTP_TRACE,
+    HTTP_UNAUTHORIZED, HTTP_UNLOCK, HTTP_UPGRADE_REQUIRED, HTTP_VERSION_NOT_SUPPORTED, LOG_ALERT,
+    LOG_CRIT, LOG_DEBUG, LOG_EMERG, LOG_ERR, LOG_INFO, LOG_NOTICE, LOG_WARN,
 };
 
 // Helper function to escape URI components
@@ -170,10 +182,9 @@ impl UserData for CandyReq {
         // get_method(): 返回请求方法名称
         methods.add_method("get_method", |lua, this, ()| {
             // Access the method from the state with maximum safety
-            let state_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                this.state.lock()
-            }));
-            
+            let state_result =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| this.state.lock()));
+
             match state_result {
                 Ok(lock_result) => {
                     match lock_result {
@@ -181,7 +192,7 @@ impl UserData for CandyReq {
                             let method = state_guard.method.clone();
                             drop(state_guard); // Explicitly drop the lock
                             lua.pack(method)
-                        },
+                        }
                         Err(poisoned) => {
                             // If the mutex is poisoned, try to recover
                             let state_guard = poisoned.into_inner();
@@ -190,10 +201,12 @@ impl UserData for CandyReq {
                             lua.pack(method)
                         }
                     }
-                },
+                }
                 Err(_) => {
                     // If there was a panic during locking, return an error
-                    Err(mlua::Error::external(anyhow!("Panic occurred while accessing state in get_method")))
+                    Err(mlua::Error::external(anyhow!(
+                        "Panic occurred while accessing state in get_method"
+                    )))
                 }
             }
         });
@@ -764,10 +777,7 @@ impl UserData for CandyReq {
         // 如果字符串不是有效的 base64，返回 nil
         methods.add_method_mut("decode_base64", |lua, _this, str: mlua::String| {
             let encoded = str.as_bytes();
-            match ::base64::Engine::decode(
-                &::base64::engine::general_purpose::STANDARD,
-                encoded,
-            ) {
+            match ::base64::Engine::decode(&::base64::engine::general_purpose::STANDARD, encoded) {
                 Ok(bytes) => lua.create_string(&bytes).map(mlua::Value::String),
                 Err(_) => Ok(mlua::Value::Nil),
             }
@@ -803,15 +813,13 @@ impl UserData for CandyReq {
                 let mut mac = match HmacSha1::new_from_slice(secret_key.as_bytes()) {
                     Ok(m) => m,
                     Err(_) => {
-                        return Err(mlua::Error::external(anyhow::anyhow!(
-                            "Invalid HMAC key"
-                        )));
+                        return Err(mlua::Error::external(anyhow::anyhow!("Invalid HMAC key")));
                     }
                 };
                 mac.update(str.as_bytes());
                 let result = mac.finalize();
                 let code_bytes = result.into_bytes();
-                lua.create_string(&code_bytes).map(mlua::Value::String)
+                lua.create_string(code_bytes).map(mlua::Value::String)
             },
         );
 
@@ -827,7 +835,7 @@ impl UserData for CandyReq {
         // 返回原始二进制形式 (16 字节)
         methods.add_method_mut("md5_bin", |lua, _this, str: mlua::BorrowedStr| {
             let digest = md5::compute(str.as_bytes());
-            lua.create_string(&digest.0).map(mlua::Value::String)
+            lua.create_string(digest.0).map(mlua::Value::String)
         });
 
         // sha1_bin(str): 计算字符串的 SHA-1 摘要
@@ -837,7 +845,7 @@ impl UserData for CandyReq {
             let mut hasher = Sha1::new();
             hasher.update(str.as_bytes());
             let result = hasher.finalize();
-            lua.create_string(&result).map(mlua::Value::String)
+            lua.create_string(result).map(mlua::Value::String)
         });
 
         // log(log_level, ...): 记录日志消息
@@ -886,16 +894,21 @@ impl UserData for CandyReq {
 
             // 根据日志级别记录消息
             match log_level {
-                LOG_EMERG | LOG_ALERT | LOG_CRIT | LOG_ERR => {
+                level
+                    if level == LOG_EMERG
+                        || level == LOG_ALERT
+                        || level == LOG_CRIT
+                        || level == LOG_ERR =>
+                {
                     error!("ngx.log: {}", message);
                 }
-                LOG_WARN => {
+                level if level == LOG_WARN => {
                     warn!("ngx.log: {}", message);
                 }
-                LOG_NOTICE | LOG_INFO => {
+                level if level == LOG_NOTICE || level == LOG_INFO => {
                     info!("ngx.log: {}", message);
                 }
-                LOG_DEBUG => {
+                level if level == LOG_DEBUG => {
                     debug!("ngx.log: {}", message);
                 }
                 _ => {
@@ -1311,8 +1324,7 @@ impl UserData for RequestContext {
                         body: this.req.body.clone(),
                         state: this.req_state.clone(),
                     };
-                    lua.create_userdata(candy_req)
-                        .map(mlua::Value::UserData)
+                    lua.create_userdata(candy_req).map(mlua::Value::UserData)
                 }
                 "now" => {
                     // now(): 返回当前时间戳（秒，包含毫秒小数部分）
@@ -1382,35 +1394,33 @@ impl UserData for RequestContext {
                 "cookie_time" => {
                     // cookie_time(sec): 格式化时间戳为 cookie 过期时间格式
                     // 格式: "Thu, 18-Nov-10 11:27:35 GMT"
-                    let cookie_time_func =
-                        lua.create_function(|lua, sec: i64| {
-                            use chrono::{TimeZone, Utc};
-                            match Utc.timestamp_opt(sec, 0) {
-                                chrono::LocalResult::Single(dt) => {
-                                    // Cookie 格式: "Thu, 18-Nov-10 11:27:35 GMT"
-                                    let formatted = dt.format("%a, %d-%b-%y %H:%M:%S GMT").to_string();
-                                    lua.create_string(&formatted).map(mlua::Value::String)
-                                }
-                                _ => Ok(mlua::Value::Nil),
+                    let cookie_time_func = lua.create_function(|lua, sec: i64| {
+                        use chrono::{TimeZone, Utc};
+                        match Utc.timestamp_opt(sec, 0) {
+                            chrono::LocalResult::Single(dt) => {
+                                // Cookie 格式: "Thu, 18-Nov-10 11:27:35 GMT"
+                                let formatted = dt.format("%a, %d-%b-%y %H:%M:%S GMT").to_string();
+                                lua.create_string(&formatted).map(mlua::Value::String)
                             }
-                        })?;
+                            _ => Ok(mlua::Value::Nil),
+                        }
+                    })?;
                     Ok(mlua::Value::Function(cookie_time_func))
                 }
                 "http_time" => {
                     // http_time(sec): 格式化时间戳为 HTTP 头时间格式
                     // 格式: "Thu, 18 Nov 2010 11:27:35 GMT"
-                    let http_time_func =
-                        lua.create_function(|lua, sec: i64| {
-                            use chrono::{TimeZone, Utc};
-                            match Utc.timestamp_opt(sec, 0) {
-                                chrono::LocalResult::Single(dt) => {
-                                    // HTTP 格式: "Thu, 18 Nov 2010 11:27:35 GMT"
-                                    let formatted = dt.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
-                                    lua.create_string(&formatted).map(mlua::Value::String)
-                                }
-                                _ => Ok(mlua::Value::Nil),
+                    let http_time_func = lua.create_function(|lua, sec: i64| {
+                        use chrono::{TimeZone, Utc};
+                        match Utc.timestamp_opt(sec, 0) {
+                            chrono::LocalResult::Single(dt) => {
+                                // HTTP 格式: "Thu, 18 Nov 2010 11:27:35 GMT"
+                                let formatted = dt.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
+                                lua.create_string(&formatted).map(mlua::Value::String)
                             }
-                        })?;
+                            _ => Ok(mlua::Value::Nil),
+                        }
+                    })?;
                     Ok(mlua::Value::Function(http_time_func))
                 }
                 "parse_http_time" => {
@@ -1429,10 +1439,9 @@ impl UserData for RequestContext {
 
                             // RFC850: "Thursday, 18-Nov-10 11:27:35 GMT"
                             // 格式: "%A, %d-%b-%y %H:%M:%S GMT"
-                            if let Ok(dt) = chrono::DateTime::parse_from_str(
-                                s,
-                                "%A, %d-%b-%y %H:%M:%S GMT",
-                            ) {
+                            if let Ok(dt) =
+                                chrono::DateTime::parse_from_str(s, "%A, %d-%b-%y %H:%M:%S GMT")
+                            {
                                 return lua.pack(dt.timestamp());
                             }
 
@@ -2145,8 +2154,8 @@ mod tests {
             let digest = compute_hmac_sha1(&key, data);
             // Expected: b617318655057264e28bc0b6fb378c8ef146be00
             let expected: [u8; 20] = [
-                0xb6, 0x17, 0x31, 0x86, 0x55, 0x05, 0x72, 0x64, 0xe2, 0x8b,
-                0xc0, 0xb6, 0xfb, 0x37, 0x8c, 0x8e, 0xf1, 0x46, 0xbe, 0x00,
+                0xb6, 0x17, 0x31, 0x86, 0x55, 0x05, 0x72, 0x64, 0xe2, 0x8b, 0xc0, 0xb6, 0xfb, 0x37,
+                0x8c, 0x8e, 0xf1, 0x46, 0xbe, 0x00,
             ];
             assert_eq!(digest.as_slice(), expected);
         }

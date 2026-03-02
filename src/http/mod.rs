@@ -3,7 +3,12 @@ use std::{net::SocketAddr, sync::LazyLock, time::Duration};
 use std::sync::Arc;
 
 use anyhow::anyhow;
-use axum::{Router, extract::DefaultBodyLimit, middleware, routing::{get, any}};
+use axum::{
+    Router,
+    extract::DefaultBodyLimit,
+    middleware,
+    routing::{any, get},
+};
 use axum_server::{Handle, tls_rustls::RustlsConfig};
 use dashmap::DashMap;
 use http::StatusCode;

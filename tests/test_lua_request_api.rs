@@ -1606,7 +1606,10 @@ cd.req:print(escaped)
     assert!(response.status().is_success());
     let body = response.text().await?;
     // RFC 3986 unreserved characters should not be encoded
-    assert_eq!(body, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~");
+    assert_eq!(
+        body,
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
+    );
 
     Ok(())
 }
@@ -1688,11 +1691,11 @@ cd.req:print(unescaped)
 }
 
 #[tokio::test]
-    #[serial]
-    async fn test_lua_escape_unescape_roundtrip() -> Result<()> {
-        let temp_dir = TempDir::new()?;
+#[serial]
+async fn test_lua_escape_unescape_roundtrip() -> Result<()> {
+    let temp_dir = TempDir::new()?;
 
-        let script = r#"
+    let script = r#"
 local original = "hello world & special=chars"
 local escaped = cd.req:escape_uri(original)
 local unescaped = cd.req:unescape_uri(escaped)
@@ -1702,20 +1705,20 @@ else
     cd.req:print("roundtrip_failed")
 end
 "#;
-        let script_path = create_lua_script(&temp_dir, script)?;
-        let config_path = create_lua_test_config(&temp_dir, &script_path)?;
-        let (_server_handle, server_addr) = start_test_server(&config_path).await?;
+    let script_path = create_lua_script(&temp_dir, script)?;
+    let config_path = create_lua_test_config(&temp_dir, &script_path)?;
+    let (_server_handle, server_addr) = start_test_server(&config_path).await?;
 
-        let client = reqwest::Client::new();
-        let url = format!("http://{}/lua", server_addr);
-        let response = client.get(&url).send().await?;
+    let client = reqwest::Client::new();
+    let url = format!("http://{}/lua", server_addr);
+    let response = client.get(&url).send().await?;
 
-        assert!(response.status().is_success());
-        let body = response.text().await?;
-        assert_eq!(body, "roundtrip_ok");
+    assert!(response.status().is_success());
+    let body = response.text().await?;
+    assert_eq!(body, "roundtrip_ok");
 
-        Ok(())
-    }
+    Ok(())
+}
 
 // ============================================================================
 // cd.req:encode_args() / cd.req:decode_args() 测试
@@ -1960,11 +1963,11 @@ cd.req:print("count=" .. count)
 }
 
 #[tokio::test]
-    #[serial]
-    async fn test_lua_encode_decode_args_roundtrip() -> Result<()> {
-        let temp_dir = TempDir::new()?;
+#[serial]
+async fn test_lua_encode_decode_args_roundtrip() -> Result<()> {
+    let temp_dir = TempDir::new()?;
 
-        let script = r#"
+    let script = r#"
 local original = {
     name = "test user",
     email = "test@example.com",
@@ -1975,20 +1978,20 @@ local decoded = cd.req:decode_args(encoded)
 local name = decoded["name"] or "none"
 cd.req:print("name=" .. name)
 "#;
-        let script_path = create_lua_script(&temp_dir, script)?;
-        let config_path = create_lua_test_config(&temp_dir, &script_path)?;
-        let (_server_handle, server_addr) = start_test_server(&config_path).await?;
+    let script_path = create_lua_script(&temp_dir, script)?;
+    let config_path = create_lua_test_config(&temp_dir, &script_path)?;
+    let (_server_handle, server_addr) = start_test_server(&config_path).await?;
 
-        let client = reqwest::Client::new();
-        let url = format!("http://{}/lua", server_addr);
-        let response = client.get(&url).send().await?;
+    let client = reqwest::Client::new();
+    let url = format!("http://{}/lua", server_addr);
+    let response = client.get(&url).send().await?;
 
-        assert!(response.status().is_success());
-        let body = response.text().await?;
-        assert!(body.contains("name=test user"));
+    assert!(response.status().is_success());
+    let body = response.text().await?;
+    assert!(body.contains("name=test user"));
 
-        Ok(())
-    }
+    Ok(())
+}
 
 // ============================================================================
 // cd.req:init_body() / cd.req:append_body() / cd.req:finish_body() 测试
@@ -2217,11 +2220,7 @@ cd.req:print(body)
 
     let client = reqwest::Client::new();
     let url = format!("http://{}/lua", server_addr);
-    let response = client
-        .post(&url)
-        .body("original")
-        .send()
-        .await?;
+    let response = client.post(&url).body("original").send().await?;
 
     assert!(response.status().is_success());
     let body = response.text().await?;
@@ -2235,11 +2234,11 @@ cd.req:print(body)
 // ============================================================================
 
 #[tokio::test]
-    #[serial]
-    async fn test_lua_read_body_compatibility() -> Result<()> {
-        let temp_dir = TempDir::new()?;
+#[serial]
+async fn test_lua_read_body_compatibility() -> Result<()> {
+    let temp_dir = TempDir::new()?;
 
-        let script = r#"
+    let script = r#"
 -- read_body 在 Candy 中是空操作（请求体已自动读取）
 cd.req:read_body()
 
@@ -2251,24 +2250,20 @@ else
     cd.req:print("no body")
 end
 "#;
-        let script_path = create_lua_script(&temp_dir, script)?;
-        let config_path = create_lua_test_config(&temp_dir, &script_path)?;
-        let (_server_handle, server_addr) = start_test_server(&config_path).await?;
+    let script_path = create_lua_script(&temp_dir, script)?;
+    let config_path = create_lua_test_config(&temp_dir, &script_path)?;
+    let (_server_handle, server_addr) = start_test_server(&config_path).await?;
 
-        let client = reqwest::Client::new();
-        let url = format!("http://{}/lua", server_addr);
-        let response = client
-            .post(&url)
-            .body("test body")
-            .send()
-            .await?;
+    let client = reqwest::Client::new();
+    let url = format!("http://{}/lua", server_addr);
+    let response = client.post(&url).body("test body").send().await?;
 
-        assert!(response.status().is_success());
-        let body = response.text().await?;
-        assert_eq!(body, "test body");
+    assert!(response.status().is_success());
+    let body = response.text().await?;
+    assert_eq!(body, "test body");
 
-        Ok(())
-    }
+    Ok(())
+}
 
 // ============================================================================
 // cd.req:start_time() 测试
@@ -2361,7 +2356,9 @@ end
     assert!(response.status().is_success());
     let body = response.text().await?;
     // HTTP 版本应该是 1.1 或 2.0
-    assert!(body.contains("version=1.1") || body.contains("version=2") || body.contains("version="));
+    assert!(
+        body.contains("version=1.1") || body.contains("version=2") || body.contains("version=")
+    );
 
     Ok(())
 }
@@ -2976,4 +2973,3 @@ cd.req:print("logged_with_args")
 
     Ok(())
 }
-
