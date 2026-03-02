@@ -27,9 +27,7 @@ const sidebars: SidebarsConfig = {
           items: [
             'config/lua',
             'config/lua/intro',
-            'config/lua/request-api',
-            'config/lua/response-api',
-            'config/lua/logging-utils',
+            'config/lua/api-reference',
             'config/lua/examples',
             'config/lua/performance-best-practices',
           ],

@@ -32,14 +32,10 @@ lua_code_cache = true  # 启用代码缓存以提高性能
 
 本 Lua 脚本文档分为以下几个部分：
 
-1. [Lua 脚本入门](./config/lua/intro.md) - Lua 脚本的基本概念和快速开始
-2. [请求 API](./config/lua/request-api.md) - 详细的请求处理 API 文档
-3. [响应 API](./config/lua/response-api.md) - 详细的响应处理 API 文档
-4. [日志和工具函数](./config/lua/logging-utils.md) - 日志记录和实用工具函数
-5. [共享字典 API](./config/lua/shared-dict.md) - 跨请求数据共享
-6. [加密和编码函数](./config/lua/crypto-encoding.md) - 哈希、加密和编码工具
-7. [实际应用示例](./config/lua/examples.md) - 各种实际应用场景的示例代码
-8. [性能优化与最佳实践](./config/lua/performance-best-practices.md) - 性能优化和最佳实践指南
+1. [Lua 脚本入门](./lua/intro.md) - Lua 脚本的基本概念和快速开始
+2. [API 参考](./lua/api-reference.md) - 完整的 API 文档（请求、响应、日志、共享字典、加密编码）
+3. [实际应用示例](./lua/examples.md) - 各种实际应用场景的示例代码
+4. [性能优化与最佳实践](./lua/performance-best-practices.md) - 性能优化和最佳实践指南
 
 ## 主要特性
 
