@@ -54,8 +54,14 @@ fn init_logger_impl(log_level: &str, log_folder: &str) -> anyhow::Result<WorkerG
     let _ = LevelFilter::from_str(log_level)
         .with_context(|| format!("Invalid log level: {}", log_level))?;
 
-    let env_layer = EnvFilter::from_str(log_level)
-        .with_context(|| format!("Invalid log level: {}", log_level))?;
+    // 使用 EnvFilter::builder() 允许环境变量覆盖
+    // 如果设置了 RUST_LOG 环境变量，则使用环境变量的值
+    // 否则使用配置文件中的日志级别
+    let env_layer = if std::env::var("RUST_LOG").is_ok() {
+        EnvFilter::from_default_env()
+    } else {
+        EnvFilter::new(log_level)
+    };
     let is_debug = log_level.to_lowercase().contains("debug");
 
     // 控制台输出格式化层

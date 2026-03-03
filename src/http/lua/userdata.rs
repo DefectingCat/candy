@@ -445,7 +445,7 @@ impl UserData for CandyReq {
                 }
                 None => {
                     return Err(mlua::Error::external(anyhow!(
-                        "request body not initialized, call ngx.req.init_body first"
+                        "request body not initialized, call cd.req.init_body first"
                     )));
                 }
             }
@@ -860,7 +860,7 @@ impl UserData for CandyReq {
                 Some(mlua::Value::Integer(level)) => level as u8,
                 Some(mlua::Value::Number(level)) => level as u8,
                 _ => {
-                    error!("ngx.log: first argument must be log level");
+                    error!("cd.log: first argument must be log level");
                     return Ok(());
                 }
             };
@@ -900,20 +900,20 @@ impl UserData for CandyReq {
                         || level == LOG_CRIT
                         || level == LOG_ERR =>
                 {
-                    error!("ngx.log: {}", message);
+                    error!("cd.log: {}", message);
                 }
                 level if level == LOG_WARN => {
-                    warn!("ngx.log: {}", message);
+                    warn!("cd.log: {}", message);
                 }
                 level if level == LOG_NOTICE || level == LOG_INFO => {
-                    info!("ngx.log: {}", message);
+                    info!("cd.log: {}", message);
                 }
                 level if level == LOG_DEBUG => {
-                    debug!("ngx.log: {}", message);
+                    debug!("cd.log: {}", message);
                 }
                 _ => {
                     // 其他级别默认使用 info
-                    info!("ngx.log: {}", message);
+                    info!("cd.log: {}", message);
                 }
             }
 
@@ -1301,6 +1301,15 @@ impl UserData for RequestContext {
             match key.as_str() {
                 // 动态属性
                 "status" => lua.pack(this.res.status),
+                "shared" => {
+                    // 返回全局的 __candy_shared__ 表
+                    // 注意：shared 是在 Lua 引擎初始化时设置在全局 __candy_shared__ 中的
+                    // 这样在请求处理时可以通过 RequestContext 的 __index 元方法访问
+                    Ok(lua.globals()
+                        .get::<mlua::Table>("__candy_shared__")
+                        .map(mlua::Value::Table)
+                        .unwrap_or(mlua::Value::Nil))
+                }
                 "header" => {
                     // 返回 headers 对象
                     lua.create_userdata(this.res.headers.clone())

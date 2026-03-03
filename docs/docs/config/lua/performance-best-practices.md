@@ -39,7 +39,7 @@ local function expensive_calculation()
 end
 
 -- 好的做法：使用共享字典缓存计算结果
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 local cached_result = cache:get("expensive_result")
 if not cached_result then
     cached_result = tostring(expensive_calculation())
@@ -76,7 +76,7 @@ local response = table.concat(parts)
 共享数据是跨请求的，合理使用可以提高性能，但要注意并发问题：
 
 ```lua
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 
 -- 正确使用共享数据
 local counter = cache:incr("request_count", 1, 0)
@@ -229,7 +229,7 @@ cd.header["X-Response-Time"] = string.format("%.3f", response_time)
 
 ```lua
 -- 监控请求频率
-local metrics = ngx.shared.metrics  -- 需要在 config.toml 中定义
+local metrics = cd.shared.metrics  -- 需要在 config.toml 中定义
 local req_count = metrics:incr("req_per_minute", 1, 0)
 
 -- 每分钟重置（需要定时任务或应用层逻辑）
@@ -284,7 +284,7 @@ end
 
 ```lua
 -- 使用共享字典存储配置
-local config_cache = ngx.shared.config  -- 需要在 config.toml 中定义
+local config_cache = cd.shared.config  -- 需要在 config.toml 中定义
 
 local config = {
     rate_limit = tonumber(config_cache:get("rate_limit")) or 100,

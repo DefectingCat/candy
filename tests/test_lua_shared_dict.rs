@@ -1,6 +1,6 @@
 //! Lua 共享字典集成测试
 //!
-//! 测试 ngx.shared.DICT 的所有 API 方法：
+//! 测试 cd.shared.DICT 的所有 API 方法：
 //! - get/get_stale
 //! - set/safe_set
 //! - add/safe_add
@@ -76,7 +76,7 @@ async fn test_shared_dict_set_get() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 local ok, err, forcible = dict:set("key1", "value1")
 if not ok then
     cd.req:print("set failed: " .. tostring(err))
@@ -110,7 +110,7 @@ async fn test_shared_dict_set_with_flags() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 dict:set("key1", "value1", 0, 42)
 local val, flags = dict:get("key1")
 cd.req:print(val .. ":" .. tostring(flags))
@@ -140,7 +140,7 @@ async fn test_shared_dict_set_with_exptime() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 -- 设置 0.1 秒过期
 dict:set("key1", "value1", 0.1)
 local val1, _ = dict:get("key1")
@@ -175,7 +175,7 @@ async fn test_shared_dict_get_nonexistent() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 local val, flags = dict:get("nonexistent_key")
 cd.req:print(tostring(val) .. "," .. tostring(flags))
 "#;
@@ -204,7 +204,7 @@ async fn test_shared_dict_get_stale() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 -- 设置 0.1 秒过期
 dict:set("key1", "value1", 0.1)
 -- 等待过期
@@ -242,7 +242,7 @@ async fn test_shared_dict_add_success() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 local ok, err, forcible = dict:add("key1", "value1")
 cd.req:print(tostring(ok) .. "," .. tostring(err))
 "#;
@@ -271,7 +271,7 @@ async fn test_shared_dict_add_exists() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 dict:set("key1", "value1")
 local ok, err, forcible = dict:add("key1", "value2")
 cd.req:print(tostring(ok) .. "," .. tostring(err))
@@ -305,7 +305,7 @@ async fn test_shared_dict_safe_add_success() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 local ok, err = dict:safe_add("key1", "value1")
 cd.req:print(tostring(ok) .. "," .. tostring(err))
 "#;
@@ -334,7 +334,7 @@ async fn test_shared_dict_safe_add_exists() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 dict:set("key1", "value1")
 local ok, err = dict:safe_add("key1", "value2")
 cd.req:print(tostring(ok) .. "," .. tostring(err))
@@ -369,7 +369,7 @@ async fn test_shared_dict_replace_success() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 dict:set("key1", "value1")
 local ok, err, forcible = dict:replace("key1", "value2")
 local val, _ = dict:get("key1")
@@ -400,7 +400,7 @@ async fn test_shared_dict_replace_not_found() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 local ok, err, forcible = dict:replace("nonexistent", "value1")
 cd.req:print(tostring(ok) .. "," .. tostring(err))
 "#;
@@ -433,7 +433,7 @@ async fn test_shared_dict_delete() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 dict:set("key1", "value1")
 local result = dict:delete("key1")
 local val, _ = dict:get("key1")
@@ -468,7 +468,7 @@ async fn test_shared_dict_incr_basic() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.counter
+local dict = cd.shared.counter
 dict:set("count", "10")
 local newval, err, forcible = dict:incr("count", 5)
 cd.req:print(tostring(newval))
@@ -498,7 +498,7 @@ async fn test_shared_dict_incr_with_init() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.counter
+local dict = cd.shared.counter
 -- 不存在的键，使用初始值
 local newval, err, forcible = dict:incr("newcount", 10, 0)
 cd.req:print(tostring(newval))
@@ -528,7 +528,7 @@ async fn test_shared_dict_incr_negative() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.counter
+local dict = cd.shared.counter
 dict:set("count", "10")
 local newval, err, forcible = dict:incr("count", -3)
 cd.req:print(tostring(newval))
@@ -558,7 +558,7 @@ async fn test_shared_dict_incr_not_found_no_init() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.counter
+local dict = cd.shared.counter
 -- 不存在的键，无初始值
 local newval, err, forcible = dict:incr("nonexistent", 5)
 cd.req:print(tostring(newval) .. "," .. tostring(err))
@@ -592,7 +592,7 @@ async fn test_shared_dict_lpush_rpush() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 local len1, err = dict:lpush("mylist", "item1")
 local len2, err = dict:rpush("mylist", "item2")
 local len3, err = dict:lpush("mylist", "item0")
@@ -623,7 +623,7 @@ async fn test_shared_dict_lpop_rpop() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 -- 创建列表 [a, b, c]
 dict:rpush("mylist", "a")
 dict:rpush("mylist", "b")
@@ -661,7 +661,7 @@ async fn test_shared_dict_llen() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 dict:rpush("mylist", "a")
 dict:rpush("mylist", "b")
 dict:rpush("mylist", "c")
@@ -693,7 +693,7 @@ async fn test_shared_dict_llen_empty() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 -- 不存在的列表，长度为 0
 local len, err = dict:llen("nonexistent")
 cd.req:print(tostring(len))
@@ -723,7 +723,7 @@ async fn test_shared_dict_list_value_not_a_list() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 -- 设置标量值
 dict:set("key", "scalar_value")
 -- 尝试 lpush 到标量
@@ -759,7 +759,7 @@ async fn test_shared_dict_flush_all() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 dict:set("key1", "value1")
 dict:set("key2", "value2")
 dict:flush_all()
@@ -792,7 +792,7 @@ async fn test_shared_dict_flush_expired() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 dict:set("key1", "value1", 0.1)  -- 0.1 秒过期
 dict:set("key2", "value2", 10)   -- 10 秒过期
 dict:set("key3", "value3")       -- 永不过期
@@ -829,7 +829,7 @@ async fn test_shared_dict_get_keys() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 dict:set("key1", "value1")
 dict:set("key2", "value2")
 dict:set("key3", "value3")
@@ -865,7 +865,7 @@ async fn test_shared_dict_get_keys_with_limit() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 dict:set("key1", "value1")
 dict:set("key2", "value2")
 dict:set("key3", "value3")
@@ -902,7 +902,7 @@ async fn test_shared_dict_safe_set_success() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 local ok, err = dict:safe_set("key1", "value1")
 local val, _ = dict:get("key1")
 cd.req:print(tostring(ok) .. "," .. tostring(val))
@@ -937,7 +937,7 @@ async fn test_shared_dict_cross_request_sharing() -> Result<()> {
 
     // 第一个脚本：设置值
     let script1 = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 dict:set("shared_key", "shared_value")
 cd.req:print("set")
 "#;
@@ -945,7 +945,7 @@ cd.req:print("set")
 
     // 第二个脚本：读取值
     let script2 = r#"
-local dict = ngx.shared.cache
+local dict = cd.shared.cache
 local val, _ = dict:get("shared_key")
 cd.req:print(tostring(val))
 "#;
@@ -1016,8 +1016,8 @@ async fn test_shared_dict_multiple_dicts() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
     let script = r#"
-local cache = ngx.shared.cache
-local counter = ngx.shared.counter
+local cache = cd.shared.cache
+local counter = cd.shared.counter
 
 cache:set("key1", "cache_value")
 counter:set("key1", "counter_value")

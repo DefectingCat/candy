@@ -1,6 +1,6 @@
 //! Lua 共享字典实现
 //!
-//! 提供类似 OpenResty ngx.shared.DICT 的功能
+//! 提供类似 OpenResty cd.shared.DICT 的功能
 //! 使用 DashMap 实现线程安全的共享内存存储
 
 use std::sync::Arc;

@@ -13,7 +13,7 @@ run:
 	$(CARGO) run
 
 test:
-	$(CARGO) test
+	RUST_LOG=off $(CARGO) test
 
 clean:
 	$(CARGO) clean

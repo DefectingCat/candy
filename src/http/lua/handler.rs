@@ -212,6 +212,8 @@ pub async fn lua(
             RouteError::InternalError()
         })?;
 
+    // 注意：cd.shared 通过 RequestContext 的 __index 元方法从 __candy_shared__ 全局变量获取
+
     // 根据 lua_code_cache 配置决定是否使用缓存
     if route_config.lua_code_cache {
         let checksum = compute_checksum(&script_content);

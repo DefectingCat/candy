@@ -10,7 +10,7 @@ title: API 参考
 
 ## 请求 API
 
-Candy 的 Lua 脚本提供了全面的请求处理 API，通过 `cd.req` 对象访问。这些 API 与 OpenResty 的 `ngx.req.*` 系列函数兼容。
+Candy 的 Lua 脚本提供了全面的请求处理 API，通过 `cd.req` 对象访问。这些 API 与 OpenResty 的 `cd.req.*` 系列函数兼容。
 
 ### 获取请求信息
 
@@ -576,7 +576,7 @@ candy.log("User ", user_id, " accessed the system")
 
 ## 共享字典 API
 
-共享字典（Shared Dictionary）是 Candy 提供的跨请求数据共享机制，类似于 OpenResty 的 `ngx.shared.DICT`。它允许不同请求之间共享数据，支持过期时间、LRU 淘汰等特性。
+共享字典（Shared Dictionary）是 Candy 提供的跨请求数据共享机制，类似于 OpenResty 的 `cd.shared.DICT`。它允许不同请求之间共享数据，支持过期时间、LRU 淘汰等特性。
 
 ### 配置共享字典
 
@@ -599,12 +599,12 @@ size = "5m"   # 5 MB
 
 ### 访问共享字典
 
-通过 `ngx.shared.dict_name` 访问已配置的共享字典：
+通过 `cd.shared.dict_name` 访问已配置的共享字典：
 
 ```lua
-local cache = ngx.shared.cache
-local rate_limit = ngx.shared.rate_limit
-local sessions = ngx.shared.sessions
+local cache = cd.shared.cache
+local rate_limit = cd.shared.rate_limit
+local sessions = cd.shared.sessions
 ```
 
 ### 基础操作
@@ -616,7 +616,7 @@ local sessions = ngx.shared.sessions
 **返回值**：`value, flags` 或 `nil, nil`
 
 ```lua
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 local value, flags = cache:get("user:123")
 
 if value then
@@ -634,7 +634,7 @@ end
 **返回值**：`value, flags, stale` 或 `nil, nil, nil`
 
 ```lua
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 local value, flags, stale = cache:get_stale("config")
 
 if value then
@@ -658,7 +658,7 @@ end
 **返回值**：`success, err, forcible`
 
 ```lua
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 
 -- 简单设置
 local ok, err, forcible = cache:set("key", "value")
@@ -684,7 +684,7 @@ end
 **返回值**：`ok, err`
 
 ```lua
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 local ok, err = cache:safe_set("important_key", "important_value", 3600)
 
 if not ok then
@@ -701,7 +701,7 @@ end
 **返回值**：`success, err, forcible`
 
 ```lua
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 local ok, err, forcible = cache:add("unique_token", "token_value", 300)
 
 if not ok then
@@ -718,7 +718,7 @@ end
 **返回值**：`ok, err`
 
 ```lua
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 local ok, err = cache:safe_add("new_key", "value")
 
 if ok then
@@ -737,7 +737,7 @@ end
 **返回值**：`success, err, forcible`
 
 ```lua
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 local ok, err, forcible = cache:replace("existing_key", "new_value")
 
 if not ok then
@@ -752,7 +752,7 @@ end
 删除键。
 
 ```lua
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 cache:delete("old_key")
 ```
 
@@ -771,7 +771,7 @@ cache:delete("old_key")
 **返回值**：`new_value, err, forcible`
 
 ```lua
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 
 -- 简单递增
 local new_val, err = cache:incr("counter", 1)
@@ -798,7 +798,7 @@ end
 **返回值**：`length, err`
 
 ```lua
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 local len, err = cache:lpush("my_list", "first_item")
 local len, err = cache:rpush("my_list", "last_item")
 ```
@@ -810,7 +810,7 @@ local len, err = cache:rpush("my_list", "last_item")
 **返回值**：`value, err`
 
 ```lua
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 local value, err = cache:lpop("my_list")
 local value, err = cache:rpop("my_list")
 
@@ -826,7 +826,7 @@ end
 **返回值**：`length, err`（如果键不存在，返回 0）
 
 ```lua
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 local len, err = cache:llen("my_list")
 
 if len then
@@ -846,7 +846,7 @@ end
 **返回值**：键列表（表）
 
 ```lua
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 
 -- 获取最多 100 个键
 local keys = cache:get_keys(100)
@@ -864,7 +864,7 @@ end
 清除所有条目。
 
 ```lua
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 cache:flush_all()
 cd.say("Cache cleared")
 ```
@@ -879,7 +879,7 @@ cd.say("Cache cleared")
 **返回值**：实际清除的数量
 
 ```lua
-local cache = ngx.shared.cache
+local cache = cd.shared.cache
 
 -- 清除所有过期条目
 local count = cache:flush_expired()

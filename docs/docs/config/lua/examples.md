@@ -107,7 +107,7 @@ cd.print(content)
 -- scripts/rate_limit.lua
 -- 简单的请求限流实现
 
-local limit = ngx.shared.rate_limit  -- 需要在 config.toml 中定义
+local limit = cd.shared.rate_limit  -- 需要在 config.toml 中定义
 
 local client_ip = "unknown"
 local headers = cd.req.get_headers()
@@ -147,7 +147,7 @@ cd.print([[{"message": "Request processed successfully", "request_number": ]] ..
 -- scripts/cache_example.lua
 -- 简单的响应缓存实现
 
-local cache = ngx.shared.cache  -- 需要在 config.toml 中定义
+local cache = cd.shared.cache  -- 需要在 config.toml 中定义
 local cache_key = "cache:" .. cd.req.get_uri()
 local cached_response = cache:get(cache_key)
 
@@ -538,7 +538,7 @@ cd.print([[{"status": ]] .. status .. [[}]])
 -- scripts/full_api_service.lua
 -- 完整的 API 服务示例
 
-local metrics = ngx.shared.metrics  -- 需要在 config.toml 中定义
+local metrics = cd.shared.metrics  -- 需要在 config.toml 中定义
 
 -- 初始化应用状态
 local app = {

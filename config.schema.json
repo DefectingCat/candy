@@ -129,7 +129,7 @@
       "type": "object",
       "properties": {
         "name": {
-          "description": "Name of the shared dictionary (used to access via ngx.shared.name)",
+          "description": "Name of the shared dictionary (used to access via cd.shared.name)",
           "type": "string",
           "minLength": 1
         },

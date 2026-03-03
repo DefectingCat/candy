@@ -47,7 +47,7 @@ Candy 实现了大量 OpenResty 的 API，包括但不限于：
 - `cd.req.get_post_args()` - 获取 POST 参数
 - `cd.req.get_headers()` - 获取请求头
 - `cd.req.set_header()` - 设置响应头
-- `ngx.shared.*` - 共享字典（跨请求数据共享）
+- `cd.shared.*` - 共享字典（跨请求数据共享）
 - `cd.req.md5()` / `cd.req.sha1_bin()` - 哈希函数
 - `cd.req.encode_base64()` / `cd.req.decode_base64()` - Base64 编解码
 

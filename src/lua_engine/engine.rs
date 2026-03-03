@@ -8,8 +8,8 @@ use dashmap::DashMap;
 use mlua::{Function, Lua};
 use tracing::{debug, info};
 
-use crate::consts::{ARCH, COMMIT, COMPILER, NAME, OS, VERSION};
 use crate::config::Settings;
+use crate::consts::{ARCH, COMMIT, COMPILER, NAME, OS, VERSION};
 
 use super::shared_dict::SharedDict;
 
@@ -143,7 +143,7 @@ impl LuaEngine {
         // 注册 HTTP 常量
         Self::register_http_constants(&module);
 
-        // 注册 ngx.shared 模块
+        // 注册 cd.shared 模块
         Self::register_shared_dicts(&lua, &shared_dicts);
 
         // 将 `candy` 模块设置为全局变量
@@ -151,7 +151,11 @@ impl LuaEngine {
             .set("candy", module)
             .expect("设置全局变量 candy 失败");
 
-        Self { lua, code_cache, shared_dicts }
+        Self {
+            lua,
+            code_cache,
+            shared_dicts,
+        }
     }
 
     /// 从配置创建 Lua 引擎实例
@@ -189,7 +193,7 @@ impl LuaEngine {
         // 注册 HTTP 常量
         Self::register_http_constants(&module);
 
-        // 注册 ngx.shared 模块
+        // 注册 cd.shared 模块
         Self::register_shared_dicts(&lua, &shared_dicts);
 
         // 将 `candy` 模块设置为全局变量
@@ -197,7 +201,11 @@ impl LuaEngine {
             .set("candy", module)
             .expect("设置全局变量 candy 失败");
 
-        Self { lua, code_cache, shared_dicts }
+        Self {
+            lua,
+            code_cache,
+            shared_dicts,
+        }
     }
 
     /// 初始化共享字典（动态添加）
@@ -211,22 +219,29 @@ impl LuaEngine {
             self.shared_dicts.insert(name.to_string(), dict);
 
             // 注册到 Lua
-            let ngx_shared: mlua::Table = self
+            let cd_shared: mlua::Table = self
                 .lua
                 .globals()
-                .get::<mlua::Table>("ngx")
-                .and_then(|ngx: mlua::Table| ngx.get::<mlua::Table>("shared"))
+                .get::<mlua::Table>("cd")
+                .and_then(|cd: mlua::Table| cd.get::<mlua::Table>("shared"))
                 .unwrap_or_else(|_| self.lua.create_table().unwrap());
 
             if let Some(dict) = self.shared_dicts.get(name) {
-                let _ = ngx_shared.set(name, dict.clone());
+                let _ = cd_shared.set(name, dict.clone());
             }
 
-            let ngx: mlua::Table = self.lua.globals().get("ngx").unwrap_or_else(|_| self.lua.create_table().unwrap());
-            let _ = ngx.set("shared", ngx_shared);
-            let _ = self.lua.globals().set("ngx", ngx);
+            let cd: mlua::Table = self
+                .lua
+                .globals()
+                .get("cd")
+                .unwrap_or_else(|_| self.lua.create_table().unwrap());
+            let _ = cd.set("shared", cd_shared);
+            let _ = self.lua.globals().set("cd", cd);
 
-            info!("Initialized shared dict '{}' with capacity {} bytes", name, capacity);
+            info!(
+                "Initialized shared dict '{}' with capacity {} bytes",
+                name, capacity
+            );
         }
     }
 
@@ -243,21 +258,18 @@ impl LuaEngine {
         let dict = SharedDict::new(name.to_string(), capacity);
         self.shared_dicts.insert(name.to_string(), dict);
 
-        // 注册到 Lua
-        let ngx_shared: mlua::Table = self
+        // 更新 __candy_shared__ 全局变量
+        let shared: mlua::Table = self
             .lua
             .globals()
-            .get::<mlua::Table>("ngx")
-            .and_then(|ngx: mlua::Table| ngx.get::<mlua::Table>("shared"))
+            .get("__candy_shared__")
             .unwrap_or_else(|_| self.lua.create_table().unwrap());
 
         if let Some(dict) = self.shared_dicts.get(name) {
-            let _ = ngx_shared.set(name, dict.clone());
+            let _ = shared.set(name, dict.clone());
         }
 
-        let ngx: mlua::Table = self.lua.globals().get("ngx").unwrap_or_else(|_| self.lua.create_table().unwrap());
-        let _ = ngx.set("shared", ngx_shared);
-        let _ = self.lua.globals().set("ngx", ngx);
+        let _ = self.lua.globals().set("__candy_shared__", shared);
     }
 
     /// 清理所有共享字典（用于测试隔离）
@@ -267,11 +279,13 @@ impl LuaEngine {
 
     /// 注册共享字典到 Lua 全局变量
     fn register_shared_dicts(lua: &Lua, shared_dicts: &Arc<DashMap<String, SharedDict>>) {
-        // 创建 ngx 表
-        let ngx = lua.create_table().expect("Failed to create ngx table");
+        // 创建 cd 表
+        let cd = lua.create_table().expect("Failed to create cd table");
 
-        // 创建 ngx.shared 表
-        let shared = lua.create_table().expect("Failed to create ngx.shared table");
+        // 创建 cd.shared 表
+        let shared = lua
+            .create_table()
+            .expect("Failed to create cd.shared table");
 
         // 注册所有共享字典
         for entry in shared_dicts.iter() {
@@ -282,14 +296,19 @@ impl LuaEngine {
                 .expect("Failed to set shared dict");
         }
 
-        // 设置 ngx.shared
-        ngx.set("shared", shared)
-            .expect("Failed to set ngx.shared");
+        // 设置 cd.shared
+        cd.set("shared", shared.clone()).expect("Failed to set cd.shared");
 
-        // 设置全局变量 ngx
+        // 设置全局变量 cd
         lua.globals()
-            .set("ngx", ngx)
-            .expect("Failed to set ngx global");
+            .set("cd", cd)
+            .expect("Failed to set cd global");
+
+        // 同时将 shared 设置为 __candy_shared__ 全局变量
+        // 这样在请求处理时可以通过 RequestContext 的 __index 元方法访问
+        lua.globals()
+            .set("__candy_shared__", shared)
+            .expect("Failed to set __candy_shared__ global");
     }
 
     /// 清除所有 Lua 代码缓存
@@ -573,7 +592,7 @@ mod tests {
         // 测试 Lua 引擎是否能够正常创建
         let engine = LuaEngine::new();
         assert!(engine.lua.globals().contains_key("candy").unwrap());
-        assert!(engine.lua.globals().contains_key("ngx").unwrap());
+        assert!(engine.lua.globals().contains_key("cd").unwrap());
     }
 
     #[test]
@@ -708,10 +727,12 @@ mod tests {
         // 在 Lua 中访问
         let result: bool = engine
             .lua
-            .load(r#"
-                local dogs = ngx.shared.dogs
+            .load(
+                r#"
+                local dogs = cd.shared.dogs
                 return dogs ~= nil
-            "#)
+            "#,
+            )
             .eval()
             .unwrap();
         assert!(result);
@@ -725,12 +746,14 @@ mod tests {
         // 在 Lua 中 set 和 get，测试返回值
         let (success, err, forcible, value): (bool, Option<String>, bool, String) = engine
             .lua
-            .load(r#"
-                local test = ngx.shared.test
+            .load(
+                r#"
+                local test = cd.shared.test
                 local succ, err, forcible = test:set("key", "value", 0, 42)
                 local val, flags = test:get("key")
                 return succ, err, forcible, val
-            "#)
+            "#,
+            )
             .eval()
             .unwrap();
         assert!(success);
@@ -748,8 +771,9 @@ mod tests {
         // 测试 LRU 淘汰
         let (success, forcible): (bool, bool) = engine
             .lua
-            .load(r#"
-                local small = ngx.shared.small
+            .load(
+                r#"
+                local small = cd.shared.small
                 -- 填满容量
                 small:set("k1", "v1")
                 small:set("k2", "v2")
@@ -757,7 +781,8 @@ mod tests {
                 -- 添加一个需要淘汰的大条目
                 local succ, err, forcible = small:set("big", string.rep("x", 50))
                 return succ, forcible
-            "#)
+            "#,
+            )
             .eval()
             .unwrap();
         assert!(success);
@@ -772,11 +797,13 @@ mod tests {
         // 获取不存在的键
         let result: mlua::Value = engine
             .lua
-            .load(r#"
-                local test = ngx.shared.test
+            .load(
+                r#"
+                local test = cd.shared.test
                 local val, flags = test:get("nonexistent")
                 return val
-            "#)
+            "#,
+            )
             .eval()
             .unwrap();
         assert!(matches!(result, mlua::Value::Nil));
@@ -791,15 +818,17 @@ mod tests {
         // 测试 safe_set 在内存不足时返回 nil
         let (ok, err): (Option<bool>, Option<String>) = engine
             .lua
-            .load(r#"
-                local small = ngx.shared.small
+            .load(
+                r#"
+                local small = cd.shared.small
                 -- 填满容量
                 small:safe_set("k1", "v1")
                 small:safe_set("k2", "v2")
                 -- 尝试添加更多（应该失败）
                 local ok, err = small:safe_set("k3", "v3")
                 return ok, err
-            "#)
+            "#,
+            )
             .eval()
             .unwrap();
         // ok 应该是 nil（不是 false）
@@ -815,29 +844,31 @@ mod tests {
         // 对比 set 和 safe_set 的行为
         let (set_forcible, safe_ok): (bool, Option<bool>) = engine
             .lua
-            .load(r#"
-                local small = ngx.shared.small
-                
+            .load(
+                r#"
+                local small = cd.shared.small
+
                 -- 使用 set 填满容量
                 local succ, err, forcible = small:set("k1", "v1")
                 small:set("k2", "v2")
-                
+
                 -- set 会淘汰 LRU，返回 forcible=true
                 local succ, err, forcible = small:set("k3", "v3")
                 local set_forcible = forcible
-                
+
                 -- 清空
                 small:flush_all()
-                
+
                 -- 再次填满
                 small:safe_set("k1", "v1")
                 small:safe_set("k2", "v2")
-                
+
                 -- safe_set 不会淘汰，返回 nil
                 local ok, err = small:safe_set("k3", "v3")
-                
+
                 return set_forcible, ok
-            "#)
+            "#,
+            )
             .eval()
             .unwrap();
         assert!(set_forcible); // set 淘汰了条目
@@ -852,12 +883,14 @@ mod tests {
         // 测试 get_stale 获取未过期条目
         let (value, flags, stale): (String, i64, bool) = engine
             .lua
-            .load(r#"
-                local test = ngx.shared.test
+            .load(
+                r#"
+                local test = cd.shared.test
                 test:set("key", "value", 0, 42)
                 local val, flags, stale = test:get_stale("key")
                 return val, flags, stale
-            "#)
+            "#,
+            )
             .eval()
             .unwrap();
         assert_eq!(value, "value");
@@ -867,8 +900,9 @@ mod tests {
         // 测试 get_stale 获取已过期条目
         let (value, stale): (String, bool) = engine
             .lua
-            .load(r#"
-                local test = ngx.shared.test
+            .load(
+                r#"
+                local test = cd.shared.test
                 test:set("expired_key", "expired_value", 0.1, 0)
                 -- 等待过期
                 os.execute("sleep 0.15")
@@ -877,7 +911,8 @@ mod tests {
                 -- get_stale 应该返回值并标记为过期
                 local val2, flags, stale = test:get_stale("expired_key")
                 return val2, stale
-            "#)
+            "#,
+            )
             .eval()
             .unwrap();
         assert_eq!(value, "expired_value");
@@ -890,17 +925,25 @@ mod tests {
         engine.init_shared_dict("test", 1024 * 1024);
 
         // 测试 add 方法
-        let (success1, err1, forcible1, success2, err2): (bool, Option<String>, bool, bool, Option<String>) = engine
+        let (success1, err1, forcible1, success2, err2): (
+            bool,
+            Option<String>,
+            bool,
+            bool,
+            Option<String>,
+        ) = engine
             .lua
-            .load(r#"
-                local test = ngx.shared.test
+            .load(
+                r#"
+                local test = cd.shared.test
                 -- 添加新键
                 local succ, err, forcible = test:add("key1", "value1")
                 local success1, err1, forcible1 = succ, err, forcible
                 -- 再次添加相同键
                 local succ, err, forcible = test:add("key1", "value2")
                 return success1, err1, forcible1, succ, err
-            "#)
+            "#,
+            )
             .eval()
             .unwrap();
         assert!(success1);
@@ -918,15 +961,17 @@ mod tests {
         // 测试 add 的 LRU 淘汰
         let (success, forcible): (bool, bool) = engine
             .lua
-            .load(r#"
-                local small = ngx.shared.small
+            .load(
+                r#"
+                local small = cd.shared.small
                 -- 填满容量
                 small:set("k1", "v1")
                 small:set("k2", "v2")
                 -- add 新键需要 LRU 淘汰
                 local succ, err, forcible = small:add("k3", "v3")
                 return succ, forcible
-            "#)
+            "#,
+            )
             .eval()
             .unwrap();
         assert!(success);
@@ -939,10 +984,12 @@ mod tests {
         engine.init_shared_dict("small", 100);
 
         // 测试 safe_add
-        let (ok1, err1, ok2, err2): (Option<bool>, Option<String>, Option<bool>, Option<String>) = engine
-            .lua
-            .load(r#"
-                local small = ngx.shared.small
+        let (ok1, err1, ok2, err2): (Option<bool>, Option<String>, Option<bool>, Option<String>) =
+            engine
+                .lua
+                .load(
+                    r#"
+                local small = cd.shared.small
                 -- 添加新键
                 local ok, err = small:safe_add("k1", "v1")
                 local ok1, err1 = ok, err
@@ -952,9 +999,10 @@ mod tests {
                 small:safe_add("k2", "v2")
                 local ok, err = small:safe_add("k3", "v3")
                 return ok1, err1, ok, err
-            "#)
-            .eval()
-            .unwrap();
+            "#,
+                )
+                .eval()
+                .unwrap();
         assert_eq!(ok1, Some(true));
         assert!(err1.is_none());
         assert!(ok2.is_none()); // 内存不足返回 nil
@@ -967,10 +1015,17 @@ mod tests {
         engine.init_shared_dict("test", 1024 * 1024);
 
         // 测试 replace 方法
-        let (success1, err1, success2, err2, value): (bool, Option<String>, bool, Option<String>, String) = engine
+        let (success1, err1, success2, err2, value): (
+            bool,
+            Option<String>,
+            bool,
+            Option<String>,
+            String,
+        ) = engine
             .lua
-            .load(r#"
-                local test = ngx.shared.test
+            .load(
+                r#"
+                local test = cd.shared.test
                 -- 替换不存在的键
                 local succ, err, forcible = test:replace("key1", "value1")
                 local success1, err1 = succ, err
@@ -981,7 +1036,8 @@ mod tests {
                 -- 获取值
                 local val = test:get("key1")
                 return success1, err1, success2, err2, val
-            "#)
+            "#,
+            )
             .eval()
             .unwrap();
         assert!(!success1);
@@ -999,8 +1055,9 @@ mod tests {
         // 测试 delete 方法
         let (result1, result2): (Option<bool>, Option<bool>) = engine
             .lua
-            .load(r#"
-                local test = ngx.shared.test
+            .load(
+                r#"
+                local test = cd.shared.test
                 test:set("key1", "value1")
                 -- 删除存在的键
                 local ok = test:delete("key1")
@@ -1009,7 +1066,8 @@ mod tests {
                 local ok = test:delete("key1")
                 local result2 = ok
                 return result1, result2
-            "#)
+            "#,
+            )
             .eval()
             .unwrap();
         assert_eq!(result1, Some(true));
@@ -1022,10 +1080,12 @@ mod tests {
         engine.init_shared_dict("test", 1024 * 1024);
 
         // 测试 incr 方法
-        let (val1, err1, val2, val4): (Option<i64>, Option<String>, Option<i64>, Option<f64>) = engine
-            .lua
-            .load(r#"
-                local test = ngx.shared.test
+        let (val1, err1, val2, val4): (Option<i64>, Option<String>, Option<i64>, Option<f64>) =
+            engine
+                .lua
+                .load(
+                    r#"
+                local test = cd.shared.test
                 -- 不存在的键，无初始值
                 local val, err, forcible = test:incr("key1", 1)
                 local val1, err1 = val, err
@@ -1038,9 +1098,10 @@ mod tests {
                 local val, err, forcible = test:incr("key2", 0.5)
                 local val4 = val
                 return val1, err1, val2, val4
-            "#)
-            .eval()
-            .unwrap();
+            "#,
+                )
+                .eval()
+                .unwrap();
         assert!(val1.is_none());
         assert_eq!(err1, Some("not found".to_string()));
         assert_eq!(val2, Some(5));
@@ -1055,8 +1116,9 @@ mod tests {
         // 测试 incr 的 forcible 返回值
         let (forcible1, forcible2, forcible3): (Option<bool>, Option<bool>, Option<bool>) = engine
             .lua
-            .load(r#"
-                local small = ngx.shared.small
+            .load(
+                r#"
+                local small = cd.shared.small
                 -- 填满容量
                 small:set("k1", "v1")
                 small:set("k2", "v2")
@@ -1070,7 +1132,8 @@ mod tests {
                 local val, err, forcible = small:incr("nonexistent", 1)
                 local forcible3 = forcible
                 return forcible1, forcible2, forcible3
-            "#)
+            "#,
+            )
             .eval()
             .unwrap();
         assert!(forcible1.unwrap()); // 创建新键时触发了 LRU
@@ -1086,8 +1149,9 @@ mod tests {
         // 测试 lpush/rpush
         let (len1, len2, len3, len4): (Option<i64>, Option<i64>, Option<i64>, Option<i64>) = engine
             .lua
-            .load(r#"
-                local test = ngx.shared.test
+            .load(
+                r#"
+                local test = cd.shared.test
                 -- lpush 新列表
                 local len, err = test:lpush("mylist", "value1")
                 local len1 = len
@@ -1101,7 +1165,8 @@ mod tests {
                 local len, err = test:llen("mylist")
                 local len4 = len
                 return len1, len2, len3, len4
-            "#)
+            "#,
+            )
             .eval()
             .unwrap();
         assert_eq!(len1, Some(1));
@@ -1116,10 +1181,17 @@ mod tests {
         engine.init_shared_dict("test", 1024 * 1024);
 
         // 测试 lpop/rpop
-        let (val1, val2, val3, val4, len): (Option<String>, Option<String>, Option<String>, Option<String>, Option<i64>) = engine
+        let (val1, val2, val3, val4, len): (
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<i64>,
+        ) = engine
             .lua
-            .load(r#"
-                local test = ngx.shared.test
+            .load(
+                r#"
+                local test = cd.shared.test
                 -- 创建列表: [a, b, c]
                 test:rpush("mylist", "a")
                 test:rpush("mylist", "b")
@@ -1135,7 +1207,8 @@ mod tests {
                 -- 获取长度
                 local len, err = test:llen("mylist")
                 return val1, val2, val3, val4, len
-            "#)
+            "#,
+            )
             .eval()
             .unwrap();
         assert_eq!(val1, Some("a".to_string()));
@@ -1153,8 +1226,9 @@ mod tests {
         // 测试对非列表值操作
         let (err1, err2): (Option<String>, Option<String>) = engine
             .lua
-            .load(r#"
-                local test = ngx.shared.test
+            .load(
+                r#"
+                local test = cd.shared.test
                 -- 设置标量值
                 test:set("key", "value")
                 -- 尝试 lpush 到标量
@@ -1162,10 +1236,12 @@ mod tests {
                 -- 尝试 lpop 标量
                 local val, err2 = test:lpop("key")
                 return err1, err2
-            "#)
+            "#,
+            )
             .eval()
             .unwrap();
         assert_eq!(err1, Some("value not a list".to_string()));
         assert_eq!(err2, Some("value not a list".to_string()));
     }
 }
+
