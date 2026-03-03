@@ -12,6 +12,9 @@ use candy::config::Settings;
 use candy::http;
 use candy::utils::logging;
 
+#[cfg(feature = "lua")]
+use candy::lua_engine::LUA_ENGINE;
+
 /// 测试服务器配置
 #[derive(Debug)]
 pub struct TestServerConfig {
@@ -125,6 +128,18 @@ pub async fn start_test_server(
 
     let settings =
         Settings::new(config_path.to_str().expect("Invalid path")).expect("Failed to load config");
+
+    // 初始化 Lua 共享字典（每次测试都重置，确保隔离）
+    #[cfg(feature = "lua")]
+    {
+        if let Some(dicts) = &settings.lua_shared_dict {
+            for dict_config in dicts {
+                if let Ok(capacity) = dict_config.parse_size() {
+                    LUA_ENGINE.reset_shared_dict(&dict_config.name, capacity);
+                }
+            }
+        }
+    }
 
     let server_handle = http::make_server(
         settings.host.into_iter().next().expect("No host config"),

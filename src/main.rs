@@ -6,6 +6,9 @@ use crate::config::Settings;
 use crate::http::{handle_config_change, load_upstreams, start_initial_servers};
 use crate::utils::{initialize_logger, shutdown_application, start_config_watcher};
 
+#[cfg(feature = "lua")]
+use crate::lua_engine::LUA_ENGINE;
+
 use mimalloc::MiMalloc;
 
 #[global_allocator]
@@ -34,6 +37,18 @@ async fn main() -> Result<()> {
 
     // 加载上游服务器配置
     load_upstreams(&settings);
+
+    // 初始化 Lua 共享字典
+    #[cfg(feature = "lua")]
+    {
+        if let Some(dicts) = &settings.lua_shared_dict {
+            for dict_config in dicts {
+                if let Ok(capacity) = dict_config.parse_size() {
+                    LUA_ENGINE.init_shared_dict(&dict_config.name, capacity);
+                }
+            }
+        }
+    }
 
     // 启动初始服务器
     let handles = start_initial_servers(settings).await?;

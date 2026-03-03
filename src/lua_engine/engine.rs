@@ -230,6 +230,41 @@ impl LuaEngine {
         }
     }
 
+    /// 重置共享字典（清空数据，用于测试隔离）
+    ///
+    /// # 参数
+    /// - `name` - 字典名称
+    /// - `capacity` - 容量（字节）
+    pub fn reset_shared_dict(&self, name: &str, capacity: usize) {
+        // 先删除旧的（如果存在）
+        self.shared_dicts.remove(name);
+
+        // 创建新的字典
+        let dict = SharedDict::new(name.to_string(), capacity);
+        self.shared_dicts.insert(name.to_string(), dict);
+
+        // 注册到 Lua
+        let ngx_shared: mlua::Table = self
+            .lua
+            .globals()
+            .get::<mlua::Table>("ngx")
+            .and_then(|ngx: mlua::Table| ngx.get::<mlua::Table>("shared"))
+            .unwrap_or_else(|_| self.lua.create_table().unwrap());
+
+        if let Some(dict) = self.shared_dicts.get(name) {
+            let _ = ngx_shared.set(name, dict.clone());
+        }
+
+        let ngx: mlua::Table = self.lua.globals().get("ngx").unwrap_or_else(|_| self.lua.create_table().unwrap());
+        let _ = ngx.set("shared", ngx_shared);
+        let _ = self.lua.globals().set("ngx", ngx);
+    }
+
+    /// 清理所有共享字典（用于测试隔离）
+    pub fn clear_shared_dicts(&self) {
+        self.shared_dicts.clear();
+    }
+
     /// 注册共享字典到 Lua 全局变量
     fn register_shared_dicts(lua: &Lua, shared_dicts: &Arc<DashMap<String, SharedDict>>) {
         // 创建 ngx 表
