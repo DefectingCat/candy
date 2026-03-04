@@ -181,34 +181,9 @@ impl UserData for CandyReq {
 
         // get_method(): 返回请求方法名称
         methods.add_method("get_method", |lua, this, ()| {
-            // Access the method from the state with maximum safety
-            let state_result =
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| this.state.lock()));
-
-            match state_result {
-                Ok(lock_result) => {
-                    match lock_result {
-                        Ok(state_guard) => {
-                            let method = state_guard.method.clone();
-                            drop(state_guard); // Explicitly drop the lock
-                            lua.pack(method)
-                        }
-                        Err(poisoned) => {
-                            // If the mutex is poisoned, try to recover
-                            let state_guard = poisoned.into_inner();
-                            let method = state_guard.method.clone();
-                            drop(state_guard); // Explicitly drop the lock
-                            lua.pack(method)
-                        }
-                    }
-                }
-                Err(_) => {
-                    // If there was a panic during locking, return an error
-                    Err(mlua::Error::external(anyhow!(
-                        "Panic occurred while accessing state in get_method"
-                    )))
-                }
-            }
+            // parking_lot::Mutex 不会中毒，直接获取锁
+            let state = this.state.lock();
+            lua.pack(state.method.clone())
         });
 
         // set_method(method_id): 设置请求方法
@@ -237,20 +212,14 @@ impl UserData for CandyReq {
                     )));
                 }
             };
-            let mut state = this
-                .state
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+            let mut state = this.state.lock();
             state.method = method.to_string();
             Ok(())
         });
 
         // get_uri(): 返回当前 URI（完整路径+查询参数）
         methods.add_method("get_uri", |lua, this, ()| {
-            let state = this
-                .state
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+            let state = this.state.lock();
             lua.pack(state.build_uri())
         });
 
@@ -264,8 +233,7 @@ impl UserData for CandyReq {
             }
             let mut state = this
                 .state
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+                .lock();
             // 解析 URI，分离路径和查询参数
             match uri.split_once('?') {
                 Some((path, query)) => {
@@ -287,8 +255,7 @@ impl UserData for CandyReq {
         methods.add_method("get_uri_args", |lua, this, max_args: Option<usize>| {
             let state = this
                 .state
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+                .lock();
 
             let limit = max_args.unwrap_or(100);
             let table = lua.create_table()?;
@@ -333,8 +300,7 @@ impl UserData for CandyReq {
         methods.add_method_mut("set_uri_args", |_, this, args: mlua::Value| {
             let mut state = this
                 .state
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+                .lock();
 
             state.uri_args = match args {
                 mlua::Value::String(s) => {
@@ -395,8 +361,7 @@ impl UserData for CandyReq {
         methods.add_method("get_body_data", |lua, this, ()| {
             let body = this
                 .body
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock body: {}", e)))?;
+                .lock();
             match body.as_ref() {
                 Some(bytes) if !bytes.is_empty() => {
                     lua.create_string(bytes.as_slice()).map(mlua::Value::String)
@@ -410,8 +375,7 @@ impl UserData for CandyReq {
         methods.add_method_mut("discard_body", |_, this, ()| {
             let mut body = this
                 .body
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock body: {}", e)))?;
+                .lock();
             *body = None;
             Ok(())
         });
@@ -424,8 +388,7 @@ impl UserData for CandyReq {
             let _ = buffer_size; // 在内存实现中未使用，但保留参数兼容性
             let mut body = this
                 .body
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock body: {}", e)))?;
+                .lock();
             // 初始化为空字节数组，表示可追加状态
             *body = Some(Vec::new());
             Ok(())
@@ -437,8 +400,7 @@ impl UserData for CandyReq {
         methods.add_method_mut("append_body", |_, this, data: mlua::String| {
             let mut body = this
                 .body
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock body: {}", e)))?;
+                .lock();
             match body.as_mut() {
                 Some(vec) => {
                     vec.extend_from_slice(&data.as_bytes());
@@ -467,8 +429,7 @@ impl UserData for CandyReq {
         methods.add_method_mut("print", |lua, this, args: mlua::MultiValue| {
             let mut state = this
                 .state
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+                .lock();
 
             // 构建输出字符串
             let mut output = String::new();
@@ -509,8 +470,7 @@ impl UserData for CandyReq {
         methods.add_method_mut("say", |lua, this, args: mlua::MultiValue| {
             let mut state = this
                 .state
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+                .lock();
 
             // 构建输出字符串
             let mut output = String::new();
@@ -571,8 +531,7 @@ impl UserData for CandyReq {
             // 实际的请求终止由框架处理
             let mut state = this
                 .state
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+                .lock();
 
             // 设置退出状态，框架会根据这个来决定如何处理
             // 对于 Candy，我们会直接设置响应状态码
@@ -596,8 +555,7 @@ impl UserData for CandyReq {
             // 在 Candy 的实现中，我们通过设置标志来表示输出流结束
             let mut state = this
                 .state
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+                .lock();
 
             // 设置输出结束标志
             // 在实际实现中，这会告诉底层框架停止接受更多输出并发送结束信号
@@ -931,8 +889,7 @@ impl UserData for CandyReq {
         methods.add_method_mut("set_body_data", |_, this, data: mlua::String| {
             let mut body = this
                 .body
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock body: {}", e)))?;
+                .lock();
             *body = Some(data.as_bytes().to_vec());
             Ok(())
         });
@@ -949,8 +906,7 @@ impl UserData for CandyReq {
 
                 let mut body = this
                     .body
-                    .lock()
-                    .map_err(|e| mlua::Error::external(anyhow!("Failed to lock body: {}", e)))?;
+                    .lock();
                 *body = Some(content);
                 Ok(())
             },
@@ -962,15 +918,13 @@ impl UserData for CandyReq {
         methods.add_method("get_post_args", |lua, this, max_args: Option<usize>| {
             let mut state = this
                 .state
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+                .lock();
 
             // 如果尚未解析 POST 参数，则解析
             if state.post_args.is_none() {
                 let body = this
                     .body
-                    .lock()
-                    .map_err(|e| mlua::Error::external(anyhow!("Failed to lock body: {}", e)))?;
+                    .lock();
                 match body.as_ref() {
                     Some(bytes) => {
                         let body_str = String::from_utf8_lossy(bytes);
@@ -1028,12 +982,10 @@ impl UserData for CandyReq {
             |lua, this, (max_headers, raw): (Option<usize>, Option<bool>)| {
                 let state = this
                     .state
-                    .lock()
-                    .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+                    .lock();
                 let headers = state
                     .headers
-                    .lock()
-                    .map_err(|e| mlua::Error::external(anyhow!("Failed to lock headers: {}", e)))?;
+                    .lock();
 
                 let limit = max_headers.unwrap_or(100);
                 let preserve_case = raw.unwrap_or(false);
@@ -1126,12 +1078,10 @@ impl UserData for CandyReq {
         methods.add_method_mut("clear_header", |_, this, header_name: String| {
             let state = this
                 .state
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+                .lock();
             let mut headers = state
                 .headers
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock headers: {}", e)))?;
+                .lock();
 
             // 支持大小写不敏感查找
             let normalized = header_name.to_lowercase().replace('_', "-");
@@ -1149,12 +1099,10 @@ impl UserData for CandyReq {
             |_, this, (header_name, header_value): (String, mlua::Value)| {
                 let state = this
                     .state
-                    .lock()
-                    .map_err(|e| mlua::Error::external(anyhow!("Failed to lock state: {}", e)))?;
+                    .lock();
                 let mut headers = state
                     .headers
-                    .lock()
-                    .map_err(|e| mlua::Error::external(anyhow!("Failed to lock headers: {}", e)))?;
+                    .lock();
 
                 let normalized = header_name.to_lowercase().replace('_', "-");
                 let header_name = HeaderName::try_from(normalized.as_str())
@@ -1207,8 +1155,7 @@ impl UserData for CandyHeaders {
             let normalized = Self::normalize_header_name(&key);
             let headers = this
                 .headers
-                .lock()
-                .map_err(|e| mlua::Error::external(anyhow!("Failed to lock headers: {}", e)))?;
+                .lock();
 
             // 查找 header (大小写不敏感)
             let header_name = HeaderName::try_from(normalized.as_str())
@@ -1247,8 +1194,7 @@ impl UserData for CandyHeaders {
 
                 let mut headers = this
                     .headers
-                    .lock()
-                    .map_err(|e| mlua::Error::external(anyhow!("Failed to lock headers: {}", e)))?;
+                    .lock();
 
                 // 先移除已有的值
                 headers.remove(&header_name);
@@ -1550,7 +1496,8 @@ impl UserData for RequestContext {
 mod tests {
     use super::*;
     use http::{HeaderMap, HeaderValue, header};
-    use std::sync::{Arc, Mutex};
+    use parking_lot::Mutex;
+    use std::sync::Arc;
 
     // Helper function to get method name from method ID
     fn method_id_to_string(method_id: u16) -> Option<&'static str> {
@@ -1691,14 +1638,14 @@ mod tests {
         #[test]
         fn test_candy_req_body_access() {
             let req = create_test_candy_req();
-            let guard = req.body.lock().unwrap();
+            let guard = req.body.lock();
             assert_eq!(guard.as_ref().unwrap(), b"test body");
         }
 
         #[test]
         fn test_candy_req_state_access() {
             let req = create_test_candy_req();
-            let state = req.state.lock().unwrap();
+            let state = req.state.lock();
             assert_eq!(state.method, "GET");
             assert_eq!(state.uri_path, "/test");
         }
@@ -1722,7 +1669,7 @@ mod tests {
         #[test]
         fn test_candy_resp_creation() {
             let resp = create_test_candy_resp();
-            let guard = resp.headers.headers.lock().unwrap();
+            let guard = resp.headers.headers.lock();
             assert!(guard.get(header::CONTENT_TYPE).is_some());
         }
     }
@@ -1735,7 +1682,8 @@ mod tests {
         fn test_new_headers() {
             let headers = HeaderMap::new();
             let candy_headers = CandyHeaders::new(headers);
-            assert!(candy_headers.headers.lock().is_ok());
+            // parking_lot::Mutex::lock() 总是成功，返回 MutexGuard
+            let _guard = candy_headers.headers.lock();
         }
 
         #[test]
@@ -1745,7 +1693,7 @@ mod tests {
             headers.insert(header::CONTENT_LENGTH, HeaderValue::from_static("100"));
 
             let candy_headers = CandyHeaders::new(headers);
-            let guard = candy_headers.headers.lock().unwrap();
+            let guard = candy_headers.headers.lock();
 
             assert_eq!(guard.get(header::CONTENT_TYPE).unwrap(), "text/html");
             assert_eq!(guard.get(header::CONTENT_LENGTH).unwrap(), "100");
@@ -1756,7 +1704,7 @@ mod tests {
             let mut headers = HeaderMap::new();
             headers.insert(header::HOST, HeaderValue::from_static("localhost"));
             let candy_headers = CandyHeaders::new(headers);
-            let cloned = candy_headers.headers.lock().unwrap().clone();
+            let cloned = candy_headers.headers.lock().clone();
             assert_eq!(cloned.get(header::HOST).unwrap(), "localhost");
         }
     }
@@ -2409,7 +2357,7 @@ mod tests {
         #[test]
         fn test_empty_body() {
             let body = Arc::new(Mutex::new(Some(b"".to_vec())));
-            let guard = body.lock().unwrap();
+            let guard = body.lock();
             // Empty body is Some with empty vec
             assert!(guard.as_ref().unwrap().is_empty());
         }
@@ -2417,7 +2365,7 @@ mod tests {
         #[test]
         fn test_none_body() {
             let body: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
-            let guard = body.lock().unwrap();
+            let guard = body.lock();
             assert!(guard.is_none());
         }
 

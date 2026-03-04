@@ -1,6 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use http::{HeaderMap, Uri};
+use parking_lot::Mutex;
 
 /// 为 Lua 脚本提供 HTTP 请求上下文
 #[derive(Clone, Debug)]
@@ -89,10 +90,7 @@ impl CandyHeaders {
 
     /// 获取所有 headers 作为 Lua table
     pub fn get_headers_table(&self, lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
-        let headers = self
-            .headers
-            .lock()
-            .map_err(|e| mlua::Error::external(anyhow::anyhow!("Failed to lock headers: {}", e)))?;
+        let headers = self.headers.lock();
 
         let table = lua.create_table()?;
         for (name, value) in headers.iter() {
@@ -231,7 +229,8 @@ mod tests {
         fn test_new() {
             let headers = HeaderMap::new();
             let candy_headers = CandyHeaders::new(headers);
-            assert!(candy_headers.headers.lock().is_ok());
+            // parking_lot Mutex::lock() 总是成功，返回 MutexGuard
+            let _guard = candy_headers.headers.lock();
         }
 
         #[test]
@@ -295,7 +294,7 @@ mod tests {
             );
 
             let candy_headers = CandyHeaders::new(headers);
-            let guard = candy_headers.headers.lock().unwrap();
+            let guard = candy_headers.headers.lock();
 
             assert_eq!(
                 guard.get(http::header::CONTENT_TYPE).unwrap(),
@@ -337,7 +336,7 @@ mod tests {
                 body: Arc::new(Mutex::new(Some(body_data.to_vec()))),
             };
 
-            let guard = request.body.lock().unwrap();
+            let guard = request.body.lock();
             assert_eq!(guard.as_ref().unwrap(), body_data);
         }
 
@@ -351,7 +350,7 @@ mod tests {
                 body: Arc::new(Mutex::new(None)),
             };
 
-            let guard = request.body.lock().unwrap();
+            let guard = request.body.lock();
             assert!(guard.is_none());
         }
     }
@@ -484,7 +483,6 @@ mod tests {
             let headers = Arc::new(Mutex::new(HeaderMap::new()));
             headers
                 .lock()
-                .unwrap()
                 .insert(http::header::HOST, HeaderValue::from_static("localhost"));
 
             let state = CandyReqState {
@@ -503,7 +501,7 @@ mod tests {
             assert_eq!(state.uri_path, "/original");
 
             // Verify header access
-            let guard = state.headers.lock().unwrap();
+            let guard = state.headers.lock();
             assert_eq!(guard.get(http::header::HOST).unwrap(), "localhost");
         }
 

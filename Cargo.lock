@@ -376,6 +376,7 @@ dependencies = [
  "mime_guess",
  "mlua",
  "notify",
+ "parking_lot",
  "reqwest",
  "serde",
  "serde_json",

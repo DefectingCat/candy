@@ -1,6 +1,6 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, anyhow};
@@ -11,6 +11,7 @@ use axum::{
 };
 use http::Uri;
 use http::header::HeaderMap;
+use parking_lot::Mutex;
 use tokio::fs;
 use tracing::{debug, error, info};
 
@@ -123,10 +124,9 @@ fn build_response(res: CandyResponse, output_buffer: String) -> RouteResult<Resp
 
     // 添加响应头
     let headers = response.headers_mut().unwrap();
-    if let Ok(guard) = res.headers.headers.lock() {
-        for (name, value) in guard.iter() {
-            headers.append(name.clone(), value.clone());
-        }
+    let guard = res.headers.headers.lock();
+    for (name, value) in guard.iter() {
+        headers.append(name.clone(), value.clone());
     }
 
     response
@@ -360,10 +360,7 @@ pub async fn lua(
 
     // 检查请求状态中的输出缓冲区（来自 print 调用）
     let output_buffer = {
-        let state = ctx
-            .req_state
-            .lock()
-            .map_err(|e| RouteError::Any(anyhow!("Failed to acquire request state lock: {}", e)))?;
+        let state = ctx.req_state.lock();
         state.output_buffer.clone()
     };
 
