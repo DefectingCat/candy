@@ -10,6 +10,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use http::Uri;
+use http::header::HeaderMap;
 use tokio::fs;
 use tracing::{debug, error, info};
 
@@ -24,12 +25,114 @@ use super::{
     utils::UriArgs,
 };
 use crate::http::error::RouteResult;
+use crate::config::SettingHost;
 
 /// 计算字节数组的校验和（用于检测文件内容变化）
 fn compute_checksum(data: &[u8]) -> u64 {
     let mut hasher = DefaultHasher::new();
     data.hash(&mut hasher);
     hasher.finish()
+}
+
+/// 执行编译后的 Lua 函数
+async fn execute_compiled_func(
+    func: &mlua::Function,
+    lua_script: &str,
+) -> RouteResult<()> {
+    func.call_async::<()>(())
+        .await
+        .map_err(|err| {
+            error!("Lua script {lua_script} exec error: {err}");
+            RouteError::Any(anyhow!("Lua script {} execution failed: {}", lua_script, err))
+        })?;
+    Ok(())
+}
+
+/// 构建请求行
+fn build_request_line(method: &str, path_and_query: &str, http_version_str: &str) -> String {
+    let mut request_line = String::with_capacity(method.len() + path_and_query.len() + http_version_str.len() + 2);
+    request_line.push_str(method);
+    request_line.push(' ');
+    request_line.push_str(path_and_query);
+    request_line.push(' ');
+    request_line.push_str(http_version_str);
+    request_line
+}
+
+/// 构建原始请求头字符串
+fn build_raw_header(headers: &HeaderMap) -> String {
+    let headers_len = headers.len();
+    let mut raw_header = String::with_capacity(headers_len * 50);
+    for (name, value) in headers {
+        if let Ok(v) = value.to_str() {
+            raw_header.push_str(name.as_str());
+            raw_header.push_str(": ");
+            raw_header.push_str(v);
+            raw_header.push_str("\r\n");
+        }
+    }
+    raw_header
+}
+
+/// 查找主机配置
+fn find_host_config(port: u16, domain: &str) -> RouteResult<SettingHost> {
+    // 当使用 port: 0 时，会随机分配一个可用端口，但 HOSTS 中存储的键是 0
+    let mut port_to_use = port;
+    if !HOSTS.contains_key(&port_to_use) {
+        port_to_use = 0;
+    }
+
+    let port_config = HOSTS.get(&port_to_use).ok_or(RouteError::BadRequest())?;
+
+    // 查找匹配的域名配置
+    let host_config = if let Some(entry) = port_config.get(&Some(domain.to_string())) {
+        Some(entry.clone())
+    } else {
+        // 尝试不区分大小写的匹配
+        let mut found = None;
+        for entry in port_config.iter() {
+            if let Some(server_name) = entry.key()
+                && server_name.to_lowercase() == domain
+            {
+                found = Some(entry.value().clone());
+                break;
+            }
+        }
+        found.or_else(|| port_config.get(&None).map(|v| v.clone()))
+    };
+
+    host_config.ok_or(RouteError::BadRequest())
+}
+
+/// 获取请求开始时间
+fn get_start_time() -> RouteResult<f64> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| RouteError::Any(anyhow!("Failed to get system time: {}", e)))?;
+    Ok(now.as_secs() as f64 + now.subsec_nanos() as f64 / 1_000_000_000.0)
+}
+
+/// 构建最终响应
+fn build_response(res: CandyResponse, output_buffer: String) -> RouteResult<Response> {
+    // 合并原始响应体和 print 输出
+    let final_body = format!("{}{}", res.body, output_buffer);
+
+    let mut response = Response::builder();
+    let body = Body::from(final_body);
+    response = response.status(res.status);
+
+    // 添加响应头
+    let headers = response.headers_mut().unwrap();
+    if let Ok(guard) = res.headers.headers.lock() {
+        for (name, value) in guard.iter() {
+            headers.append(name.clone(), value.clone());
+        }
+    }
+
+    response
+        .body(body)
+        .with_context(|| "Failed to build HTTP response with lua")
+        .map_err(RouteError::from)
 }
 
 pub async fn lua(
@@ -63,7 +166,7 @@ pub async fn lua(
         _ => None,
     };
 
-    // 构建请求行所需信息
+    // 构建请求行
     let http_version_str = match req.version() {
         http::Version::HTTP_09 => "HTTP/0.9",
         http::Version::HTTP_10 => "HTTP/1.0",
@@ -72,26 +175,14 @@ pub async fn lua(
         http::Version::HTTP_3 => "HTTP/3.0",
         _ => "HTTP/1.1",
     };
-    let request_line = format!(
-        "{} {} {}",
-        method,
-        req_uri
-            .path_and_query()
-            .map(|pq| pq.as_str())
-            .unwrap_or("/"),
-        http_version_str
-    );
+    let path_and_query = req_uri
+        .path_and_query()
+        .map(|pq| pq.as_str())
+        .unwrap_or("/");
+    let request_line = build_request_line(&method, path_and_query, http_version_str);
 
     // 构建原始请求头字符串
-    let raw_header = {
-        let mut headers_str = String::new();
-        for (name, value) in req.headers() {
-            if let Ok(v) = value.to_str() {
-                headers_str.push_str(&format!("{}: {}\r\n", name, v));
-            }
-        }
-        headers_str
-    };
+    let raw_header = build_raw_header(req.headers());
 
     // 克隆请求头（用于 get_headers）
     let req_headers = req.headers().clone();
@@ -102,34 +193,8 @@ pub async fn lua(
         .map_err(|e| RouteError::Any(anyhow!("Failed to read body: {}", e)))?;
     let req_body = Arc::new(Mutex::new(Some(body_bytes.to_vec())));
 
-    let host_config = {
-        // 当使用 port: 0 时，会随机分配一个可用端口，但 HOSTS 中存储的键是 0
-        let mut port_to_use = port;
-        if !HOSTS.contains_key(&port_to_use) {
-            port_to_use = 0;
-        }
-
-        let port_config = HOSTS.get(&port_to_use).ok_or(RouteError::BadRequest())?;
-
-        // 查找匹配的域名配置
-        let host_config = if let Some(entry) = port_config.get(&Some(domain.clone())) {
-            Some(entry.clone())
-        } else {
-            // 尝试不区分大小写的匹配
-            let mut found = None;
-            for entry in port_config.iter() {
-                if let Some(server_name) = entry.key()
-                    && server_name.to_lowercase() == domain
-                {
-                    found = Some(entry.value().clone());
-                    break;
-                }
-            }
-            found.or_else(|| port_config.get(&None).map(|v| v.clone()))
-        };
-
-        host_config.ok_or(RouteError::BadRequest())?
-    };
+    // 查找主机配置
+    let host_config = find_host_config(port, &domain)?;
 
     let route_map = &host_config.route_map;
 
@@ -151,15 +216,10 @@ pub async fn lua(
     let lua_script = route_config
         .lua_script
         .as_ref()
-        .ok_or(RouteError::InternalError())?;
+        .ok_or(RouteError::Any(anyhow!("Lua script path is not configured for route: {}", parent_path)))?;
 
     // 计算请求开始时间
-    let start_time = {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| RouteError::InternalError())?;
-        now.as_secs() as f64 + now.subsec_nanos() as f64 / 1_000_000_000.0
-    };
+    let start_time = get_start_time()?;
 
     let lua = &LUA_ENGINE.lua;
     let script_content = fs::read(lua_script)
@@ -209,7 +269,7 @@ pub async fn lua(
         )
         .map_err(|err| {
             error!("Lua script {lua_script} exec error: {err}");
-            RouteError::InternalError()
+            RouteError::Any(anyhow!("Failed to set Lua global context for script {}: {}", lua_script, err))
         })?;
 
     // 注意：cd.shared 通过 RequestContext 的 __index 元方法从 __candy_shared__ 全局变量获取
@@ -224,14 +284,7 @@ pub async fn lua(
             // 比较校验和，检测脚本内容是否发生变化
             if cache_entry.checksum == checksum {
                 // 使用缓存的编译函数
-                cache_entry
-                    .compiled_func
-                    .call_async::<()>(())
-                    .await
-                    .map_err(|err| {
-                        error!("Lua script {lua_script} exec error: {err}");
-                        RouteError::InternalError()
-                    })?;
+                execute_compiled_func(&cache_entry.compiled_func, lua_script).await?;
                 debug!(
                     "Lua script executed from cache: {}, time: {:?}",
                     lua_script,
@@ -243,24 +296,17 @@ pub async fn lua(
                 let chunk = lua.load(script.as_str());
                 let compiled_func = chunk.into_function().map_err(|err| {
                     error!("Lua script {lua_script} compile error: {err}");
-                    RouteError::InternalError()
+                    RouteError::Any(anyhow!("Lua script {} compile error: {}", lua_script, err))
                 })?;
 
                 // 更新缓存
                 *cache_entry = LuaCodeCacheEntry {
-                    compiled_func,
+                    compiled_func: compiled_func.clone(),
                     checksum,
                 };
 
                 // 执行新编译的函数
-                cache_entry
-                    .compiled_func
-                    .call_async::<()>(())
-                    .await
-                    .map_err(|err| {
-                        error!("Lua script {lua_script} exec error: {err}");
-                        RouteError::InternalError()
-                    })?;
+                execute_compiled_func(&compiled_func, lua_script).await?;
                 debug!(
                     "Lua script recompiled and executed: {}, time: {:?}",
                     lua_script,
@@ -273,28 +319,19 @@ pub async fn lua(
             let chunk = lua.load(script.as_str());
             let compiled_func = chunk.into_function().map_err(|err| {
                 error!("Lua script {lua_script} compile error: {err}");
-                RouteError::InternalError()
+                RouteError::Any(anyhow!("Lua script {} compile error: {}", lua_script, err))
             })?;
 
             LUA_ENGINE.code_cache.insert(
                 lua_script.to_string(),
                 LuaCodeCacheEntry {
-                    compiled_func,
+                    compiled_func: compiled_func.clone(),
                     checksum,
                 },
             );
 
             // 执行新编译的函数
-            if let Some(entry) = LUA_ENGINE.code_cache.get(lua_script) {
-                entry
-                    .compiled_func
-                    .call_async::<()>(())
-                    .await
-                    .map_err(|err| {
-                        error!("Lua script {lua_script} exec error: {err}");
-                        RouteError::InternalError()
-                    })?;
-            }
+            execute_compiled_func(&compiled_func, lua_script).await?;
             debug!(
                 "Lua script compiled and executed: {}, time: {:?}",
                 lua_script,
@@ -306,7 +343,7 @@ pub async fn lua(
         let start_time = std::time::Instant::now();
         lua.load(script).exec_async().await.map_err(|err| {
             error!("Lua script {lua_script} exec error: {err}");
-            RouteError::InternalError()
+            RouteError::Any(anyhow!("Lua script {} execution failed: {}", lua_script, err))
         })?;
         debug!(
             "Lua script executed without cache: {}, time: {:?}",
@@ -316,8 +353,8 @@ pub async fn lua(
     }
     // 获取修改后的上下文并返回响应
     let ctx: mlua::UserDataRef<RequestContext> = lua.globals().get("cd").map_err(|err| {
-        error!("Lua script {lua_script} exec error: {err}");
-        RouteError::InternalError()
+        error!("Lua script {lua_script} failed to get context: {err}");
+        RouteError::Any(anyhow!("Lua script {} failed to get 'cd' global context: {}", lua_script, err))
     })?;
     let res = ctx.res.clone();
 
@@ -326,29 +363,12 @@ pub async fn lua(
         let state = ctx
             .req_state
             .lock()
-            .map_err(|_| RouteError::InternalError())?;
+            .map_err(|e| RouteError::Any(anyhow!("Failed to acquire request state lock: {}", e)))?;
         state.output_buffer.clone()
     };
 
-    // 合并原始响应体和 print 输出
-    let final_body = format!("{}{}", res.body, output_buffer);
-
-    let mut response = Response::builder();
-    let body = Body::from(final_body);
-    response = response.status(res.status);
-
-    // 添加响应头
-    let headers = response.headers_mut().unwrap();
-    if let Ok(guard) = res.headers.headers.lock() {
-        for (name, value) in guard.iter() {
-            headers.append(name.clone(), value.clone());
-        }
-    }
-
-    let response = response
-        .body(body)
-        .with_context(|| "Failed to build HTTP response with lua")?;
-    Ok(response)
+    // 构建并返回响应
+    build_response(res, output_buffer)
 }
 
 #[cfg(test)]
