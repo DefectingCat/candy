@@ -1,13 +1,62 @@
+//! 日志系统模块
+//!
+//! 提供日志系统的初始化、配置和管理功能。
+//!
+//! # 功能特性
+//!
+//! - 文件日志：按日期滚动，支持配置存储目录
+//! - 控制台输出：实时显示日志信息
+//! - 日志级别过滤：支持 trace/debug/info/warn/error
+//! - 线程安全：使用 `OnceLock` 确保只初始化一次
+//!
+//! # 日志级别
+//!
+//! 支持 tracing 的所有日志级别：
+//!
+//! - `trace`：最详细的日志，用于调试
+//! - `debug`：调试信息
+//! - `info`：常规信息（默认）
+//! - `warn`：警告信息
+//! - `error`：错误信息
+//!
+//! # 日志格式
+//!
+//! ```text
+//! 2024-01-01T12:00:00Z INFO candy::main: Server started
+//! 2024-01-01T12:00:05Z DEBUG candy::http::serve: Request: GET /
+//! 2024-01-01T12:00:10Z ERROR candy::http::error: Route not found
+//! ```
+//!
+//! # 文件存储
+//!
+//! - 文件名格式：`candy-YYYY-MM-DD.log`
+//! - 自动滚动：每天创建新文件
+//! - 非阻塞写入：使用独立线程写入，不影响性能
+//!
+//! # 使用示例
+//!
+//! ```no_run
+//! use candy::utils::logging::init_logger;
+//!
+//! // 初始化日志系统
+//! let _guard = init_logger("info", "./logs").unwrap();
+//!
+//! // 使用日志宏
+//! tracing::info!("Server started");
+//! tracing::debug!("Debug information");
+//! tracing::error!("Error occurred");
+//! ```
+
 use std::str::FromStr;
 use std::sync::OnceLock;
 
 use anyhow::Context;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
-    EnvFilter,
     filter::LevelFilter,
     fmt::{self},
     layer::SubscriberExt,
+    EnvFilter,
 };
 
 /// 全局标志，用于跟踪 logger 是否已初始化

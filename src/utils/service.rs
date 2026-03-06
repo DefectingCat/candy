@@ -1,10 +1,67 @@
+//! 服务工具模块
+//!
+//! 提供服务器运行所需的工具函数。
+//!
+//! # 功能
+//!
+//! - 主机端口解析：从 host 字符串中解析端口号
+//! - 支持 IPv4、IPv6 和域名格式
+//! - 支持默认端口（HTTP: 80, HTTPS: 443）
+
 use tracing::debug;
 
-/// Parse port from host
-/// if host is localhost:8080
-/// return 8080
-/// if host is localhost
-/// return 80
+/// 从 host 字符串中解析端口号
+///
+/// 支持多种格式的 host 字符串，包括 IPv4、IPv6 和域名。
+/// 如果未指定端口，则根据协议返回默认端口。
+///
+/// # 参数
+///
+/// * `host` - 主机字符串，格式可以是：
+///   - IPv4: "127.0.0.1:8080" 或 "127.0.0.1"
+///   - IPv6: "\[::1\]:8080" 或 "\[::1\]"
+///   - 域名: "example.com:8080" 或 "example.com"
+/// * `scheme` - 协议类型（"http" 或 "https"）
+///
+/// # 返回值
+///
+/// 返回解析出的端口号（`Some(port)`）或 `None`（解析失败）。
+///
+/// # 示例
+///
+/// ```
+/// use candy::utils::parse_port_from_host;
+///
+/// // IPv4 带端口
+/// assert_eq!(parse_port_from_host("127.0.0.1:8080", "http"), Some(8080));
+///
+/// // IPv4 不带端口（使用默认端口）
+/// assert_eq!(parse_port_from_host("127.0.0.1", "http"), Some(80));
+/// assert_eq!(parse_port_from_host("127.0.0.1", "https"), Some(443));
+///
+/// // IPv6 带端口
+/// assert_eq!(parse_port_from_host("[::1]:8080", "http"), Some(8080));
+///
+/// // 域名带端口
+/// assert_eq!(parse_port_from_host("example.com:8080", "http"), Some(8080));
+///
+/// // 域名不带端口
+/// assert_eq!(parse_port_from_host("example.com", "http"), Some(80));
+///
+/// // 不支持的协议
+/// assert_eq!(parse_port_from_host("example.com", "ftp"), None);
+///
+/// // 空字符串
+/// assert_eq!(parse_port_from_host("", "http"), None);
+/// ```
+///
+/// # 错误处理
+///
+/// 以下情况会返回 `None`：
+/// - host 字符串为空
+/// - 端口号格式错误（非数字）
+/// - 端口号超出有效范围（0-65535）
+/// - 不支持的协议类型
 pub fn parse_port_from_host(host: &str, scheme: &str) -> Option<u16> {
     if host.is_empty() {
         return None;

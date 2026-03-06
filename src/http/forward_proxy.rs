@@ -1,3 +1,41 @@
+//! 正向代理模块
+//!
+//! 提供 HTTP 正向代理功能，允许客户端通过服务器访问外部资源。
+//!
+//! # 功能特性
+//!
+//! - HTTP 正向代理：支持标准的 HTTP 代理协议
+//! - 连接池复用：使用全局客户端实例提高性能
+//! - 请求转发：完整转发客户端请求到目标服务器
+//! - 响应转发：将目标服务器的响应返回给客户端
+//! - 头部处理：自动处理请求和响应头部
+//!
+//! # 使用场景
+//!
+//! - 内网访问外部资源
+//! - 缓存代理
+//! - 访问控制
+//!
+//! # 配置示例
+//!
+//! ```toml
+//! [[host]]
+//! ip = "0.0.0.0"
+//! port = 8080
+//!
+//! [[host.route]]
+//! location = "/proxy"
+//! forward_proxy = true
+//! ```
+//!
+//! # 工作流程
+//!
+//! 1. 接收客户端请求
+//! 2. 解析请求 URL 和目标服务器
+//! 3. 创建新的请求并转发到目标服务器
+//! 4. 接收目标服务器的响应
+//! 5. 将响应返回给客户端
+
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -20,6 +58,26 @@ use crate::{http::serve::resolve_parent_path, utils::parse_port_from_host};
 static CLIENT: OnceLock<Client> = OnceLock::new();
 
 /// 获取全局 reqwest 客户端实例
+///
+/// 使用 `OnceLock` 实现单例模式，确保整个应用只创建一个客户端实例。
+/// 客户端实例会被复用，提高性能并减少资源消耗。
+///
+/// # 返回值
+///
+/// 返回全局 reqwest 客户端的静态引用。
+///
+/// # 初始化
+///
+/// 客户端在首次调用时初始化，使用默认配置。
+///
+/// # 示例
+///
+/// ```no_run
+/// use candy::http::forward_proxy::get_client;
+///
+/// let client = get_client();
+/// // 使用客户端发送请求
+/// ```
 fn get_client() -> &'static Client {
     CLIENT.get_or_init(|| {
         Client::builder()

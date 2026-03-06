@@ -1,3 +1,59 @@
+//! HTTP 服务器核心模块
+//!
+//! 提供 HTTP/HTTPS 服务器的创建、路由注册和生命周期管理功能。
+//!
+//! # 架构设计
+//!
+//! 服务器采用分层架构设计：
+//!
+//! - **路由层**：基于 Axum 路由器，支持静态文件、反向代理、正向代理、重定向等路由类型
+//! - **中间件层**：提供日志记录、版本信息、自定义响应头、压缩等中间件
+//! - **上游管理层**：使用 DashMap 存储上游服务器配置，支持动态更新和健康检查
+//! - **生命周期管理**：支持优雅关闭和配置热重载
+//!
+//! # 核心组件
+//!
+//! ## 全局状态
+//!
+//! - `UPSTREAMS`：上游服务器组配置存储，使用 DashMap 实现并发安全
+//! - `HOSTS`：虚拟主机配置存储，支持基于域名的路由
+//!
+//! ## 路由类型
+//!
+//! 1. **静态文件服务**：提供静态文件和目录列表功能
+//! 2. **反向代理**：支持负载均衡（轮询、加权轮询、IP 哈希、最少连接）
+//! 3. **正向代理**：HTTP 代理服务
+//! 4. **重定向**：HTTP 重定向（301/302）
+//! 5. **Lua 脚本**：动态请求处理（可选）
+//!
+//! ## 中间件
+//!
+//! - 版本信息中间件：在响应头中添加服务器版本信息
+//! - 自定义头部中间件：支持配置自定义响应头
+//! - 日志中间件：记录请求和响应信息
+//! - 压缩中间件：支持 gzip、deflate、brotli、zstd 压缩
+//! - 超时中间件：请求超时控制
+//!
+//! # 使用示例
+//!
+//! ```no_run
+//! use candy::config::Settings;
+//! use candy::http::start_initial_servers;
+//! use std::sync::Arc;
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     // 加载配置
+//!     let settings = Settings::new("config.toml").unwrap();
+//!     
+//!     // 启动服务器
+//!     let handles = start_initial_servers(settings).await.unwrap();
+//!     
+//!     // 等待关闭信号
+//!     tokio::signal::ctrl_c().await.unwrap();
+//! }
+//! ```
+
 use std::{net::SocketAddr, sync::LazyLock, time::Duration};
 
 use std::sync::Arc;
@@ -55,15 +111,38 @@ pub mod redirect;
 /// 使用 SettingHost 作为值
 /// {
 ///     80: {
-///         Some("rua.plus"): <SettingHost>,
-///         Some("www.rua.plus"): <SettingHost>,
-///         None: <SettingHost> // 默认主机
+///         Some("rua.plus"): SettingHost { ... },
+///         Some("www.rua.plus"): SettingHost { ... },
+///         None: SettingHost { ... } // 默认主机
 ///     }
 /// }
 pub static HOSTS: LazyLock<DashMap<u16, DashMap<Option<String>, SettingHost>>> =
     LazyLock::new(DashMap::new);
 
 /// 加载上游服务器配置到全局存储
+///
+/// 将配置文件中的上游服务器组加载到全局 UPSTREAMS 存储中，
+/// 并初始化健康检查任务（如果配置了主动健康检查）。
+///
+/// # 参数
+///
+/// * `settings` - 服务器配置实例
+///
+/// # 功能
+///
+/// 1. 清空现有的上游服务器配置
+/// 2. 将新配置插入全局存储
+/// 3. 初始化健康检查任务（如果配置）
+///
+/// # 示例
+///
+/// ```no_run
+/// use candy::config::Settings;
+/// use candy::http::load_upstreams;
+///
+/// let settings = Settings::new("config.toml").unwrap();
+/// load_upstreams(&settings);
+/// ```
 pub fn load_upstreams(settings: &crate::config::Settings) {
     crate::http::UPSTREAMS.clear();
     if let Some(upstreams) = &settings.upstream {
@@ -123,6 +202,41 @@ fn host_has_any_custom_compression(host: &SettingHost) -> bool {
 }
 
 /// 启动初始服务器实例
+///
+/// 根据配置文件中的主机列表启动所有服务器实例。
+///
+/// # 参数
+///
+/// * `settings` - 完整的服务器配置
+///
+/// # 返回值
+///
+/// 返回一个 `Arc<Mutex<Vec<Handle>>>`，包含所有成功启动的服务器句柄。
+/// 这些句柄用于后续的服务器管理（如优雅关闭、配置重载）。
+///
+/// # 错误处理
+///
+/// 如果服务器启动失败，会返回错误信息。
+///
+/// # 示例
+///
+/// ```no_run
+/// use candy::config::Settings;
+/// use candy::http::start_initial_servers;
+/// use std::sync::Arc;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let settings = Settings::new("config.toml").unwrap();
+///     let handles = start_initial_servers(settings).await.unwrap();
+///     
+///     // 使用句柄进行管理
+///     let handles_clone = handles.clone();
+///     
+///     // 等待关闭信号
+///     tokio::signal::ctrl_c().await.unwrap();
+/// }
+/// ```
 pub async fn start_initial_servers(
     settings: crate::config::Settings,
 ) -> anyhow::Result<Arc<Mutex<Vec<axum_server::Handle<SocketAddr>>>>> {
@@ -132,6 +246,43 @@ pub async fn start_initial_servers(
 }
 
 /// 处理配置文件变更的回调函数
+///
+/// 当配置文件监听器检测到配置文件变更时，会调用此函数。
+/// 函数会重新加载配置并重启所有服务器。
+///
+/// # 参数
+///
+/// * `result` - 配置文件加载结果，成功时包含新的配置，失败时包含错误信息
+/// * `handles` - 当前运行的服务器句柄列表，用于优雅关闭旧服务器
+///
+/// # 处理流程
+///
+/// 1. 如果配置加载成功：
+///    - 停止所有当前运行的服务器（优雅关闭，等待 30 秒）
+///    - 清空全局配置存储（HOSTS 和 UPSTREAMS）
+///    - 重新加载上游服务器配置
+///    - 启动新的服务器实例
+///    - 更新服务器句柄列表
+/// 2. 如果配置加载失败：
+///    - 记录错误日志
+///    - 保持当前服务器继续运行
+///
+/// # 错误处理
+///
+/// 配置加载失败时不会影响当前运行的服务器，只是记录错误日志。
+///
+/// # 示例
+///
+/// ```no_run
+/// use candy::http::handle_config_change;
+/// use candy::config::Settings;
+/// use std::sync::Arc;
+/// use tokio::sync::Mutex;
+///
+/// // 配置监听器会自动调用此函数
+/// // handles: Arc<Mutex<Vec<axum_server::Handle<SocketAddr>>>>
+/// // result: Result<Settings, Error>
+/// ```
 pub async fn handle_config_change(
     result: crate::error::Result<crate::config::Settings>,
     handles: Arc<Mutex<Vec<axum_server::Handle<SocketAddr>>>>,
@@ -239,6 +390,80 @@ pub async fn start_servers(
     handles
 }
 
+/// 创建并配置 HTTP/HTTPS 服务器
+///
+/// 根据主机配置创建一个服务器实例，支持 HTTP 和 HTTPS（SSL/TLS）。
+/// 此函数会注册所有路由、配置中间件、并启动服务器监听。
+///
+/// # 参数
+///
+/// * `host` - 虚拟主机配置，包含 IP、端口、SSL 证书、路由等信息
+/// * `compression` - 压缩配置，用于配置响应压缩（gzip/deflate/brotli/zstd）
+///
+/// # 返回值
+///
+/// 返回 `Ok(Handle)` 表示服务器启动成功，句柄用于管理和优雅关闭。
+/// 返回 `Err` 表示服务器启动失败（如端口被占用、SSL 证书无效等）。
+///
+/// # 路由注册
+///
+/// 根据路由配置自动注册以下类型的路由：
+///
+/// 1. **静态文件服务**：提供静态文件和目录列表
+/// 2. **反向代理**：转发请求到上游服务器，支持负载均衡
+/// 3. **正向代理**：HTTP 代理服务
+/// 4. **重定向**：HTTP 重定向（301/302）
+/// 5. **Lua 脚本**：动态请求处理（如果启用）
+///
+/// # 中间件配置
+///
+/// 自动应用以下中间件（按顺序）：
+///
+/// 1. **压缩中间件**：响应压缩（支持路由级别和全局配置）
+/// 2. **版本信息中间件**：添加服务器版本到响应头
+/// 3. **自定义头部中间件**：添加配置的自定义响应头
+/// 4. **超时中间件**：请求超时控制
+/// 5. **日志中间件**：记录请求和响应信息
+///
+/// # SSL/TLS 支持
+///
+/// 如果配置了 SSL，会自动加载证书和密钥文件，并启用 HTTPS。
+/// 支持 HTTP/2 协议。
+///
+/// # 错误
+///
+/// 可能返回以下错误：
+/// - 地址解析失败（IP 或端口格式错误）
+/// - SSL 证书加载失败
+/// - 端口绑定失败（端口已被占用）
+///
+/// # 示例
+///
+/// ```no_run
+/// use candy::config::{SettingHost, CompressionConfig};
+/// use candy::http::make_server;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let host = SettingHost {
+///         ip: "0.0.0.0".to_string(),
+///         port: 8080,
+///         ssl: false,
+///         route: vec![],
+///         // ... 其他配置
+///         ..Default::default()
+///     };
+///     
+///     let compression = CompressionConfig::default();
+///     let handle = make_server(host, compression).await.unwrap();
+/// }
+/// ```
+///
+/// # 注意
+///
+/// - 服务器在后台任务中运行，不会阻塞当前线程
+/// - 路由配置会自动处理带斜杠和不带斜杠的路径
+/// - 支持基于域名的虚拟主机路由
 pub async fn make_server(
     host: SettingHost,
     compression: CompressionConfig,

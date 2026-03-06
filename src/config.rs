@@ -1,3 +1,79 @@
+//! 配置管理模块
+//!
+//! 提供配置文件的加载、解析、验证和管理功能。
+//!
+//! # 配置文件格式
+//!
+//! 使用 TOML 格式，支持以下配置项：
+//!
+//! - **日志配置**：日志级别（trace/debug/info/warn/error）和日志目录
+//! - **压缩配置**：启用/禁用各种压缩算法（gzip/deflate/brotli/zstd）及压缩级别
+//! - **上游服务器组**：负载均衡配置，支持多种算法
+//! - **虚拟主机**：IP、端口、SSL 证书、路由配置
+//! - **Lua 共享字典**：共享内存区域配置（可选）
+//!
+//! # 配置验证
+//!
+//! 配置加载后会自动验证以下内容：
+//!
+//! - 上游服务器组配置的完整性和正确性
+//! - SSL 证书文件的存在性（如果启用了 SSL）
+//! - 路由配置的有效性（至少包含一种路由类型）
+//! - Lua 共享字典配置的有效性（如果启用）
+//!
+//! # 配置示例
+//!
+//! ```toml
+//! log_level = "info"
+//! log_folder = "./logs"
+//!
+//! [compression]
+//! gzip = true
+//! level = 6
+//!
+//! [[upstream]]
+//! name = "backend"
+//! method = "round_robin"
+//! server = [
+//!     { server = "192.168.1.100:8080" },
+//!     { server = "192.168.1.101:8080", weight = 2 }
+//! ]
+//!
+//! [[host]]
+//! ip = "0.0.0.0"
+//! port = 8080
+//! timeout = 30
+//!
+//! [[host.route]]
+//! location = "/"
+//! root = "./html"
+//! index = ["index.html"]
+//! auto_index = true
+//!
+//! [[host.route]]
+//! location = "/api"
+//! upstream = "backend"
+//! proxy_timeout = 10
+//! ```
+//!
+//! # 使用示例
+//!
+//! ```no_run
+//! use candy::config::Settings;
+//!
+//! // 加载配置文件
+//! let settings = Settings::new("config.toml").expect("加载配置失败");
+//!
+//! // 访问配置项
+//! println!("日志级别: {}", settings.log_level);
+//! println!("主机数量: {}", settings.host.len());
+//!
+//! // 查找上游服务器组
+//! if let Some(upstream) = settings.find_upstream("backend") {
+//!     println!("找到上游服务器组: {}", upstream.name);
+//! }
+//! ```
+
 use crate::{
     consts::{
         default_compression_enabled, default_compression_level, default_disabled,
@@ -269,9 +345,9 @@ pub struct SettingHost {
     pub certificate_key: Option<String>,
     /// 配置文件中的路由列表
     pub route: Vec<SettingRoute>,
-    /// 主机路由从 Vec<SettingRoute> 转换为 DashMap<String, SettingRoute>
+/// 主机路由从 Vec\<SettingRoute\> 转换为 DashMap\<String, SettingRoute\>
     /// {
-    ///     "/doc": <SettingRoute>
+    ///     "/doc": SettingRoute { ... }
     /// }
     #[serde(skip)]
     pub route_map: HostRouteMap,
@@ -342,6 +418,32 @@ pub struct Settings {
 
 impl Settings {
     /// 根据名称查找上游服务器组配置
+    ///
+    /// 在已配置的上游服务器组列表中查找指定名称的配置。
+    /// 上游服务器组用于负载均衡，可以将请求分发到多个后端服务器。
+    ///
+    /// # 参数
+    ///
+    /// * `name` - 上游服务器组的名称，对应配置文件中 `[[upstream]]` 的 `name` 字段
+    ///
+    /// # 返回值
+    ///
+    /// 如果找到匹配的上游服务器组，返回 `Some(&Upstream)`，否则返回 `None`。
+    ///
+    /// # 示例
+    ///
+    /// ```no_run
+    /// use candy::config::Settings;
+    ///
+    /// let settings = Settings::new("config.toml").unwrap();
+    ///
+    /// // 查找名为 "backend" 的上游服务器组
+    /// if let Some(upstream) = settings.find_upstream("backend") {
+    ///     println!("上游服务器组名称: {}", upstream.name);
+    ///     println!("负载均衡算法: {:?}", upstream.method);
+    ///     println!("服务器数量: {}", upstream.server.len());
+    /// }
+    /// ```
     #[allow(dead_code)]
     pub fn find_upstream(&self, name: &str) -> Option<&Upstream> {
         self.upstream.as_ref()?.iter().find(|u| u.name == name)
@@ -349,13 +451,45 @@ impl Settings {
 
     /// 从 TOML 配置文件创建 Settings 实例
     ///
+    /// 执行以下步骤：
+    /// 1. 读取配置文件内容
+    /// 2. 解析 TOML 格式
+    /// 3. 应用默认值（未配置的字段使用默认值）
+    /// 4. 初始化路由映射（将路由列表转换为 DashMap）
+    /// 5. 验证配置有效性
+    ///
     /// # 参数
     ///
-    /// * `path` - 配置文件路径
+    /// * `path` - 配置文件路径，支持相对路径和绝对路径
     ///
     /// # 返回值
     ///
-    /// 解析后的 Settings 实例，或包含错误信息的 Result
+    /// 返回解析后的 Settings 实例。如果配置文件不存在、格式错误或验证失败，返回错误信息。
+    ///
+    /// # 错误
+    ///
+    /// 可能返回以下错误：
+    /// - `IoError` - 文件不存在或读取失败
+    /// - `TomlDecode` - TOML 格式解析失败
+    /// - `ValidationError` - 配置验证失败
+    ///
+    /// # 示例
+    ///
+    /// ```no_run
+    /// use candy::config::Settings;
+    ///
+    /// // 基本用法
+    /// let settings = Settings::new("config.toml").expect("加载配置失败");
+    ///
+    /// // 错误处理
+    /// match Settings::new("config.toml") {
+    ///     Ok(settings) => {
+    ///         println!("配置加载成功");
+    ///         println!("日志级别: {}", settings.log_level);
+    ///     }
+    ///     Err(e) => eprintln!("配置加载失败: {:?}", e),
+    /// }
+    /// ```
     pub fn new(path: &str) -> Result<Self> {
         let file = fs::read_to_string(path).with_context(|| format!("Failed to read {path}"))?;
         let mut settings: Settings = toml::from_str(&file)?;
@@ -375,6 +509,58 @@ impl Settings {
     }
 
     /// 验证配置的有效性
+    ///
+    /// 执行全面的配置验证，确保所有配置项符合要求。
+    ///
+    /// # 验证内容
+    ///
+    /// ## 上游服务器组配置
+    /// - 上游服务器组名称不能为空
+    /// - 服务器列表不能为空
+    /// - 服务器地址格式必须正确（必须包含端口号，格式为 host:port）
+    ///
+    /// ## SSL 配置
+    /// - 如果启用了 SSL，必须提供证书和密钥文件路径
+    /// - 证书和密钥文件必须存在
+    ///
+    /// ## 路由配置
+    /// - 路由位置不能为空且必须以 `/` 开头
+    /// - 路由必须至少配置一种类型（静态文件、反向代理、正向代理、Lua 脚本或重定向）
+    /// - 如果引用了上游服务器组，该组必须存在
+    ///
+    /// ## Lua 共享字典配置（如果启用）
+    /// - 共享字典名称不能为空
+    /// - 大小格式必须正确（支持 k/m/g 单位）
+    ///
+    /// # 返回值
+    ///
+    /// 如果配置有效返回 `Ok(())`，否则返回包含错误信息的 `Err`。
+    ///
+    /// # 错误
+    ///
+    /// 可能返回以下错误：
+    /// - 上游服务器组名称为空
+    /// - 上游服务器列表为空
+    /// - 服务器地址格式错误
+    /// - SSL 证书文件缺失
+    /// - 路由位置无效
+    /// - 路由配置缺少必要字段
+    /// - 引用的上游服务器组不存在
+    /// - Lua 共享字典配置无效
+    ///
+    /// # 示例
+    ///
+    /// ```no_run
+    /// use candy::config::Settings;
+    ///
+    /// let settings = Settings::new("config.toml").unwrap();
+    ///
+    /// // 配置验证会在 Settings::new() 中自动执行
+    /// // 如果需要手动验证，可以调用此方法
+    /// if let Err(e) = settings.validate() {
+    ///     eprintln!("配置验证失败: {:?}", e);
+    /// }
+    /// ```
     fn validate(&self) -> Result<()> {
         // 验证上游服务器组配置
         if let Some(upstreams) = &self.upstream {

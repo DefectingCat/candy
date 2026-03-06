@@ -6,4 +6,3 @@ mod engine;
 mod shared_dict;
 
 pub use engine::*;
-pub use shared_dict::{SharedDict, SharedDictEntry, SharedDictError};

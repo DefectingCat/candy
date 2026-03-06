@@ -1,3 +1,40 @@
+//! HTTP 中间件模块
+//!
+//! 提供 Axum 服务器的中间件功能，用于处理请求和响应。
+//!
+//! # 中间件列表
+//!
+//! - `add_version`：添加服务器版本信息到响应头
+//! - `add_headers`：添加自定义响应头
+//! - `logging_route`：请求日志记录中间件
+//!
+//! # 中间件执行顺序
+//!
+//! 中间件按照添加顺序执行（洋葱模型）：
+//!
+//! 1. **请求阶段**：从外到内执行
+//!    - logging_route（记录请求开始）
+//!    - add_version（准备添加版本信息）
+//!    - add_headers（准备添加自定义头部）
+//!
+//! 2. **响应阶段**：从内到外执行
+//!    - add_headers（添加自定义头部到响应）
+//!    - add_version（添加版本信息到响应）
+//!    - logging_route（记录请求完成和延迟）
+//!
+//! # 使用示例
+//!
+//! ```no_run
+//! use candy::middlewares::{add_version, add_headers, logging_route};
+//! use axum::Router;
+//!
+//! let app = Router::new()
+//!     .layer(axum::middleware::from_fn(add_version))
+//!     .layer(axum::middleware::from_fn(add_headers));
+//!
+//! let app = logging_route(app);
+//! ```
+
 use std::{fmt::Display, time::Duration};
 
 use axum::{
@@ -19,13 +56,38 @@ use crate::{
     utils::parse_port_from_host,
 };
 
-/// Middleware for adding version information to each response's headers.
+/// 添加服务器版本信息到响应头
 ///
-/// This middleware takes an incoming `Request` and a `Next` handler, which represents the
-/// subsequent middleware or route in the chain. It then asynchronously runs the next handler,
-/// obtaining the response. After receiving the response, it appends two headers:
-/// - "Server": The name of the server extracted from the Cargo package name.
-/// - "S-Version": The version of the server extracted from the Cargo package version.
+/// 此中间件会在每个 HTTP 响应的头部添加以下信息：
+/// - `Server`：服务器名称（Candy）
+/// - `RUA-Version`：服务器版本号
+///
+/// # 参数
+///
+/// * `req` - HTTP 请求对象
+/// * `next` - 下一个中间件或路由处理器
+///
+/// # 返回值
+///
+/// 返回添加了版本信息的 HTTP 响应。
+///
+/// # 示例
+///
+/// ```no_run
+/// use candy::middlewares::add_version;
+/// use axum::Router;
+///
+/// let app = Router::new()
+///     .layer(axum::middleware::from_fn(add_version));
+/// ```
+///
+/// # 响应头示例
+///
+/// ```http
+/// HTTP/1.1 200 OK
+/// Server: Candy
+/// RUA-Version: 0.2.5
+/// ```
 pub async fn add_version(req: Request<Body>, next: Next) -> impl IntoResponse {
     let mut res = next.run(req).await;
     let headers = res.headers_mut();
@@ -34,31 +96,56 @@ pub async fn add_version(req: Request<Body>, next: Next) -> impl IntoResponse {
     res
 }
 
-/// Middleware for dynamically adding headers to responses based on the requested host and port.
+/// 动态添加自定义响应头
 ///
-/// This middleware:
-/// 1. Extracts the `Host` header from the incoming request.
-/// 2. Parses the host string to determine the port (defaulting to `80` if unspecified).
-/// 3. Looks up the host configuration in the global `HOST` map (shared state) for the resolved port.
-/// 4. Appends any configured headers from the host's `SettingHost` to the response.
+/// 根据主机配置动态添加自定义 HTTP 响应头。
+/// 支持基于域名和路由的头部配置。
 ///
-/// # Behavior
-/// - If the `Host` header is missing or malformed, the request proceeds unchanged.
-/// - If the port is invalid or the host configuration is not found, the request proceeds unchanged.
-/// - Headers are appended to the response only if they are explicitly configured for the host.
+/// # 参数
 ///
-/// # Error Handling
-/// - Silently skips header addition for:
-///   - Missing or unparseable `Host` headers.
-///   - Invalid ports (non-numeric or out-of-range).
-///   - Missing host configurations in `HOST`.
-/// - Uses `debug!` for logging the resolved port.
+/// * `req` - HTTP 请求对象
+/// * `next` - 下一个中间件或路由处理器
 ///
-/// # Example
-/// Given a request to `example.com:8080` and a `HOST` entry for port `8080` with headers:
+/// # 返回值
+///
+/// 返回添加了自定义头部的 HTTP 响应。
+///
+/// # 工作流程
+///
+/// 1. 从请求中提取 `Host` 头
+/// 2. 解析主机名和端口
+/// 3. 在全局配置中查找对应的主机配置
+/// 4. 从路由配置中获取自定义头部
+/// 5. 将自定义头部添加到响应中
+///
+/// # 配置示例
+///
 /// ```toml
-/// [hosts."8080"]
-/// headers = { "X-Custom" = "value" }
+/// [[host]]
+/// ip = "0.0.0.0"
+/// port = 8080
+///
+/// [[host.route]]
+/// location = "/"
+/// root = "./html"
+/// headers = { "X-Custom-Header" = "value", "X-Another-Header" = "another-value" }
+/// ```
+///
+/// # 错误处理
+///
+/// - 如果 `Host` 头缺失或格式错误，跳过头部添加
+/// - 如果端口无效或主机配置未找到，跳过头部添加
+/// - 如果头部名称或值格式错误，记录错误日志并跳过该头部
+///
+/// # 示例
+///
+/// ```no_run
+/// use candy::middlewares::add_headers;
+/// use axum::Router;
+///
+/// let app = Router::new()
+///     .layer(axum::middleware::from_fn(add_headers));
+/// ```
 pub async fn add_headers(req: Request, next: Next) -> impl IntoResponse {
     let scheme = req.uri().scheme_str().unwrap_or("http");
     let host_header = req
@@ -132,10 +219,54 @@ pub async fn add_headers(req: Request, next: Next) -> impl IntoResponse {
     res
 }
 
-/// Middleware for logging each request.
+/// HTTP 请求日志记录中间件
 ///
-/// This middleware will calculate each request latency
-/// and add request's information to each info_span.
+/// 为每个 HTTP 请求添加详细的日志记录，包括：
+/// - 请求方法、URI、主机、User-Agent
+/// - 响应状态码
+/// - 请求处理延迟
+///
+/// # 参数
+///
+/// * `router` - Axum 路由器实例
+///
+/// # 返回值
+///
+/// 返回添加了日志中间件的路由器。
+///
+/// # 日志格式
+///
+/// ```text
+/// 2024-01-01T12:00:00Z INFO HTTP method=GET host="example.com" uri="/" ua="Mozilla/5.0"
+/// 2024-01-01T12:00:00Z INFO 200 OK 15ms
+/// ```
+///
+/// # 日志级别
+///
+/// - 成功响应（2xx-4xx）：INFO 级别
+/// - 服务器错误（5xx）：ERROR 级别
+///
+/// # 性能指标
+///
+/// - 延迟小于 1ms：显示微秒（μs）
+/// - 延迟大于等于 1ms：显示毫秒（ms）
+///
+/// # 示例
+///
+/// ```no_run
+/// use candy::middlewares::logging_route;
+/// use axum::Router;
+///
+/// let app = Router::new();
+/// let app = logging_route(app);
+/// ```
+///
+/// # 实现细节
+///
+/// 使用 `tower_http::TraceLayer` 实现，支持：
+/// - 自定义 span 创建（包含请求信息）
+/// - 响应完成时记录延迟
+/// - 错误时记录失败信息
 pub fn logging_route(router: Router) -> Router {
     let make_span = |req: &Request<_>| {
         let unknown = &HeaderValue::from_static("Unknown");
@@ -167,8 +298,43 @@ pub fn logging_route(router: Router) -> Router {
     router.layer(trace_layer)
 }
 
-/// Format request latency and status message
-/// return a string
+/// 格式化请求延迟时间和状态信息
+///
+/// 根据延迟时间的大小，自动选择合适的单位（微秒或毫秒）进行格式化。
+///
+/// # 参数
+///
+/// * `latency` - 请求处理延迟时间
+/// * `status` - HTTP 状态码或错误类型（实现 `Display` trait）
+///
+/// # 返回值
+///
+/// 返回格式化后的字符串，格式为："{status} {latency}{unit}"
+///
+/// # 单位选择
+///
+/// - 延迟 < 1ms（1000μs）：显示微秒（μs）
+/// - 延迟 >= 1ms：显示毫秒（ms）
+///
+/// # 示例
+///
+/// ```
+/// use candy::middlewares::format_latency;
+/// use std::time::Duration;
+/// use http::StatusCode;
+///
+/// // 小于 1ms
+/// let latency = Duration::from_micros(500);
+/// assert_eq!(format_latency(latency, StatusCode::OK), "200 OK 500μs");
+///
+/// // 大于等于 1ms
+/// let latency = Duration::from_millis(15);
+/// assert_eq!(format_latency(latency, StatusCode::OK), "200 OK 15ms");
+///
+/// // 使用错误状态
+/// let latency = Duration::from_millis(50);
+/// assert_eq!(format_latency(latency, StatusCode::NOT_FOUND), "404 Not Found 50ms");
+/// ```
 fn format_latency(latency: Duration, status: impl Display) -> String {
     let micros = latency.as_micros();
     let millis = latency.as_millis();

@@ -43,6 +43,7 @@ pub struct SharedDictEntry {
 
 impl SharedDictEntry {
     /// 创建新的条目（标量值）
+    #[allow(dead_code)]
     pub fn new(value: Vec<u8>) -> Self {
         Self {
             value: StoredValue::Scalar(value),
@@ -63,6 +64,7 @@ impl SharedDictEntry {
     }
 
     /// 创建带过期时间的条目
+    #[allow(dead_code)]
     pub fn with_ttl(value: Vec<u8>, ttl: Duration) -> Self {
         Self {
             value: StoredValue::Scalar(value),
@@ -73,6 +75,7 @@ impl SharedDictEntry {
     }
 
     /// 创建带标志位的条目
+    #[allow(dead_code)]
     pub fn with_flags(value: Vec<u8>, flags: u32) -> Self {
         Self {
             value: StoredValue::Scalar(value),
@@ -107,6 +110,7 @@ impl SharedDictEntry {
     }
 
     /// 获取剩余 TTL（秒）
+    #[allow(dead_code)]
     pub fn remaining_ttl(&self) -> Option<f64> {
         self.expires_at.map(|exp| {
             let remaining = exp.saturating_duration_since(Instant::now());
@@ -131,6 +135,7 @@ impl SharedDictEntry {
 #[derive(Clone, Debug)]
 pub struct SharedDict {
     /// 字典名称
+    #[allow(dead_code)]
     pub name: String,
     /// 最大容量（字节）
     pub capacity: usize,
@@ -898,11 +903,13 @@ impl SharedDict {
     }
 
     /// 获取条目数量（不含过期条目）
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.data.iter().filter(|e| !e.is_expired()).count()
     }
 
     /// 检查是否为空
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -910,6 +917,7 @@ impl SharedDict {
 
 /// 共享字典错误类型
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub enum SharedDictError {
     /// 内存不足
     NoMemory,

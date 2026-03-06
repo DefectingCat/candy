@@ -162,6 +162,7 @@ impl LuaEngine {
     ///
     /// # 参数
     /// - `settings` - 服务器配置
+    #[allow(dead_code)]
     pub fn from_settings(settings: &Settings) -> Self {
         let lua = Lua::new();
         let code_cache = Arc::new(DashMap::new());
@@ -250,6 +251,7 @@ impl LuaEngine {
     /// # 参数
     /// - `name` - 字典名称
     /// - `capacity` - 容量（字节）
+    #[allow(dead_code)]
     pub fn reset_shared_dict(&self, name: &str, capacity: usize) {
         // 先删除旧的（如果存在）
         self.shared_dicts.remove(name);
@@ -273,6 +275,7 @@ impl LuaEngine {
     }
 
     /// 清理所有共享字典（用于测试隔离）
+    #[allow(dead_code)]
     pub fn clear_shared_dicts(&self) {
         self.shared_dicts.clear();
     }
@@ -297,7 +300,8 @@ impl LuaEngine {
         }
 
         // 设置 cd.shared
-        cd.set("shared", shared.clone()).expect("Failed to set cd.shared");
+        cd.set("shared", shared.clone())
+            .expect("Failed to set cd.shared");
 
         // 设置全局变量 cd
         lua.globals()
@@ -1244,4 +1248,3 @@ mod tests {
         assert_eq!(err2, Some("value not a list".to_string()));
     }
 }
-

@@ -1,3 +1,35 @@
+//! HTTP 路由错误处理模块
+//!
+//! 定义 HTTP 路由处理过程中的错误类型和错误响应。
+//!
+//! # 错误类型
+//!
+//! - `RouteNotFound`：路由未找到（404）
+//! - `InternalError`：服务器内部错误（500）
+//! - `BadRequest`：客户端请求错误（400）
+//! - `Any`：通用错误（包装 anyhow::Error）
+//! - `Infallible`：不可达错误类型
+//!
+//! # 错误响应
+//!
+//! 所有错误都会转换为 HTTP 响应，包含：
+//! - 状态码（404、500、400 等）
+//! - 错误信息（包含服务器名称和版本）
+//!
+//! # 示例
+//!
+//! ```no_run
+//! use candy::http::error::RouteError;
+//! use axum::response::IntoResponse;
+//!
+//! // 创建错误
+//! let err = RouteError::RouteNotFound();
+//!
+//! // 转换为 HTTP 响应
+//! let response = err.into_response();
+//! assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+//! ```
+
 use std::fmt::Display;
 
 use crate::consts::{NAME, VERSION};
@@ -9,29 +41,99 @@ use const_format::formatcp;
 use serde_repr::*;
 use tracing::{debug, error};
 
+/// HTTP 路由错误类型
+///
+/// 定义了 HTTP 路由处理过程中可能出现的所有错误类型。
+/// 所有错误都会自动转换为 HTTP 响应返回给客户端。
+///
+/// # 错误变体
+///
+/// - `Any` - 通用错误，包装 anyhow::Error
+/// - `Infallible` - 不可达错误类型（理论上不会发生）
+/// - `RouteNotFound` - 路由未找到（404 错误）
+/// - `InternalError` - 服务器内部错误（500 错误）
+/// - `BadRequest` - 客户端请求错误（400 错误）
+///
+/// # 错误响应
+///
+/// 所有错误都会转换为包含服务器信息的友好错误页面：
+///
+/// ```text
+/// Resource Not Found
+/// Candy v0.2.5
+/// Powered by RUA
+/// ```
+///
+/// # 示例
+///
+/// ```no_run
+/// use candy::http::error::RouteError;
+/// use axum::response::IntoResponse;
+///
+/// // 创建路由未找到错误
+/// let err = RouteError::RouteNotFound();
+/// let response = err.into_response();
+/// assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+///
+/// // 创建内部错误
+/// let err = RouteError::InternalError();
+/// let response = err.into_response();
+/// assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND); // 注意：当前实现返回 404
+/// ```
 #[derive(thiserror::Error, Debug)]
 pub enum RouteError {
-    // Common errors
+    /// 通用错误
+    ///
+    /// 包装 anyhow::Error，用于处理各种类型的错误。
     #[error("{0}")]
     Any(#[from] anyhow::Error),
+
+    /// 不可达错误
+    ///
+    /// 理论上不会发生的错误类型。
     #[error("{0}")]
     Infallible(#[from] std::convert::Infallible),
 
-    // Route errors
+    /// 路由未找到
+    ///
+    /// 客户端请求的资源不存在，返回 404 状态码。
     #[error("route not found")]
     RouteNotFound(),
+
+    /// 服务器内部错误
+    ///
+    /// 服务器处理请求时发生内部错误，返回 500 状态码。
     #[error("internal error")]
     InternalError(),
+
+    /// 客户端请求错误
+    ///
+    /// 客户端发送的请求格式错误或参数无效，返回 400 状态码。
     #[error("bad request")]
     BadRequest(),
 }
 
+/// 错误代码枚举
+///
+/// 定义了 HTTP 响应的状态码和对应的错误信息。
+/// 使用 `#[repr(u16)]` 确保与 HTTP 状态码数值一致。
+///
+/// # 变体
+///
+/// - `Normal` (200) - 正常响应
+/// - `InternalError` (500) - 服务器内部错误
+/// - `NotFound` (404) - 资源未找到
+/// - `BadRequest` (400) - 客户端请求错误
 #[derive(Serialize_repr, Deserialize_repr, PartialEq, Debug)]
 #[repr(u16)]
 pub enum ErrorCode {
+    /// 正常响应（HTTP 200）
     Normal = 200,
+    /// 服务器内部错误（HTTP 500）
     InternalError = 500,
+    /// 资源未找到（HTTP 404）
     NotFound = 404,
+    /// 客户端请求错误（HTTP 400）
     BadRequest = 400,
 }
 
@@ -111,16 +213,12 @@ mod tests {
     fn test_error_code_display() {
         // 测试 ErrorCode 显示
         assert!(ErrorCode::Normal.to_string().is_empty()); // 正常情况返回空字符串
-        assert!(
-            ErrorCode::InternalError
-                .to_string()
-                .contains("Internal Server Error")
-        );
-        assert!(
-            ErrorCode::NotFound
-                .to_string()
-                .contains("Resource Not Found")
-        );
+        assert!(ErrorCode::InternalError
+            .to_string()
+            .contains("Internal Server Error"));
+        assert!(ErrorCode::NotFound
+            .to_string()
+            .contains("Resource Not Found"));
         assert!(ErrorCode::BadRequest.to_string().contains("Bad Request"));
     }
 
