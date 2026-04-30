@@ -2,6 +2,7 @@ mod config;
 mod http;
 mod master;
 mod router;
+mod sendfile;
 mod socket;
 mod worker;
 
