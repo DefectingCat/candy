@@ -47,8 +47,8 @@
     },
     {
       "path": "src/main.rs",
-      "accessCount": 8,
-      "lastAccessed": 1777537836260,
+      "accessCount": 9,
+      "lastAccessed": 1777538577914,
       "type": "file"
     },
     {
@@ -58,15 +58,15 @@
       "type": "file"
     },
     {
-      "path": "src/config.rs",
-      "accessCount": 4,
-      "lastAccessed": 1777537059160,
+      "path": "src/worker.rs",
+      "accessCount": 5,
+      "lastAccessed": 1777538629599,
       "type": "file"
     },
     {
-      "path": "src/worker.rs",
+      "path": "src/config.rs",
       "accessCount": 4,
-      "lastAccessed": 1777537646887,
+      "lastAccessed": 1777537059160,
       "type": "file"
     },
     {
@@ -76,21 +76,27 @@
       "type": "file"
     },
     {
+      "path": "src/http/mod.rs",
+      "accessCount": 2,
+      "lastAccessed": 1777538666670,
+      "type": "file"
+    },
+    {
       "path": "candy.toml",
       "accessCount": 1,
       "lastAccessed": 1777536940563,
       "type": "file"
     },
     {
-      "path": "src/http/mod.rs",
-      "accessCount": 1,
-      "lastAccessed": 1777537797464,
-      "type": "file"
-    },
-    {
       "path": "src/http/response.rs",
       "accessCount": 1,
       "lastAccessed": 1777537823432,
+      "type": "file"
+    },
+    {
+      "path": "src/router.rs",
+      "accessCount": 1,
+      "lastAccessed": 1777538559858,
       "type": "file"
     }
   ],

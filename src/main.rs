@@ -1,6 +1,7 @@
 mod config;
 mod http;
 mod master;
+mod router;
 mod socket;
 mod worker;
 

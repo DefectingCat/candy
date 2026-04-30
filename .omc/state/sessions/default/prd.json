@@ -48,7 +48,7 @@
         "解析有效 GET 请求成功",
         "无效请求返回错误"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-006",
@@ -58,7 +58,7 @@
         "响应格式符合 HTTP/1.1 规范",
         "curl 可正常接收响应"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-007",

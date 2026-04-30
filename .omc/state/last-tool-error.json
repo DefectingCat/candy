@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cargo test --release 2>&1\",\"timeout\":120000,\"description\":\"运行所有测试\"}",
-  "error": "Exit code 101\n   Compiling candy v0.1.0 (/home/xfy/Developer/candy)\nwarning: unused imports: `Method`, `ParseError`, and `Request`\n --> src/http/mod.rs:4:18\n  |\n4 | pub use parser::{Method, ParseError, Request};\n  |                  ^^^^^^  ^^^^^^^^^^  ^^^^^^^\n  |\n  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default\n\nwarning: unused import: `response::Response`\n --> src/http/mod.rs:5:9\n  |\n5 | pub use response::Response;\n  |         ^^^^^^^^^^^^^^^^^^\n\nwarning: field `ht...",
-  "timestamp": "2026-04-30T08:39:18.585Z",
-  "retry_count": 4
+  "tool_input_preview": "{\"command\":\"cargo build --release 2>&1\",\"timeout\":120000,\"description\":\"编译项目\"}",
+  "error": "Exit code 101\n   Compiling candy v0.1.0 (/home/xfy/Developer/candy)\nerror[E0432]: unresolved import `crate::http::Parser`\n --> src/worker.rs:5:39\n  |\n5 | use crate::http::{Method, ParseError, Parser, Response};\n  |                                       ^^^^^^ no `Parser` in `http`\n  |\n  = help: consider importing this struct instead:\n          crate::http::parser::Parser\nhelp: a similar name exists in the module\n  |\n5 - use crate::http::{Method, ParseError, Parser, Response};\n5 + use crate::http...",
+  "timestamp": "2026-04-30T08:44:14.133Z",
+  "retry_count": 2
 }
