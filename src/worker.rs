@@ -1,10 +1,11 @@
 use bytes::BytesMut;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
+use crate::compress::{parse_accept_encoding, gzip_compress, should_compress, CompressionType};
 use crate::config::Config;
 use crate::http::{Method, ParseError, Parser, Request, Response};
-use crate::router::{get_mime_type, resolve_path, ResolveResult};
+use crate::router::{ResolveResult, get_mime_type, resolve_path};
 use crate::socket::create_reuseport_listener;
 
 /// 默认 keep-alive 超时（秒）
@@ -42,7 +43,9 @@ pub fn run(config: &Config) -> std::io::Result<()> {
                 Ok((stream, addr)) => {
                     let root = root.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = handle_connection(stream, addr, &root, keep_alive_timeout).await {
+                        if let Err(e) =
+                            handle_connection(stream, addr, &root, keep_alive_timeout).await
+                        {
                             eprintln!("Connection error from {}: {}", addr, e);
                         }
                     });
@@ -190,19 +193,52 @@ fn handle_request(request: &Request, root: &std::path::Path) -> Response {
 
                     // 检查 Range 头
                     if let Some(range_header) = find_header(&request.headers, b"Range") {
-                        return handle_range_request(&range_header, &content, &mime_type, file_size, request.method);
+                        return handle_range_request(
+                            &range_header,
+                            &content,
+                            &mime_type,
+                            file_size,
+                            request.method,
+                        );
                     }
 
-                    // 普通请求
+                    // 检查压缩协商
+                    let (final_content, content_encoding) =
+                        if should_compress(&mime_type) {
+                            if let Some(accept_encoding) = find_header(&request.headers, b"Accept-Encoding") {
+                                let compression = parse_accept_encoding(&accept_encoding);
+                                if compression == CompressionType::Gzip {
+                                    if let Ok(compressed) = gzip_compress(&content) {
+                                        (compressed, Some("gzip"))
+                                    } else {
+                                        (content, None)
+                                    }
+                                } else {
+                                    (content, None)
+                                }
+                            } else {
+                                (content, None)
+                            }
+                        } else {
+                            (content, None)
+                        };
+
+                    // 构建响应
                     let mut response = Response::ok()
-                        .header("Content-Type", mime_type)
-                        .header("Accept-Ranges", "bytes");
+                        .header("Content-Type", mime_type.clone())
+                        .header("Accept-Ranges", "bytes")
+                        .header("Vary", "Accept-Encoding");
+
+                    // 添加 Content-Encoding 头
+                    if let Some(encoding) = content_encoding {
+                        response = response.header("Content-Encoding", encoding);
+                    }
 
                     // HEAD 请求不返回 body
                     if request.method == Method::HEAD {
-                        response = response.header("Content-Length", content.len().to_string());
+                        response = response.header("Content-Length", final_content.len().to_string());
                     } else {
-                        response = response.body(content);
+                        response = response.body(final_content);
                     }
 
                     response
@@ -352,7 +388,10 @@ mod tests {
     fn test_find_header() {
         let headers = vec![
             (bytes::Bytes::from("Host"), bytes::Bytes::from("localhost")),
-            (bytes::Bytes::from("Range"), bytes::Bytes::from("bytes=0-99")),
+            (
+                bytes::Bytes::from("Range"),
+                bytes::Bytes::from("bytes=0-99"),
+            ),
         ];
         let result = find_header(&headers, b"Range");
         assert_eq!(result, Some(b"bytes=0-99".to_vec()));
@@ -360,9 +399,7 @@ mod tests {
 
     #[test]
     fn test_find_header_not_found() {
-        let headers = vec![
-            (bytes::Bytes::from("Host"), bytes::Bytes::from("localhost")),
-        ];
+        let headers = vec![(bytes::Bytes::from("Host"), bytes::Bytes::from("localhost"))];
         let result = find_header(&headers, b"Range");
         assert_eq!(result, None);
     }
@@ -397,9 +434,10 @@ mod tests {
             method: Method::GET,
             path: bytes::Bytes::from("/"),
             version: HttpVersion::Http10,
-            headers: vec![
-                (bytes::Bytes::from("Connection"), bytes::Bytes::from("keep-alive")),
-            ],
+            headers: vec![(
+                bytes::Bytes::from("Connection"),
+                bytes::Bytes::from("keep-alive"),
+            )],
             body: None,
         };
         assert!(is_keep_alive(&request));
@@ -411,9 +449,10 @@ mod tests {
             method: Method::GET,
             path: bytes::Bytes::from("/"),
             version: HttpVersion::Http11,
-            headers: vec![
-                (bytes::Bytes::from("Connection"), bytes::Bytes::from("close")),
-            ],
+            headers: vec![(
+                bytes::Bytes::from("Connection"),
+                bytes::Bytes::from("close"),
+            )],
             body: None,
         };
         assert!(!is_keep_alive(&request));
