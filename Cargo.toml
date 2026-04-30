@@ -4,3 +4,33 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+# 异步运行时
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "signal", "sync", "time", "fs"] }
+
+# HTTP 类型
+http = "1"
+bytes = "1"
+
+# TLS
+rustls = "0.23"
+rustls-pemfile = "2"
+
+# 配置
+toml = "1"
+serde = { version = "1", features = ["derive"] }
+
+# 系统调用
+nix = { version = "0.31", features = ["process", "signal", "socket", "net"] }
+libc = "0.2"
+
+# 日志
+chrono = "0.4"
+
+[dev-dependencies]
+criterion = "0.8"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true
