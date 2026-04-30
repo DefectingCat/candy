@@ -1,3 +1,4 @@
+mod compress;
 mod config;
 mod http;
 mod master;
