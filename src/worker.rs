@@ -1,10 +1,14 @@
 use bytes::BytesMut;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::time::{timeout, Duration};
 
 use crate::config::Config;
-use crate::http::{Method, ParseError, Parser, Response};
+use crate::http::{Method, ParseError, Parser, Request, Response};
 use crate::router::{get_mime_type, resolve_path, ResolveResult};
 use crate::socket::create_reuseport_listener;
+
+/// 默认 keep-alive 超时（秒）
+const KEEP_ALIVE_TIMEOUT: u64 = 60;
 
 /// Worker 进程主函数
 pub fn run(config: &Config) -> std::io::Result<()> {
@@ -20,6 +24,7 @@ pub fn run(config: &Config) -> std::io::Result<()> {
         .build()?;
 
     let root = config.server.root.clone();
+    let keep_alive_timeout = config.http.keep_alive_timeout;
 
     runtime.block_on(async {
         // 创建 SO_REUSEPORT listener
@@ -37,7 +42,7 @@ pub fn run(config: &Config) -> std::io::Result<()> {
                 Ok((stream, addr)) => {
                     let root = root.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = handle_connection(stream, addr, &root).await {
+                        if let Err(e) = handle_connection(stream, addr, &root, keep_alive_timeout).await {
                             eprintln!("Connection error from {}: {}", addr, e);
                         }
                     });
@@ -52,57 +57,119 @@ pub fn run(config: &Config) -> std::io::Result<()> {
 
 async fn handle_connection(
     mut stream: tokio::net::TcpStream,
-    addr: std::net::SocketAddr,
+    _addr: std::net::SocketAddr,
     root: &std::path::Path,
+    keep_alive_timeout: u64,
 ) -> std::io::Result<()> {
-    // 读取请求
     let mut buffer = BytesMut::with_capacity(8192);
     let mut parser = Parser::new();
+    let mut keep_alive = true;
 
-    loop {
-        // 读取数据
-        let mut read_buf = [0u8; 4096];
-        let n = stream.read(&mut read_buf).await?;
+    while keep_alive {
+        // 设置超时读取
+        let read_result = timeout(
+            Duration::from_secs(keep_alive_timeout),
+            read_request(&mut stream, &mut buffer, &mut parser),
+        )
+        .await;
 
-        if n == 0 {
-            // 连接关闭
-            return Ok(());
-        }
-
-        buffer.extend_from_slice(&read_buf[..n]);
-
-        // 尝试解析请求
-        match parser.parse(&buffer) {
-            Ok((consumed, request)) => {
-                // 移除已消费的数据
-                let _ = buffer.split_to(consumed);
+        match read_result {
+            Ok(Ok(request)) => {
+                // 检查是否保持连接
+                keep_alive = is_keep_alive(&request);
 
                 // 处理请求
-                let response = handle_request(&request, root);
+                let mut response = handle_request(&request, root);
+
+                // 添加 Connection 头
+                if keep_alive {
+                    response = response.header("Connection", "keep-alive");
+                } else {
+                    response = response.header("Connection", "close");
+                }
 
                 // 发送响应
                 let response_bytes = response.to_bytes();
                 stream.write_all(&response_bytes).await?;
+            }
+            Ok(Err(ParseError::Incomplete)) => {
+                // 需要更多数据，继续读取
+                continue;
+            }
+            Ok(Err(_)) => {
+                // 解析错误，返回 400
+                let response = Response::new(400)
+                    .header("Connection", "close")
+                    .body(b"Bad Request".to_vec());
+                let response_bytes = response.to_bytes();
+                stream.write_all(&response_bytes).await?;
+                break;
+            }
+            Err(_) => {
+                // 超时，关闭连接
+                break;
+            }
+        }
+    }
 
-                // 只处理一个请求（暂不支持 keep-alive）
-                return Ok(());
+    Ok(())
+}
+
+/// 读取并解析请求
+async fn read_request(
+    stream: &mut tokio::net::TcpStream,
+    buffer: &mut BytesMut,
+    parser: &mut Parser,
+) -> Result<Request, ParseError> {
+    loop {
+        // 尝试解析已有数据
+        match parser.parse(buffer) {
+            Ok((consumed, request)) => {
+                // 移除已消费的数据
+                let _ = buffer.split_to(consumed);
+                return Ok(request);
             }
             Err(ParseError::Incomplete) => {
                 // 需要更多数据
-                continue;
+                let mut read_buf = [0u8; 4096];
+                let n = stream
+                    .read(&mut read_buf)
+                    .await
+                    .map_err(|_| ParseError::Incomplete)?;
+
+                if n == 0 {
+                    // 连接关闭
+                    return Err(ParseError::Incomplete);
+                }
+
+                buffer.extend_from_slice(&read_buf[..n]);
             }
-            Err(e) => {
-                // 解析错误，返回 400
-                let response = Response::new(400).body(b"Bad Request".to_vec());
-                let response_bytes = response.to_bytes();
-                stream.write_all(&response_bytes).await?;
-                return Ok(());
-            }
+            Err(e) => return Err(e),
         }
     }
 }
 
-fn handle_request(request: &crate::http::Request, root: &std::path::Path) -> Response {
+/// 检查是否保持连接
+fn is_keep_alive(request: &Request) -> bool {
+    // HTTP/1.1 默认 keep-alive
+    let default = request.version == crate::http::HttpVersion::Http11;
+
+    // 检查 Connection 头
+    for (name, value) in &request.headers {
+        if name.eq_ignore_ascii_case(b"Connection") {
+            if value.eq_ignore_ascii_case(b"keep-alive") {
+                return true;
+            }
+            if value.eq_ignore_ascii_case(b"close") {
+                return false;
+            }
+        }
+    }
+
+    default
+}
+
+fn handle_request(request: &Request, root: &std::path::Path) -> Response {
     // 只支持 GET 和 HEAD
     if request.method != Method::GET && request.method != Method::HEAD {
         return Response::new(405)
