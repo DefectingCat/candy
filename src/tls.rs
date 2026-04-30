@@ -26,6 +26,10 @@ pub enum TlsError {
     NoPrivateKey,
 }
 
+/// ALPN 协议标识
+pub const ALPN_H2: &[u8] = b"h2";
+pub const ALPN_HTTP_1_1: &[u8] = b"http/1.1";
+
 /// 加载 TLS 服务器配置
 pub fn load_tls_config(config: &TlsConfig) -> Result<Arc<ServerConfig>, TlsError> {
     // 加载证书链
@@ -34,11 +38,24 @@ pub fn load_tls_config(config: &TlsConfig) -> Result<Arc<ServerConfig>, TlsError
     // 加载私钥
     let key = load_private_key(&config.key)?;
 
-    // 构建 ServerConfig
+    // 构建 ServerConfig，配置 ALPN
     let server_config = ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(certs, key)
         .map_err(|e| TlsError::CertificateParse(e.to_string()))?;
+
+    Ok(Arc::new(server_config))
+}
+
+/// 加载 TLS 服务器配置，支持 ALPN 协商
+pub fn load_tls_config_with_alpn(config: &TlsConfig) -> Result<Arc<ServerConfig>, TlsError> {
+    let mut server_config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(load_certs(&config.cert)?, load_private_key(&config.key)?)
+        .map_err(|e| TlsError::CertificateParse(e.to_string()))?;
+
+    // 配置 ALPN 协议优先级：HTTP/2 优先
+    server_config.alpn_protocols = vec![ALPN_H2.to_vec(), ALPN_HTTP_1_1.to_vec()];
 
     Ok(Arc::new(server_config))
 }
@@ -72,6 +89,20 @@ fn load_private_key(path: &std::path::Path) -> Result<PrivateKeyDer<'static>, Tl
     }
 
     Err(TlsError::NoPrivateKey)
+}
+
+/// 从 ALPN 协商结果判断协议版本
+pub fn negotiate_protocol(protocols: &[Vec<u8>]) -> &'static str {
+    for proto in protocols {
+        if proto == ALPN_H2 {
+            return "h2";
+        }
+        if proto == ALPN_HTTP_1_1 {
+            return "http/1.1";
+        }
+    }
+    // 默认 HTTP/1.1
+    "http/1.1"
 }
 
 #[cfg(test)]
@@ -152,5 +183,59 @@ mod tests {
 
         let err = TlsError::NoPrivateKey;
         assert_eq!(err.to_string(), "No valid private key found");
+    }
+
+    #[test]
+    fn test_alpn_constants() {
+        assert_eq!(ALPN_H2, b"h2");
+        assert_eq!(ALPN_HTTP_1_1, b"http/1.1");
+    }
+
+    #[test]
+    fn test_negotiate_protocol_h2() {
+        let protocols = vec![ALPN_H2.to_vec(), ALPN_HTTP_1_1.to_vec()];
+        let result = negotiate_protocol(&protocols);
+        assert_eq!(result, "h2");
+    }
+
+    #[test]
+    fn test_negotiate_protocol_http11() {
+        let protocols = vec![ALPN_HTTP_1_1.to_vec()];
+        let result = negotiate_protocol(&protocols);
+        assert_eq!(result, "http/1.1");
+    }
+
+    #[test]
+    fn test_negotiate_protocol_empty() {
+        let protocols: Vec<Vec<u8>> = vec![];
+        let result = negotiate_protocol(&protocols);
+        assert_eq!(result, "http/1.1");
+    }
+
+    #[test]
+    fn test_negotiate_protocol_unknown() {
+        let protocols = vec![b"unknown".to_vec()];
+        let result = negotiate_protocol(&protocols);
+        assert_eq!(result, "http/1.1");
+    }
+
+    #[test]
+    fn test_load_tls_config_with_alpn_valid() {
+        let cert_path = std::path::PathBuf::from("test_data/test_cert.pem");
+        let key_path = std::path::PathBuf::from("test_data/test_key.pem");
+
+        if cert_path.exists() && key_path.exists() {
+            let config = TlsConfig {
+                enabled: true,
+                cert: cert_path,
+                key: key_path,
+            };
+            let result = load_tls_config_with_alpn(&config);
+            assert!(result.is_ok());
+            let server_config = result.unwrap();
+            // 验证 ALPN 协议已配置
+            assert!(!server_config.alpn_protocols.is_empty());
+            assert_eq!(server_config.alpn_protocols.len(), 2);
+        }
     }
 }
