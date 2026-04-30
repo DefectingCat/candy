@@ -251,6 +251,186 @@ pub fn build_initial_settings() -> Bytes {
     Bytes::from(buf)
 }
 
+// ========== HTTP/2 Stream 管理 ==========
+
+/// HTTP/2 流状态
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamState {
+    Idle,
+    ReservedLocal,
+    ReservedRemote,
+    Open,
+    HalfClosedLocal,
+    HalfClosedRemote,
+    Closed,
+}
+
+/// HTTP/2 流
+#[derive(Debug, Clone)]
+pub struct Stream {
+    /// 流标识符
+    pub id: u32,
+    /// 流状态
+    pub state: StreamState,
+    /// 发送窗口大小
+    pub send_window: u32,
+    /// 接收窗口大小
+    pub recv_window: u32,
+}
+
+impl Stream {
+    pub fn new(id: u32) -> Self {
+        Stream {
+            id,
+            state: StreamState::Idle,
+            send_window: 65535,
+            recv_window: 65535,
+        }
+    }
+
+    /// 转换到新状态
+    pub fn transition(&mut self, new_state: StreamState) -> bool {
+        // HTTP/2 流状态转换规则
+        match (self.state, new_state) {
+            // Idle 可以转换到任何状态
+            (StreamState::Idle, _) => {
+                self.state = new_state;
+                true
+            }
+            // Open 可以转换到 HalfClosed 或 Closed
+            (StreamState::Open, StreamState::HalfClosedLocal)
+            | (StreamState::Open, StreamState::HalfClosedRemote)
+            | (StreamState::Open, StreamState::Closed) => {
+                self.state = new_state;
+                true
+            }
+            // HalfClosed 可以转换到 Closed
+            (StreamState::HalfClosedLocal, StreamState::Closed)
+            | (StreamState::HalfClosedRemote, StreamState::Closed) => {
+                self.state = new_state;
+                true
+            }
+            // Reserved 可以转换到 HalfClosed 或 Closed
+            (StreamState::ReservedLocal, StreamState::HalfClosedRemote)
+            | (StreamState::ReservedLocal, StreamState::Closed)
+            | (StreamState::ReservedRemote, StreamState::HalfClosedLocal)
+            | (StreamState::ReservedRemote, StreamState::Closed) => {
+                self.state = new_state;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// 检查是否可以发送数据
+    pub fn can_send(&self) -> bool {
+        matches!(
+            self.state,
+            StreamState::Open | StreamState::HalfClosedRemote
+        ) && self.send_window > 0
+    }
+
+    /// 检查是否可以接收数据
+    pub fn can_receive(&self) -> bool {
+        matches!(
+            self.state,
+            StreamState::Open | StreamState::HalfClosedLocal
+        ) && self.recv_window > 0
+    }
+}
+
+/// HTTP/2 连接管理器
+#[derive(Debug)]
+pub struct Connection {
+    /// 服务端设置
+    pub local_settings: Settings,
+    /// 客户端设置
+    pub peer_settings: Settings,
+    /// 活跃流
+    pub streams: std::collections::HashMap<u32, Stream>,
+    /// 下一个可用的服务端流 ID（奇数）
+    next_server_stream_id: u32,
+}
+
+impl Connection {
+    pub fn new() -> Self {
+        Connection {
+            local_settings: Settings::default(),
+            peer_settings: Settings::default(),
+            streams: std::collections::HashMap::new(),
+            next_server_stream_id: 2, // 服务端流 ID 从 2 开始
+        }
+    }
+
+    /// 创建新的服务端流
+    pub fn create_server_stream(&mut self) -> u32 {
+        let id = self.next_server_stream_id;
+        self.next_server_stream_id += 2;
+        self.streams.insert(id, Stream::new(id));
+        id
+    }
+
+    /// 接受客户端流
+    pub fn accept_client_stream(&mut self, id: u32) -> Option<&mut Stream> {
+        // 客户端流 ID 必须是奇数
+        if id % 2 == 0 || id == 0 {
+            return None;
+        }
+
+        // 检查流 ID 是否递增
+        let max_client_id = self
+            .streams
+            .keys()
+            .filter(|&&k| k % 2 == 1)
+            .max()
+            .copied()
+            .unwrap_or(0);
+
+        if id <= max_client_id {
+            return None;
+        }
+
+        self.streams.insert(id, Stream::new(id));
+        self.streams.get_mut(&id)
+    }
+
+    /// 获取流
+    pub fn get_stream(&self, id: u32) -> Option<&Stream> {
+        self.streams.get(&id)
+    }
+
+    /// 获取可变流
+    pub fn get_stream_mut(&mut self, id: u32) -> Option<&mut Stream> {
+        self.streams.get_mut(&id)
+    }
+
+    /// 关闭流
+    pub fn close_stream(&mut self, id: u32) {
+        if let Some(stream) = self.streams.get_mut(&id) {
+            stream.state = StreamState::Closed;
+        }
+    }
+
+    /// 更新对端设置
+    pub fn update_peer_settings(&mut self, settings: Settings) {
+        self.peer_settings = settings;
+    }
+
+    /// 活跃流数量
+    pub fn active_stream_count(&self) -> usize {
+        self.streams
+            .values()
+            .filter(|s| s.state != StreamState::Closed)
+            .count()
+    }
+}
+
+impl Default for Connection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -363,5 +543,116 @@ mod tests {
             SettingsParameter::MaxFrameSize
         );
         assert_eq!(SettingsParameter::from_u16(0xFF), SettingsParameter::Unknown(0xFF));
+    }
+
+    // ========== Stream 管理测试 ==========
+
+    #[test]
+    fn test_stream_new() {
+        let stream = Stream::new(1);
+        assert_eq!(stream.id, 1);
+        assert_eq!(stream.state, StreamState::Idle);
+        assert_eq!(stream.send_window, 65535);
+        assert_eq!(stream.recv_window, 65535);
+    }
+
+    #[test]
+    fn test_stream_transition_idle_to_open() {
+        let mut stream = Stream::new(1);
+        assert!(stream.transition(StreamState::Open));
+        assert_eq!(stream.state, StreamState::Open);
+    }
+
+    #[test]
+    fn test_stream_transition_open_to_half_closed() {
+        let mut stream = Stream::new(1);
+        stream.state = StreamState::Open;
+        assert!(stream.transition(StreamState::HalfClosedLocal));
+        assert_eq!(stream.state, StreamState::HalfClosedLocal);
+    }
+
+    #[test]
+    fn test_stream_can_send() {
+        let mut stream = Stream::new(1);
+        assert!(!stream.can_send()); // Idle 状态不能发送
+
+        stream.state = StreamState::Open;
+        assert!(stream.can_send());
+
+        stream.send_window = 0;
+        assert!(!stream.can_send());
+    }
+
+    #[test]
+    fn test_stream_can_receive() {
+        let mut stream = Stream::new(1);
+        assert!(!stream.can_receive()); // Idle 状态不能接收
+
+        stream.state = StreamState::Open;
+        assert!(stream.can_receive());
+
+        stream.state = StreamState::HalfClosedLocal;
+        assert!(stream.can_receive());
+    }
+
+    #[test]
+    fn test_connection_new() {
+        let conn = Connection::new();
+        assert_eq!(conn.active_stream_count(), 0);
+    }
+
+    #[test]
+    fn test_connection_create_server_stream() {
+        let mut conn = Connection::new();
+        let id = conn.create_server_stream();
+        assert_eq!(id, 2); // 服务端流 ID 从 2 开始
+
+        let id2 = conn.create_server_stream();
+        assert_eq!(id2, 4); // 递增 2
+
+        assert_eq!(conn.active_stream_count(), 2);
+    }
+
+    #[test]
+    fn test_connection_accept_client_stream() {
+        let mut conn = Connection::new();
+
+        // 客户端流 ID 必须是奇数
+        let stream = conn.accept_client_stream(1);
+        assert!(stream.is_some());
+        assert_eq!(stream.unwrap().id, 1);
+
+        // 流 ID 必须递增
+        let stream2 = conn.accept_client_stream(1);
+        assert!(stream2.is_none()); // 重复 ID
+
+        let stream3 = conn.accept_client_stream(3);
+        assert!(stream3.is_some());
+
+        // 偶数 ID 无效
+        let stream4 = conn.accept_client_stream(4);
+        assert!(stream4.is_none());
+    }
+
+    #[test]
+    fn test_connection_close_stream() {
+        let mut conn = Connection::new();
+        conn.create_server_stream();
+        conn.close_stream(2);
+
+        let stream = conn.get_stream(2).unwrap();
+        assert_eq!(stream.state, StreamState::Closed);
+    }
+
+    #[test]
+    fn test_connection_update_peer_settings() {
+        let mut conn = Connection::new();
+        let mut settings = Settings::default();
+        settings.enable_push = false;
+        settings.max_frame_size = 65536;
+
+        conn.update_peer_settings(settings);
+        assert!(!conn.peer_settings.enable_push);
+        assert_eq!(conn.peer_settings.max_frame_size, 65536);
     }
 }
