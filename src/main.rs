@@ -5,6 +5,7 @@ mod master;
 mod router;
 mod sendfile;
 mod socket;
+mod tls;
 mod worker;
 
 use config::Config;
