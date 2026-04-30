@@ -186,8 +186,17 @@ fn handle_request(request: &Request, root: &std::path::Path) -> Response {
             match std::fs::read(&file_path) {
                 Ok(content) => {
                     let mime_type = get_mime_type(&file_path);
+                    let file_size = content.len();
+
+                    // 检查 Range 头
+                    if let Some(range_header) = find_header(&request.headers, b"Range") {
+                        return handle_range_request(&range_header, &content, &mime_type, file_size, request.method);
+                    }
+
+                    // 普通请求
                     let mut response = Response::ok()
-                        .header("Content-Type", mime_type);
+                        .header("Content-Type", mime_type)
+                        .header("Accept-Ranges", "bytes");
 
                     // HEAD 请求不返回 body
                     if request.method == Method::HEAD {
@@ -207,5 +216,206 @@ fn handle_request(request: &Request, root: &std::path::Path) -> Response {
         }
         ResolveResult::NotFound => Response::not_found(),
         ResolveResult::Forbidden => Response::forbidden(),
+    }
+}
+
+/// 查找指定头部
+fn find_header(headers: &[(bytes::Bytes, bytes::Bytes)], name: &[u8]) -> Option<Vec<u8>> {
+    for (n, v) in headers {
+        if n.eq_ignore_ascii_case(name) {
+            return Some(v.to_vec());
+        }
+    }
+    None
+}
+
+/// 解析 Range 头，格式: bytes=start-end 或 bytes=start-
+fn parse_range_header(range_header: &[u8], file_size: usize) -> Option<(usize, usize)> {
+    let range_str = std::str::from_utf8(range_header).ok()?;
+
+    // 必须以 "bytes=" 开头
+    if !range_str.starts_with("bytes=") {
+        return None;
+    }
+
+    let range_spec = &range_str[6..]; // 跳过 "bytes="
+
+    // 解析 start-end 或 start-
+    let parts: Vec<&str> = range_spec.split('-').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+
+    let start: usize = if parts[0].is_empty() {
+        // -end 格式：最后 end 个字节
+        let end: usize = parts[1].trim().parse().ok()?;
+        if end > file_size {
+            return None;
+        }
+        return Some((file_size - end, file_size - 1));
+    } else {
+        parts[0].trim().parse().ok()?
+    };
+
+    let end: usize = if parts[1].is_empty() {
+        // start- 格式：从 start 到文件末尾
+        file_size - 1
+    } else {
+        let end: usize = parts[1].trim().parse().ok()?;
+        end.min(file_size - 1)
+    };
+
+    // 验证范围有效性
+    if start > end || start >= file_size {
+        return None;
+    }
+
+    Some((start, end))
+}
+
+/// 处理 Range 请求
+fn handle_range_request(
+    range_header: &[u8],
+    content: &[u8],
+    mime_type: &str,
+    file_size: usize,
+    method: Method,
+) -> Response {
+    match parse_range_header(range_header, file_size) {
+        Some((start, end)) => {
+            let range_length = end - start + 1;
+            let content_range = format!("bytes {}-{}/{}", start, end, file_size);
+
+            let mut response = Response::partial_content()
+                .header("Content-Type", mime_type)
+                .header("Content-Range", content_range)
+                .header("Accept-Ranges", "bytes");
+
+            // HEAD 请求不返回 body
+            if method == Method::HEAD {
+                response = response.header("Content-Length", range_length.to_string());
+            } else {
+                response = response.body(content[start..=end].to_vec());
+            }
+
+            response
+        }
+        None => {
+            // 无效的 Range 请求
+            Response::range_not_satisfiable(&format!("bytes */{}", file_size))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::http::{HttpVersion, Request};
+
+    #[test]
+    fn test_parse_range_header_start_end() {
+        let result = parse_range_header(b"bytes=0-99", 1000);
+        assert_eq!(result, Some((0, 99)));
+    }
+
+    #[test]
+    fn test_parse_range_header_start_only() {
+        let result = parse_range_header(b"bytes=500-", 1000);
+        assert_eq!(result, Some((500, 999)));
+    }
+
+    #[test]
+    fn test_parse_range_header_suffix() {
+        let result = parse_range_header(b"bytes=-100", 1000);
+        assert_eq!(result, Some((900, 999)));
+    }
+
+    #[test]
+    fn test_parse_range_header_invalid_start() {
+        let result = parse_range_header(b"bytes=1000-2000", 1000);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_range_header_invalid_format() {
+        let result = parse_range_header(b"invalid", 1000);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_range_header_no_bytes_prefix() {
+        let result = parse_range_header(b"chunks=0-99", 1000);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_find_header() {
+        let headers = vec![
+            (bytes::Bytes::from("Host"), bytes::Bytes::from("localhost")),
+            (bytes::Bytes::from("Range"), bytes::Bytes::from("bytes=0-99")),
+        ];
+        let result = find_header(&headers, b"Range");
+        assert_eq!(result, Some(b"bytes=0-99".to_vec()));
+    }
+
+    #[test]
+    fn test_find_header_not_found() {
+        let headers = vec![
+            (bytes::Bytes::from("Host"), bytes::Bytes::from("localhost")),
+        ];
+        let result = find_header(&headers, b"Range");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_is_keep_alive() {
+        let request = Request {
+            method: Method::GET,
+            path: bytes::Bytes::from("/"),
+            version: HttpVersion::Http11,
+            headers: vec![],
+            body: None,
+        };
+        assert!(is_keep_alive(&request));
+    }
+
+    #[test]
+    fn test_is_keep_alive_http10_default() {
+        let request = Request {
+            method: Method::GET,
+            path: bytes::Bytes::from("/"),
+            version: HttpVersion::Http10,
+            headers: vec![],
+            body: None,
+        };
+        assert!(!is_keep_alive(&request));
+    }
+
+    #[test]
+    fn test_is_keep_alive_with_header() {
+        let request = Request {
+            method: Method::GET,
+            path: bytes::Bytes::from("/"),
+            version: HttpVersion::Http10,
+            headers: vec![
+                (bytes::Bytes::from("Connection"), bytes::Bytes::from("keep-alive")),
+            ],
+            body: None,
+        };
+        assert!(is_keep_alive(&request));
+    }
+
+    #[test]
+    fn test_is_keep_alive_close_header() {
+        let request = Request {
+            method: Method::GET,
+            path: bytes::Bytes::from("/"),
+            version: HttpVersion::Http11,
+            headers: vec![
+                (bytes::Bytes::from("Connection"), bytes::Bytes::from("close")),
+            ],
+            body: None,
+        };
+        assert!(!is_keep_alive(&request));
     }
 }

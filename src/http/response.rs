@@ -80,6 +80,18 @@ impl Response {
     pub fn internal_error() -> Self {
         Self::new(500).body(b"Internal Server Error".to_vec())
     }
+
+    /// 206 Partial Content
+    pub fn partial_content() -> Self {
+        Self::new(206)
+    }
+
+    /// 416 Range Not Satisfiable
+    pub fn range_not_satisfiable(content_range: &str) -> Self {
+        Self::new(416)
+            .header("Content-Range", content_range)
+            .body(b"Range Not Satisfiable".to_vec())
+    }
 }
 
 fn status_text(status: u16) -> &'static str {
