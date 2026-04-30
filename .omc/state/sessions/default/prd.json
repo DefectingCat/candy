@@ -1,0 +1,85 @@
+{
+  "stories": [
+    {
+      "id": "US-001",
+      "title": "项目初始化与依赖配置",
+      "description": "配置 Cargo.toml 依赖项和 release 优化选项",
+      "acceptanceCriteria": [
+        "cargo build --release 成功编译",
+        "依赖数 < 15 个 crate"
+      ],
+      "passes": true
+    },
+    {
+      "id": "US-002",
+      "title": "配置系统",
+      "description": "实现 TOML 配置解析，定义 Config 结构体",
+      "acceptanceCriteria": [
+        "解析 candy.toml 配置文件成功",
+        "无效配置返回明确错误信息"
+      ],
+      "passes": false
+    },
+    {
+      "id": "US-003",
+      "title": "SO_REUSEPORT Socket 封装",
+      "description": "创建支持 SO_REUSEPORT 的 TCP socket",
+      "acceptanceCriteria": [
+        "多个进程可同时绑定同一端口",
+        "单进程可正常 accept 连接"
+      ],
+      "passes": false
+    },
+    {
+      "id": "US-004",
+      "title": "Master 进程管理",
+      "description": "实现 fork worker 进程和信号处理",
+      "acceptanceCriteria": [
+        "启动后 ps 可见 N+1 个进程",
+        "SIGTERM 可终止所有进程"
+      ],
+      "passes": false
+    },
+    {
+      "id": "US-005",
+      "title": "基础 HTTP/1.1 解析器",
+      "description": "状态机解析 HTTP/1.1 请求（GET/HEAD）",
+      "acceptanceCriteria": [
+        "解析有效 GET 请求成功",
+        "无效请求返回错误"
+      ],
+      "passes": false
+    },
+    {
+      "id": "US-006",
+      "title": "基础响应构建",
+      "description": "构建 HTTP 响应，MIME 类型推断",
+      "acceptanceCriteria": [
+        "响应格式符合 HTTP/1.1 规范",
+        "curl 可正常接收响应"
+      ],
+      "passes": false
+    },
+    {
+      "id": "US-007",
+      "title": "文件读取与响应",
+      "description": "路径规范化、文件读取、返回内容",
+      "acceptanceCriteria": [
+        "GET /index.html 返回正确内容",
+        "目录穿越攻击返回 403",
+        "不存在的文件返回 404"
+      ],
+      "passes": false
+    },
+    {
+      "id": "US-008",
+      "title": "Worker 事件循环",
+      "description": "tokio runtime、accept 循环、连接处理",
+      "acceptanceCriteria": [
+        "可并发处理多个连接",
+        "单连接关闭不影响其他连接"
+      ],
+      "passes": false
+    }
+  ]
+}

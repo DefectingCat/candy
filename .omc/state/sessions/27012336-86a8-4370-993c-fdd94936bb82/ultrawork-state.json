@@ -1,0 +1,11 @@
+{
+  "active": true,
+  "started_at": "2026-04-30T08:09:40.884Z",
+  "original_prompt": "/ralph 实施，每完成一个功能点提交一次",
+  "session_id": "27012336-86a8-4370-993c-fdd94936bb82",
+  "project_path": "/home/xfy/Developer/candy",
+  "reinforcement_count": 0,
+  "awaiting_confirmation": true,
+  "awaiting_confirmation_set_at": "2026-04-30T08:09:40.884Z",
+  "last_checked_at": "2026-04-30T08:09:40.884Z"
+}

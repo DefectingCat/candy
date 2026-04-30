@@ -1,0 +1,62 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1777534864318,
+  "projectRoot": "/home/xfy/Developer/candy",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "cargo build --release 2>&1",
+    "testCommand": "cargo test --release 2>&1",
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {},
+  "hotPaths": [
+    {
+      "path": "Cargo.toml",
+      "accessCount": 7,
+      "lastAccessed": 1777536927242,
+      "type": "file"
+    },
+    {
+      "path": "src/main.rs",
+      "accessCount": 4,
+      "lastAccessed": 1777536949098,
+      "type": "file"
+    },
+    {
+      "path": "src/config.rs",
+      "accessCount": 4,
+      "lastAccessed": 1777537059160,
+      "type": "file"
+    },
+    {
+      "path": "candy.toml",
+      "accessCount": 1,
+      "lastAccessed": 1777536940563,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

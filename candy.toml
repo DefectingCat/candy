@@ -1,0 +1,29 @@
+# Candy 静态文件服务器配置
+
+[server]
+# 监听地址
+listen = "0.0.0.0:8080"
+# Worker 进程数（默认为 CPU 核心数）
+workers = 4
+# 静态文件根目录
+root = "/var/www"
+
+[tls]
+# 是否启用 TLS
+enabled = false
+# 证书文件路径
+cert = "/etc/candy/cert.pem"
+# 私钥文件路径
+key = "/etc/candy/key.pem"
+
+[http]
+# 最大请求头大小（字节）
+max_header_size = 8192
+# Keep-Alive 超时（秒）
+keep_alive_timeout = 60
+
+[log]
+# 是否记录访问日志
+access = true
+# 日志格式: "combined" 或 "json"
+format = "combined"

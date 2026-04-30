@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"cargo build --release 2>&1\",\"timeout\":120000,\"description\":\"编译项目\"}",
+  "error": "Exit code 101\n   Compiling candy v0.1.0 (/home/xfy/Developer/candy)\nerror[E0308]: mismatched types\n   --> src/config.rs:97:42\n    |\n 97 |         let tls = Self::parse_tls_config(&raw.tls)?;\n    |                   ---------------------- ^^^^^^^^ expected `Option<&RawTlsConfig>`, found `&Option<RawTlsConfig>`\n    |                   |\n    |                   arguments to this function are incorrect\n    |\n    = note:   expected enum `std::option::Option<&RawTlsConfig>`\n            found reference...",
+  "timestamp": "2026-04-30T08:17:30.559Z",
+  "retry_count": 2
+}
