@@ -10,7 +10,7 @@
   },
   "build": {
     "buildCommand": "cargo build --release 2>&1",
-    "testCommand": "cargo test --release 2>&1",
+    "testCommand": "cargo test --release socket:: 2>&1",
     "lintCommand": null,
     "devCommand": null,
     "scripts": {}
@@ -35,14 +35,20 @@
   "hotPaths": [
     {
       "path": "Cargo.toml",
-      "accessCount": 7,
-      "lastAccessed": 1777536927242,
+      "accessCount": 9,
+      "lastAccessed": 1777537286971,
       "type": "file"
     },
     {
       "path": "src/main.rs",
-      "accessCount": 4,
-      "lastAccessed": 1777536949098,
+      "accessCount": 6,
+      "lastAccessed": 1777537211015,
+      "type": "file"
+    },
+    {
+      "path": "src/socket.rs",
+      "accessCount": 5,
+      "lastAccessed": 1777537414754,
       "type": "file"
     },
     {

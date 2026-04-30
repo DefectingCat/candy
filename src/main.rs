@@ -1,4 +1,5 @@
 mod config;
+mod socket;
 
 use config::Config;
 

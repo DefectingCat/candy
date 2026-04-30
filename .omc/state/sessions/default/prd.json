@@ -18,7 +18,7 @@
         "解析 candy.toml 配置文件成功",
         "无效配置返回明确错误信息"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-003",

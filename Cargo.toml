@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # 异步运行时
-tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "signal", "sync", "time", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "signal", "sync", "time", "fs", "test-util", "macros"] }
 
 # HTTP 类型
 http = "1"

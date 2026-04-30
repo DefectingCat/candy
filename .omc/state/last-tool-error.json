@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cargo build --release 2>&1\",\"timeout\":120000,\"description\":\"编译项目\"}",
-  "error": "Exit code 101\n   Compiling candy v0.1.0 (/home/xfy/Developer/candy)\nerror[E0308]: mismatched types\n   --> src/config.rs:97:42\n    |\n 97 |         let tls = Self::parse_tls_config(&raw.tls)?;\n    |                   ---------------------- ^^^^^^^^ expected `Option<&RawTlsConfig>`, found `&Option<RawTlsConfig>`\n    |                   |\n    |                   arguments to this function are incorrect\n    |\n    = note:   expected enum `std::option::Option<&RawTlsConfig>`\n            found reference...",
-  "timestamp": "2026-04-30T08:17:30.559Z",
-  "retry_count": 2
+  "tool_input_preview": "{\"command\":\"cargo test --release socket:: 2>&1\",\"timeout\":120000,\"description\":\"测试 SO_REUSEPORT socket\"}",
+  "error": "Exit code 101\n   Compiling candy v0.1.0 (/home/xfy/Developer/candy)\nwarning: field `http` is never read\n --> src/config.rs:9:9\n  |\n6 | pub struct Config {\n  |            ------ field in this struct\n...\n9 |     pub http: HttpConfig,\n  |         ^^^^\n  |\n  = note: `Config` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis\n  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default\n\nwarning: fields `cert` and `key` are n...",
+  "timestamp": "2026-04-30T08:23:17.744Z",
+  "retry_count": 6
 }
