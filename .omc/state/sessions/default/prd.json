@@ -28,7 +28,7 @@
         "多个进程可同时绑定同一端口",
         "单进程可正常 accept 连接"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-004",

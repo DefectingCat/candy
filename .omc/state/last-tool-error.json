@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cargo test --release socket:: 2>&1\",\"timeout\":120000,\"description\":\"测试 SO_REUSEPORT socket\"}",
-  "error": "Exit code 101\n   Compiling candy v0.1.0 (/home/xfy/Developer/candy)\nwarning: field `http` is never read\n --> src/config.rs:9:9\n  |\n6 | pub struct Config {\n  |            ------ field in this struct\n...\n9 |     pub http: HttpConfig,\n  |         ^^^^\n  |\n  = note: `Config` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis\n  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default\n\nwarning: fields `cert` and `key` are n...",
-  "timestamp": "2026-04-30T08:23:17.744Z",
-  "retry_count": 6
+  "tool_input_preview": "{\"command\":\"cargo build --release 2>&1\",\"timeout\":120000,\"description\":\"编译项目\"}",
+  "error": "Exit code 101\n   Compiling candy v0.1.0 (/home/xfy/Developer/candy)\nerror[E0596]: cannot borrow `stream` as mutable, as it is not declared as mutable\n  --> src/worker.rs:50:5\n   |\n50 |     stream.shutdown().await?;\n   |     ^^^^^^ cannot borrow as mutable\n   |\nhelp: consider changing this to be mutable\n   |\n43 |     mut stream: tokio::net::TcpStream,\n   |     +++\n\nFor more information about this error, try `rustc --explain E0596`.\nerror: could not compile `candy` (bin \"candy\") due to 1 previous ...",
+  "timestamp": "2026-04-30T08:27:15.527Z",
+  "retry_count": 2
 }

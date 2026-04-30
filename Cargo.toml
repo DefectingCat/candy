@@ -29,6 +29,9 @@ thiserror = "2"
 # 日志
 chrono = "0.4"
 
+# 信号处理
+ctrlc = "3"
+
 [dev-dependencies]
 criterion = "0.8"
 tempfile = "3"
