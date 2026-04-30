@@ -225,7 +225,7 @@ fn handle_request(request: &Request, root: &std::path::Path) -> Response {
 
                     // 构建响应
                     let mut response = Response::ok()
-                        .header("Content-Type", mime_type.clone())
+                        .header("Content-Type", mime_type)
                         .header("Accept-Ranges", "bytes")
                         .header("Vary", "Accept-Encoding");
 
@@ -266,7 +266,7 @@ fn find_header(headers: &[(bytes::Bytes, bytes::Bytes)], name: &[u8]) -> Option<
 }
 
 /// 解析 Range 头，格式: bytes=start-end 或 bytes=start-
-fn parse_range_header(range_header: &[u8], file_size: usize) -> Option<(usize, usize)> {
+pub fn parse_range_header(range_header: &[u8], file_size: usize) -> Option<(usize, usize)> {
     let range_str = std::str::from_utf8(range_header).ok()?;
 
     // 必须以 "bytes=" 开头
