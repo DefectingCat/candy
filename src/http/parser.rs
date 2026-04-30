@@ -46,6 +46,7 @@ pub struct Request {
     pub path: Bytes,
     pub version: HttpVersion,
     pub headers: Vec<(Bytes, Bytes)>,
+    pub body: Option<Bytes>,
 }
 
 /// 解析错误
@@ -96,7 +97,7 @@ impl Parser {
 
     /// 解析请求，返回 (consumed_bytes, result)
     pub fn parse(&mut self, buffer: &[u8]) -> Result<(usize, Request), ParseError> {
-        // 直接查找 \r\n\r\n 作为请求结束
+        // 直接查找 \r\n\r\n 作为头部结束
         let headers_end = find_headers_end(buffer, 0)?;
 
         // 查找请求行结束（第一个 \r\n）
@@ -115,7 +116,24 @@ impl Parser {
             Vec::new()
         };
 
-        let consumed = headers_end + 4; // +4 for \r\n\r\n
+        // 查找 Content-Length
+        let content_length = find_content_length(&headers);
+
+        // 计算总消耗字节数
+        let headers_total = headers_end + 4;
+        let body_start = headers_total;
+
+        // 检查是否有足够的 body 数据
+        let body = if let Some(len) = content_length {
+            if buffer.len() < body_start + len {
+                return Err(ParseError::Incomplete);
+            }
+            Some(Bytes::copy_from_slice(&buffer[body_start..body_start + len]))
+        } else {
+            None
+        };
+
+        let consumed = body_start + content_length.unwrap_or(0);
 
         Ok((
             consumed,
@@ -127,9 +145,21 @@ impl Parser {
                     .into_iter()
                     .map(|(k, v)| (Bytes::copy_from_slice(k), Bytes::copy_from_slice(v)))
                     .collect(),
+                body,
             },
         ))
     }
+}
+
+/// 查找 Content-Length 头部值
+fn find_content_length(headers: &[(&[u8], &[u8])]) -> Option<usize> {
+    for (name, value) in headers {
+        if name.eq_ignore_ascii_case(b"Content-Length") {
+            let s = std::str::from_utf8(value).ok()?;
+            return s.parse::<usize>().ok();
+        }
+    }
+    None
 }
 
 impl Default for Parser {
@@ -291,5 +321,52 @@ mod tests {
         let raw = b"GET / HTTP/1.1\r\n";
         let mut parser = Parser::new();
         assert!(matches!(parser.parse(raw), Err(ParseError::Incomplete)));
+    }
+
+    #[test]
+    fn test_parse_post_with_body() {
+        let raw = b"POST /submit HTTP/1.1\r\nContent-Length: 11\r\n\r\nHello World";
+        let mut parser = Parser::new();
+        let (consumed, req) = parser.parse(raw).unwrap();
+
+        assert_eq!(consumed, raw.len());
+        assert_eq!(req.method, Method::POST);
+        assert!(req.body.is_some());
+        assert_eq!(&req.body.unwrap()[..], b"Hello World");
+    }
+
+    #[test]
+    fn test_parse_all_methods() {
+        let methods: &[(&[u8], Method)] = &[
+            (b"GET / HTTP/1.1\r\n\r\n", Method::GET),
+            (b"HEAD / HTTP/1.1\r\n\r\n", Method::HEAD),
+            (b"POST / HTTP/1.1\r\n\r\n", Method::POST),
+            (b"PUT / HTTP/1.1\r\n\r\n", Method::PUT),
+            (b"DELETE / HTTP/1.1\r\n\r\n", Method::DELETE),
+            (b"OPTIONS / HTTP/1.1\r\n\r\n", Method::OPTIONS),
+            (b"CONNECT / HTTP/1.1\r\n\r\n", Method::CONNECT),
+            (b"TRACE / HTTP/1.1\r\n\r\n", Method::TRACE),
+            (b"PATCH / HTTP/1.1\r\n\r\n", Method::PATCH),
+        ];
+
+        let mut parser = Parser::new();
+        for (raw, expected_method) in methods {
+            let (_, req) = parser.parse(raw).unwrap();
+            assert_eq!(req.method, *expected_method);
+        }
+    }
+
+    #[test]
+    fn test_parse_large_headers() {
+        // 构造一个大于 8KB 的头部
+        let mut raw = b"GET / HTTP/1.1\r\n".to_vec();
+        for i in 0..500 {
+            raw.extend_from_slice(format!("X-Custom-Header-{}: value{}\r\n", i, i).as_bytes());
+        }
+        raw.extend_from_slice(b"\r\n");
+
+        let mut parser = Parser::new();
+        let (_, req) = parser.parse(&raw).unwrap();
+        assert_eq!(req.headers.len(), 500);
     }
 }

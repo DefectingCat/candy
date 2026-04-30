@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cargo build --release 2>&1\",\"timeout\":120000,\"description\":\"编译项目\"}",
-  "error": "Exit code 101\n   Compiling candy v0.1.0 (/home/xfy/Developer/candy)\nerror[E0432]: unresolved import `crate::http::Parser`\n --> src/worker.rs:5:39\n  |\n5 | use crate::http::{Method, ParseError, Parser, Response};\n  |                                       ^^^^^^ no `Parser` in `http`\n  |\n  = help: consider importing this struct instead:\n          crate::http::parser::Parser\nhelp: a similar name exists in the module\n  |\n5 - use crate::http::{Method, ParseError, Parser, Response};\n5 + use crate::http...",
-  "timestamp": "2026-04-30T08:44:14.133Z",
-  "retry_count": 2
-}
