@@ -1,6 +1,7 @@
 mod compress;
 mod config;
 mod http;
+mod http2;
 mod master;
 mod router;
 mod sendfile;
