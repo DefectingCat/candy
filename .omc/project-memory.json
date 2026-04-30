@@ -34,6 +34,12 @@
   "directoryMap": {},
   "hotPaths": [
     {
+      "path": "src/http/parser.rs",
+      "accessCount": 16,
+      "lastAccessed": 1777538433310,
+      "type": "file"
+    },
+    {
       "path": "Cargo.toml",
       "accessCount": 11,
       "lastAccessed": 1777537531511,
@@ -41,8 +47,8 @@
     },
     {
       "path": "src/main.rs",
-      "accessCount": 7,
-      "lastAccessed": 1777537542547,
+      "accessCount": 8,
+      "lastAccessed": 1777537836260,
       "type": "file"
     },
     {
@@ -73,6 +79,18 @@
       "path": "candy.toml",
       "accessCount": 1,
       "lastAccessed": 1777536940563,
+      "type": "file"
+    },
+    {
+      "path": "src/http/mod.rs",
+      "accessCount": 1,
+      "lastAccessed": 1777537797464,
+      "type": "file"
+    },
+    {
+      "path": "src/http/response.rs",
+      "accessCount": 1,
+      "lastAccessed": 1777537823432,
       "type": "file"
     }
   ],

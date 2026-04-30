@@ -38,7 +38,7 @@
         "启动后 ps 可见 N+1 个进程",
         "SIGTERM 可终止所有进程"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-005",
