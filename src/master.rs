@@ -1,6 +1,6 @@
 use std::process::Child;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use nix::sys::signal::{self, Signal};
@@ -135,10 +135,77 @@ impl Master {
             let _ = signal::kill(Pid::from_raw(worker.pid as i32), Signal::SIGTERM);
         }
 
-        // 等待所有 worker 退出
-        std::thread::sleep(Duration::from_millis(100));
+        // 等待所有 worker 优雅退出（最多等待 10 秒）
+        let max_wait_ms = 10_000;
+        let check_interval_ms = 100;
+        let mut waited_ms = 0;
+
+        while waited_ms < max_wait_ms {
+            let all_dead = self.workers.iter().all(|worker| {
+                signal::kill(Pid::from_raw(worker.pid as i32), None).is_err()
+            });
+
+            if all_dead {
+                println!("All workers gracefully shut down after {}ms", waited_ms);
+                return Ok(());
+            }
+
+            std::thread::sleep(Duration::from_millis(check_interval_ms));
+            waited_ms += check_interval_ms;
+        }
+
+        // 强制杀死未退出的 worker
+        println!("Force killing remaining workers after timeout");
+        for worker in &self.workers {
+            let _ = signal::kill(Pid::from_raw(worker.pid as i32), Signal::SIGKILL);
+        }
 
         println!("All workers shut down");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_master_new() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let toml = format!(
+            r#"
+[server]
+listen = "127.0.0.1:8080"
+root = "{}"
+workers = 1
+"#,
+            temp_dir.path().display()
+        );
+        let config = Config::from_str(&toml).unwrap();
+        let master = Master::new(config);
+        assert_eq!(master.workers.len(), 0);
+        assert!(!master.shutdown.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_shutdown_flag() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let toml = format!(
+            r#"
+[server]
+listen = "127.0.0.1:8080"
+root = "{}"
+"#,
+            temp_dir.path().display()
+        );
+        let config = Config::from_str(&toml).unwrap();
+        let master = Master::new(config);
+
+        // 初始状态未关闭
+        assert!(!master.shutdown.load(Ordering::SeqCst));
+
+        // 设置关闭标志
+        master.shutdown.store(true, Ordering::SeqCst);
+        assert!(master.shutdown.load(Ordering::SeqCst));
     }
 }

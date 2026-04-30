@@ -99,7 +99,9 @@ mod tests {
             Ok(n) => assert!(n <= content.len()),
             Err(e) => {
                 // 某些系统可能返回 EINVAL（Unix socket 不支持）
-                assert!(e.kind() == io::ErrorKind::InvalidInput || e.kind() == io::ErrorKind::Other);
+                assert!(
+                    e.kind() == io::ErrorKind::InvalidInput || e.kind() == io::ErrorKind::Other
+                );
             }
         }
     }

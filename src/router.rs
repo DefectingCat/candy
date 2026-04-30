@@ -193,10 +193,22 @@ mod tests {
 
     #[test]
     fn test_get_mime_type() {
-        assert_eq!(get_mime_type(Path::new("test.html")), "text/html; charset=utf-8");
-        assert_eq!(get_mime_type(Path::new("test.css")), "text/css; charset=utf-8");
-        assert_eq!(get_mime_type(Path::new("test.js")), "application/javascript; charset=utf-8");
+        assert_eq!(
+            get_mime_type(Path::new("test.html")),
+            "text/html; charset=utf-8"
+        );
+        assert_eq!(
+            get_mime_type(Path::new("test.css")),
+            "text/css; charset=utf-8"
+        );
+        assert_eq!(
+            get_mime_type(Path::new("test.js")),
+            "application/javascript; charset=utf-8"
+        );
         assert_eq!(get_mime_type(Path::new("test.png")), "image/png");
-        assert_eq!(get_mime_type(Path::new("test.unknown")), "application/octet-stream");
+        assert_eq!(
+            get_mime_type(Path::new("test.unknown")),
+            "application/octet-stream"
+        );
     }
 }

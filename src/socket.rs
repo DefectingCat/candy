@@ -3,8 +3,8 @@ use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::{io, net};
 
 use nix::sys::socket::{
-    bind, listen, setsockopt, socket, sockopt::ReusePort, AddressFamily, Backlog, SockFlag,
-    SockType,
+    AddressFamily, Backlog, SockFlag, SockType, bind, listen, setsockopt, socket,
+    sockopt::ReusePort,
 };
 use tokio::net::TcpListener;
 
@@ -19,15 +19,14 @@ pub fn create_reuseport_listener(addr: SocketAddr) -> io::Result<TcpListener> {
         AddressFamily::Inet
     };
 
-    let sock = socket(family, SockType::Stream, SockFlag::empty(), None)
-        .map_err(nix_to_io_error)?;
+    let sock =
+        socket(family, SockType::Stream, SockFlag::empty(), None).map_err(nix_to_io_error)?;
 
     // 设置 SO_REUSEPORT
     setsockopt(&sock, ReusePort, &true).map_err(nix_to_io_error)?;
 
     // 设置 SO_REUSEADDR (允许快速重启)
-    setsockopt(&sock, nix::sys::socket::sockopt::ReuseAddr, &true)
-        .map_err(nix_to_io_error)?;
+    setsockopt(&sock, nix::sys::socket::sockopt::ReuseAddr, &true).map_err(nix_to_io_error)?;
 
     // 绑定地址 - nix 0.31 需要使用 SockaddrStorage
     let nix_addr: nix::sys::socket::SockaddrStorage = addr.into();

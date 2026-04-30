@@ -128,7 +128,9 @@ impl Parser {
             if buffer.len() < body_start + len {
                 return Err(ParseError::Incomplete);
             }
-            Some(Bytes::copy_from_slice(&buffer[body_start..body_start + len]))
+            Some(Bytes::copy_from_slice(
+                &buffer[body_start..body_start + len],
+            ))
         } else {
             None
         };
