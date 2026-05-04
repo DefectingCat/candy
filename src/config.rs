@@ -43,6 +43,8 @@ pub struct HttpConfig {
     pub max_body_size: usize,
     /// Keep-Alive 超时（秒）
     pub keep_alive_timeout: u64,
+    /// 是否启用 HTTP/2 Server Push
+    pub http2_push: bool,
 }
 
 /// 日志配置
@@ -180,11 +182,13 @@ impl Config {
                 max_header_size: r.max_header_size.unwrap_or(8192),
                 max_body_size: r.max_body_size.unwrap_or(10 * 1024 * 1024), // 默认 10MB
                 keep_alive_timeout: r.keep_alive_timeout.unwrap_or(60),
+                http2_push: r.http2_push.unwrap_or(false), // 默认禁用
             },
             None => HttpConfig {
                 max_header_size: 8192,
                 max_body_size: 10 * 1024 * 1024, // 默认 10MB
                 keep_alive_timeout: 60,
+                http2_push: false,
             },
         }
     }
@@ -239,6 +243,7 @@ struct RawHttpConfig {
     max_header_size: Option<usize>,
     max_body_size: Option<usize>,
     keep_alive_timeout: Option<u64>,
+    http2_push: Option<bool>,
 }
 
 #[derive(Debug, serde::Deserialize)]

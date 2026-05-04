@@ -644,6 +644,36 @@ pub fn build_window_update(stream_id: u32, increment: u32) -> Bytes {
     Bytes::from(buf)
 }
 
+/// 构建 HTTP/2 PUSH_PROMISE 帧
+pub fn build_push_promise(stream_id: u32, promised_stream_id: u32, headers: Bytes) -> Bytes {
+    let length = 4 + headers.len() as u32; // 4 字节 promised stream id + headers
+    let flags = 0x04; // END_HEADERS
+
+    let mut buf = Vec::with_capacity(9 + 4 + headers.len());
+
+    // 帧头
+    buf.push((length >> 16) as u8);
+    buf.push((length >> 8) as u8);
+    buf.push(length as u8);
+    buf.push(0x05); // PUSH_PROMISE
+    buf.push(flags);
+    buf.push((stream_id >> 24) as u8 & 0x7F);
+    buf.push((stream_id >> 16) as u8);
+    buf.push((stream_id >> 8) as u8);
+    buf.push(stream_id as u8);
+
+    // Promised Stream ID（4字节）
+    buf.push((promised_stream_id >> 24) as u8 & 0x7F);
+    buf.push((promised_stream_id >> 16) as u8);
+    buf.push((promised_stream_id >> 8) as u8);
+    buf.push(promised_stream_id as u8);
+
+    // Headers
+    buf.extend_from_slice(&headers);
+
+    Bytes::from(buf)
+}
+
 /// HTTP/2 错误码
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum H2ErrorCode {
@@ -944,5 +974,23 @@ mod tests {
 
         let increment = parse_window_update(&frame[9..]).unwrap();
         assert_eq!(increment, 1000);
+    }
+
+    #[test]
+    fn test_build_push_promise() {
+        let headers = Bytes::from_static(b"test-headers");
+        let frame = build_push_promise(1, 2, headers.clone());
+
+        let header = parse_frame_header(&frame).unwrap();
+        assert_eq!(header.frame_type, FrameType::PushPromise);
+        assert_eq!(header.stream_id, 1);
+        assert_eq!(header.length, 4 + headers.len() as u32);
+
+        // 验证 promised stream id
+        let promised_id = (((frame[9] as u32) & 0x7F) << 24)
+            | ((frame[10] as u32) << 16)
+            | ((frame[11] as u32) << 8)
+            | (frame[12] as u32);
+        assert_eq!(promised_id, 2);
     }
 }
