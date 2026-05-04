@@ -1,4 +1,5 @@
 use bytes::{Buf, BytesMut};
+use std::fs::File;
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{Duration, timeout};
@@ -14,6 +15,7 @@ use crate::http2::{
 };
 use crate::logging::{AccessLog, Logger};
 use crate::router::{ResolveResult, get_mime_type, resolve_path};
+use crate::sendfile::sendfile_async;
 use crate::socket::create_reuseport_listener;
 use crate::tls::load_tls_config_with_alpn;
 
@@ -618,19 +620,8 @@ async fn handle_connection(
                 // 检查是否保持连接
                 keep_alive = is_keep_alive(&request);
 
-                // 处理请求
-                let mut response = handle_request(&request, root);
-
-                // 添加 Connection 头
-                if keep_alive {
-                    response = response.header("Connection", "keep-alive");
-                } else {
-                    response = response.header("Connection", "close");
-                }
-
-                // 发送响应
-                let response_bytes = response.to_bytes();
-                stream.write_all(&response_bytes).await?;
+                // 处理请求（尝试使用 sendfile）
+                handle_request_with_sendfile(&mut stream, &request, root, keep_alive).await?;
             }
             Ok(Err(ParseError::Incomplete)) => {
                 // 需要更多数据，继续读取
@@ -649,6 +640,148 @@ async fn handle_connection(
                 // 超时，关闭连接
                 break;
             }
+        }
+    }
+
+    Ok(())
+}
+
+/// 处理请求，尽可能使用 sendfile
+async fn handle_request_with_sendfile(
+    stream: &mut tokio::net::TcpStream,
+    request: &Request,
+    root: &std::path::Path,
+    keep_alive: bool,
+) -> std::io::Result<()> {
+    // 只支持 GET 和 HEAD
+    if request.method != Method::GET && request.method != Method::HEAD {
+        let response = Response::new(405)
+            .header("Content-Type", "text/plain")
+            .header("Connection", if keep_alive { "keep-alive" } else { "close" })
+            .body(b"Method Not Allowed".to_vec());
+        stream.write_all(&response.to_bytes()).await?;
+        return Ok(());
+    }
+
+    // 解析路径
+    let path_str = String::from_utf8_lossy(&request.path);
+
+    match resolve_path(root, &path_str) {
+        ResolveResult::File(file_path) => {
+            // 尝试打开文件
+            let file = File::open(&file_path);
+            if file.is_err() {
+                let response = Response::internal_error();
+                stream.write_all(&response.to_bytes()).await?;
+                return Ok(());
+            }
+            let file = file.unwrap();
+            let file_size = file.metadata()?.len() as usize;
+            let mime_type = get_mime_type(&file_path);
+
+            // 检查是否可以使用 sendfile
+            // 条件：无压缩、无 Range、非 HEAD 请求
+            let can_sendfile = !should_compress(&mime_type)
+                && find_header(&request.headers, b"Range").is_none()
+                && request.method == Method::GET
+                && find_header(&request.headers, b"Accept-Encoding").is_none();
+
+            if can_sendfile {
+                // 发送响应头
+                let headers = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nConnection: {}\r\n\r\n",
+                    mime_type,
+                    file_size,
+                    if keep_alive { "keep-alive" } else { "close" }
+                );
+                stream.write_all(headers.as_bytes()).await?;
+
+                // 使用 sendfile 发送文件内容
+                let result = sendfile_async(stream, &file, 0, file_size).await;
+                if let Err(e) = result {
+                    eprintln!("sendfile error: {}", e);
+                    // sendfile 失败，回退到普通读取
+                    let content = std::fs::read(&file_path)?;
+                    stream.write_all(&content).await?;
+                }
+            } else {
+                // 不能使用 sendfile，使用普通方式
+                let content = std::fs::read(&file_path)?;
+
+                // 检查 Range 头
+                if let Some(range_header) = find_header(&request.headers, b"Range") {
+                    let response = handle_range_request(
+                        &range_header,
+                        &content,
+                        &mime_type,
+                        file_size,
+                        request.method,
+                    );
+                    let mut response_bytes = response.to_bytes();
+                    if keep_alive {
+                        response_bytes.extend_from_slice(b"Connection: keep-alive\r\n");
+                    }
+                    stream.write_all(&response_bytes).await?;
+                    return Ok(());
+                }
+
+                // 检查压缩协商
+                let (final_content, content_encoding) =
+                    if should_compress(&mime_type) {
+                        if let Some(accept_encoding) = find_header(&request.headers, b"Accept-Encoding") {
+                            let compression = parse_accept_encoding(&accept_encoding);
+                            if compression == CompressionType::Gzip {
+                                if let Ok(compressed) = gzip_compress(&content) {
+                                    (compressed, Some("gzip"))
+                                } else {
+                                    (content, None)
+                                }
+                            } else {
+                                (content, None)
+                            }
+                        } else {
+                            (content, None)
+                        }
+                    } else {
+                        (content, None)
+                    };
+
+                // 构建响应
+                let mut response = Response::ok()
+                    .header("Content-Type", mime_type)
+                    .header("Accept-Ranges", "bytes")
+                    .header("Vary", "Accept-Encoding");
+
+                if let Some(encoding) = content_encoding {
+                    response = response.header("Content-Encoding", encoding);
+                }
+
+                if keep_alive {
+                    response = response.header("Connection", "keep-alive");
+                } else {
+                    response = response.header("Connection", "close");
+                }
+
+                if request.method == Method::HEAD {
+                    response = response.header("Content-Length", final_content.len().to_string());
+                } else {
+                    response = response.body(final_content);
+                }
+
+                stream.write_all(&response.to_bytes()).await?;
+            }
+        }
+        ResolveResult::Directory(_) => {
+            let response = Response::forbidden();
+            stream.write_all(&response.to_bytes()).await?;
+        }
+        ResolveResult::NotFound => {
+            let response = Response::not_found();
+            stream.write_all(&response.to_bytes()).await?;
+        }
+        ResolveResult::Forbidden => {
+            let response = Response::forbidden();
+            stream.write_all(&response.to_bytes()).await?;
         }
     }
 
