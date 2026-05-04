@@ -171,7 +171,7 @@ async fn handle_https_connection(
             Ok(s) => s,
             Err(e) => {
                 eprintln!("TLS handshake error from {}: {}", addr, e);
-                return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
+                return Err(std::io::Error::other(e));
             }
         };
 
@@ -678,7 +678,7 @@ async fn handle_request_with_sendfile(
 
             // 检查是否可以使用 sendfile
             // 条件：无压缩、无 Range、非 HEAD 请求
-            let can_sendfile = !should_compress(&mime_type)
+            let can_sendfile = !should_compress(mime_type)
                 && find_header(&request.headers, b"Range").is_none()
                 && request.method == Method::GET
                 && find_header(&request.headers, b"Accept-Encoding").is_none();
@@ -710,7 +710,7 @@ async fn handle_request_with_sendfile(
                     let response = handle_range_request(
                         &range_header,
                         &content,
-                        &mime_type,
+                        mime_type,
                         file_size,
                         request.method,
                     );
@@ -724,7 +724,7 @@ async fn handle_request_with_sendfile(
 
                 // 检查压缩协商
                 let (final_content, content_encoding) =
-                    if should_compress(&mime_type) {
+                    if should_compress(mime_type) {
                         if let Some(accept_encoding) = find_header(&request.headers, b"Accept-Encoding") {
                             let compression = parse_accept_encoding(&accept_encoding);
                             if compression == CompressionType::Gzip {
@@ -863,7 +863,7 @@ fn handle_request(request: &Request, root: &std::path::Path) -> Response {
                         return handle_range_request(
                             &range_header,
                             &content,
-                            &mime_type,
+                            mime_type,
                             file_size,
                             request.method,
                         );
@@ -871,7 +871,7 @@ fn handle_request(request: &Request, root: &std::path::Path) -> Response {
 
                     // 检查压缩协商
                     let (final_content, content_encoding) =
-                        if should_compress(&mime_type) {
+                        if should_compress(mime_type) {
                             if let Some(accept_encoding) = find_header(&request.headers, b"Accept-Encoding") {
                                 let compression = parse_accept_encoding(&accept_encoding);
                                 if compression == CompressionType::Gzip {

@@ -153,7 +153,7 @@ pub fn parse_settings(data: &[u8]) -> Result<Settings, H2Error> {
     let mut settings = Settings::default();
 
     // SETTINGS 帧包含多个键值对，每个 6 字节
-    if data.len() % 6 != 0 {
+    if !data.len().is_multiple_of(6) {
         return Err(H2Error::InvalidSettings);
     }
 
@@ -179,7 +179,7 @@ pub fn parse_settings(data: &[u8]) -> Result<Settings, H2Error> {
             }
             SettingsParameter::MaxFrameSize => {
                 // 必须在 16384 到 16777215 之间
-                if value < 16384 || value > 16_777_215 {
+                if !(16384..=16_777_215).contains(&value) {
                     return Err(H2Error::InvalidSettings);
                 }
                 settings.max_frame_size = value;
@@ -343,7 +343,7 @@ impl Connection {
     /// 接受客户端流
     pub fn accept_client_stream(&mut self, id: u32) -> Option<&mut Stream> {
         // 客户端流 ID 必须是奇数
-        if id % 2 == 0 || id == 0 {
+        if id.is_multiple_of(2) || id == 0 {
             return None;
         }
 
