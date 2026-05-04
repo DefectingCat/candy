@@ -10,7 +10,7 @@ use crate::config::{Config, LogFormat};
 use crate::http::{Method, ParseError, Parser, Request, Response};
 use crate::http2::{
     build_data_frame, build_goaway, build_headers_frame, build_initial_settings,
-    build_rst_stream, build_settings_ack, parse_frame_header, parse_settings, Connection,
+    build_rst_stream, build_settings_ack, build_window_update, parse_frame_header, parse_settings, parse_window_update, Connection,
     FrameType, HpackDecoder, HpackEncoder, H2ErrorCode, H2Error, CONNECTION_PREFACE,
 };
 use crate::logging::{AccessLog, Logger};
@@ -428,7 +428,30 @@ where
                 stream.write_all(&ping_response).await?;
             }
             FrameType::WindowUpdate => {
-                // WINDOW_UPDATE：简化处理，忽略
+                // WINDOW_UPDATE：更新流控窗口
+                match parse_window_update(&frame_body) {
+                    Ok(increment) => {
+                        if header.stream_id == 0 {
+                            // 连接级窗口更新
+                            if let Err(e) = connection.update_connection_send_window(increment) {
+                                eprintln!("HTTP/2 connection window update error: {:?}", e);
+                                let goaway = build_goaway(0, H2ErrorCode::FlowControlError as u32);
+                                let _ = stream.write_all(&goaway).await;
+                                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "flow control error"));
+                            }
+                        } else {
+                            // 流级窗口更新
+                            if let Err(e) = connection.update_stream_send_window(header.stream_id, increment) {
+                                eprintln!("HTTP/2 stream {} window update error: {:?}", header.stream_id, e);
+                                let rst = build_rst_stream(header.stream_id, H2ErrorCode::FlowControlError as u32);
+                                let _ = stream.write_all(&rst).await;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("HTTP/2 WINDOW_UPDATE parse error: {:?}", e);
+                    }
+                }
             }
             FrameType::GoAway => {
                 // GOAWAY：关闭连接

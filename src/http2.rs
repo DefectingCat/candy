@@ -320,6 +320,10 @@ pub struct Connection {
     pub streams: std::collections::HashMap<u32, Stream>,
     /// 下一个可用的服务端流 ID（奇数）
     next_server_stream_id: u32,
+    /// 连接级发送窗口大小
+    pub connection_send_window: i64,
+    /// 连接级接收窗口大小
+    pub connection_recv_window: i64,
 }
 
 impl Connection {
@@ -329,6 +333,8 @@ impl Connection {
             peer_settings: Settings::default(),
             streams: std::collections::HashMap::new(),
             next_server_stream_id: 2, // 服务端流 ID 从 2 开始
+            connection_send_window: 65535,
+            connection_recv_window: 65535,
         }
     }
 
@@ -392,6 +398,42 @@ impl Connection {
             .values()
             .filter(|s| s.state != StreamState::Closed)
             .count()
+    }
+
+    /// 更新连接级发送窗口
+    pub fn update_connection_send_window(&mut self, increment: u32) -> Result<(), H2Error> {
+        // 检查是否会溢出
+        let new_window = self.connection_send_window + increment as i64;
+        // HTTP/2 规范：窗口大小不能超过 2^31 - 1
+        if new_window > (i32::MAX as i64) {
+            return Err(H2Error::InvalidSettings);
+        }
+        self.connection_send_window = new_window;
+        Ok(())
+    }
+
+    /// 更新流级发送窗口
+    pub fn update_stream_send_window(&mut self, stream_id: u32, increment: u32) -> Result<(), H2Error> {
+        if let Some(stream) = self.streams.get_mut(&stream_id) {
+            let new_window = stream.send_window as i64 + increment as i64;
+            if new_window > (i32::MAX as i64) {
+                return Err(H2Error::InvalidSettings);
+            }
+            stream.send_window = new_window as u32;
+        }
+        Ok(())
+    }
+
+    /// 消耗连接级发送窗口
+    pub fn consume_connection_send_window(&mut self, size: u32) {
+        self.connection_send_window -= size as i64;
+    }
+
+    /// 消耗流级发送窗口
+    pub fn consume_stream_send_window(&mut self, stream_id: u32, size: u32) {
+        if let Some(stream) = self.streams.get_mut(&stream_id) {
+            stream.send_window = stream.send_window.saturating_sub(size);
+        }
     }
 }
 
@@ -557,6 +599,47 @@ pub fn build_goaway(last_stream_id: u32, error_code: u32) -> Bytes {
     buf.push((error_code >> 16) as u8);
     buf.push((error_code >> 8) as u8);
     buf.push(error_code as u8);
+
+    Bytes::from(buf)
+}
+
+/// 解析 WINDOW_UPDATE 帧
+/// 返回窗口增量
+pub fn parse_window_update(data: &[u8]) -> Result<u32, H2Error> {
+    if data.len() < 4 {
+        return Err(H2Error::Incomplete);
+    }
+
+    // 窗口增量（4字节大端序，最高位保留）
+    let increment = (((data[0] as u32) & 0x7F) << 24)
+        | ((data[1] as u32) << 16)
+        | ((data[2] as u32) << 8)
+        | (data[3] as u32);
+
+    // 窗口增量不能为 0
+    if increment == 0 {
+        return Err(H2Error::InvalidSettings);
+    }
+
+    Ok(increment)
+}
+
+/// 构建 WINDOW_UPDATE 帧
+pub fn build_window_update(stream_id: u32, increment: u32) -> Bytes {
+    let mut buf = Vec::with_capacity(9 + 4);
+
+    // 帧头：长度 4，类型 WINDOW_UPDATE(0x08)，标志 0
+    buf.extend_from_slice(&[0x00, 0x00, 0x04, 0x08, 0x00]);
+    buf.push((stream_id >> 24) as u8 & 0x7F);
+    buf.push((stream_id >> 16) as u8);
+    buf.push((stream_id >> 8) as u8);
+    buf.push(stream_id as u8);
+
+    // 窗口增量（4字节）
+    buf.push((increment >> 24) as u8 & 0x7F);
+    buf.push((increment >> 16) as u8);
+    buf.push((increment >> 8) as u8);
+    buf.push(increment as u8);
 
     Bytes::from(buf)
 }
@@ -803,5 +886,63 @@ mod tests {
         conn.update_peer_settings(settings);
         assert!(!conn.peer_settings.enable_push);
         assert_eq!(conn.peer_settings.max_frame_size, 65536);
+    }
+
+    #[test]
+    fn test_connection_window() {
+        let conn = Connection::new();
+        assert_eq!(conn.connection_send_window, 65535);
+        assert_eq!(conn.connection_recv_window, 65535);
+    }
+
+    #[test]
+    fn test_connection_update_send_window() {
+        let mut conn = Connection::new();
+        conn.update_connection_send_window(1000).unwrap();
+        assert_eq!(conn.connection_send_window, 66535);
+    }
+
+    #[test]
+    fn test_connection_consume_send_window() {
+        let mut conn = Connection::new();
+        conn.consume_connection_send_window(1000);
+        assert_eq!(conn.connection_send_window, 64535);
+    }
+
+    #[test]
+    fn test_parse_window_update() {
+        // 窗口增量 = 1000 (0x000003E8)
+        let data = [0x00, 0x00, 0x03, 0xE8];
+        let result = parse_window_update(&data).unwrap();
+        assert_eq!(result, 1000);
+    }
+
+    #[test]
+    fn test_parse_window_update_incomplete() {
+        let data = [0x00, 0x00];
+        let result = parse_window_update(&data);
+        assert!(matches!(result, Err(H2Error::Incomplete)));
+    }
+
+    #[test]
+    fn test_parse_window_update_zero() {
+        // 窗口增量 = 0，应该返回错误
+        let data = [0x00, 0x00, 0x00, 0x00];
+        let result = parse_window_update(&data);
+        assert!(matches!(result, Err(H2Error::InvalidSettings)));
+    }
+
+    #[test]
+    fn test_build_window_update() {
+        let frame = build_window_update(0, 1000);
+        assert_eq!(frame.len(), 13); // 9 header + 4 payload
+
+        let header = parse_frame_header(&frame).unwrap();
+        assert_eq!(header.frame_type, FrameType::WindowUpdate);
+        assert_eq!(header.stream_id, 0);
+        assert_eq!(header.length, 4);
+
+        let increment = parse_window_update(&frame[9..]).unwrap();
+        assert_eq!(increment, 1000);
     }
 }
