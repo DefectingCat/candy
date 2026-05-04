@@ -442,7 +442,7 @@ async fn handle_h2_headers<S>(
     stream: &mut S,
     stream_id: u32,
     frame_body: &[u8],
-    flags: u8,
+    _flags: u8,
     connection: &mut Connection,
     hpack_decoder: &mut HpackDecoder,
     hpack_encoder: &mut HpackEncoder,

@@ -419,7 +419,7 @@ impl HpackEncoder {
     pub fn encode_headers(&mut self, headers: &[(String, String)]) -> Bytes {
         let mut buf = Vec::new();
         for (name, value) in headers {
-            self.encoder
+            let _ = self.encoder
                 .encode_header_into((name.as_bytes(), value.as_bytes()), &mut buf);
         }
         Bytes::from(buf)
