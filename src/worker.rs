@@ -5,7 +5,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{Duration, timeout};
 use tokio_rustls::TlsAcceptor;
 
-use crate::compress::{parse_accept_encoding, gzip_compress, should_compress, CompressionType};
+use crate::compress::{parse_accept_encoding, gzip_compress, deflate_compress, should_compress, CompressionType};
 use crate::config::{Config, LogFormat};
 use crate::http::{Method, ParseError, Parser, Request, Response};
 use crate::http2::{
@@ -739,14 +739,22 @@ async fn handle_request_with_sendfile(
                     if should_compress(mime_type) {
                         if let Some(accept_encoding) = find_header(&request.headers, b"Accept-Encoding") {
                             let compression = parse_accept_encoding(&accept_encoding);
-                            if compression == CompressionType::Gzip {
-                                if let Ok(compressed) = gzip_compress(&content) {
-                                    (compressed, Some("gzip"))
-                                } else {
-                                    (content, None)
+                            match compression {
+                                CompressionType::Gzip => {
+                                    if let Ok(compressed) = gzip_compress(&content) {
+                                        (compressed, Some("gzip"))
+                                    } else {
+                                        (content, None)
+                                    }
                                 }
-                            } else {
-                                (content, None)
+                                CompressionType::Deflate => {
+                                    if let Ok(compressed) = deflate_compress(&content) {
+                                        (compressed, Some("deflate"))
+                                    } else {
+                                        (content, None)
+                                    }
+                                }
+                                CompressionType::None => (content, None),
                             }
                         } else {
                             (content, None)
@@ -888,14 +896,22 @@ fn handle_request(request: &Request, root: &std::path::Path) -> Response {
                         if should_compress(mime_type) {
                             if let Some(accept_encoding) = find_header(&request.headers, b"Accept-Encoding") {
                                 let compression = parse_accept_encoding(&accept_encoding);
-                                if compression == CompressionType::Gzip {
-                                    if let Ok(compressed) = gzip_compress(&content) {
-                                        (compressed, Some("gzip"))
-                                    } else {
-                                        (content, None)
+                                match compression {
+                                    CompressionType::Gzip => {
+                                        if let Ok(compressed) = gzip_compress(&content) {
+                                            (compressed, Some("gzip"))
+                                        } else {
+                                            (content, None)
+                                        }
                                     }
-                                } else {
-                                    (content, None)
+                                    CompressionType::Deflate => {
+                                        if let Ok(compressed) = deflate_compress(&content) {
+                                            (compressed, Some("deflate"))
+                                        } else {
+                                            (content, None)
+                                        }
+                                    }
+                                    CompressionType::None => (content, None),
                                 }
                             } else {
                                 (content, None)

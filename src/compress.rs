@@ -82,6 +82,14 @@ pub fn gzip_compress(data: &[u8]) -> Result<Vec<u8>, std::io::Error> {
     encoder.finish()
 }
 
+/// 使用 deflate 压缩数据
+pub fn deflate_compress(data: &[u8]) -> Result<Vec<u8>, std::io::Error> {
+    use flate2::write::DeflateEncoder;
+    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::fast());
+    encoder.write_all(data)?;
+    encoder.finish()
+}
+
 /// 检查 MIME 类型是否适合压缩
 /// 文本类型适合压缩，已压缩的二进制类型不适合
 pub fn should_compress(mime_type: &str) -> bool {
@@ -190,6 +198,27 @@ mod tests {
 
         // 验证 gzip 头部
         assert_eq!(&compressed[0..2], &[0x1f, 0x8b]); // gzip magic number
+    }
+
+    #[test]
+    fn test_deflate_compress() {
+        let data = b"Hello, World! This is a test string for compression. Hello, World! This is a test string for compression.";
+        let compressed = deflate_compress(data).unwrap();
+
+        // deflate 压缩后应该比原始数据小（对于这种重复性文本）
+        assert!(compressed.len() < data.len());
+
+        // 验证压缩数据非空
+        assert!(!compressed.is_empty());
+    }
+
+    #[test]
+    fn test_deflate_compress_short() {
+        let data = b"Hello";
+        let compressed = deflate_compress(data).unwrap();
+
+        // 验证压缩数据非空
+        assert!(!compressed.is_empty());
     }
 
     #[test]
