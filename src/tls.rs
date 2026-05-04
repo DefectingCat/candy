@@ -30,23 +30,6 @@ pub enum TlsError {
 pub const ALPN_H2: &[u8] = b"h2";
 pub const ALPN_HTTP_1_1: &[u8] = b"http/1.1";
 
-/// 加载 TLS 服务器配置
-pub fn load_tls_config(config: &TlsConfig) -> Result<Arc<ServerConfig>, TlsError> {
-    // 加载证书链
-    let certs = load_certs(&config.cert)?;
-
-    // 加载私钥
-    let key = load_private_key(&config.key)?;
-
-    // 构建 ServerConfig，配置 ALPN
-    let server_config = ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certs, key)
-        .map_err(|e| TlsError::CertificateParse(e.to_string()))?;
-
-    Ok(Arc::new(server_config))
-}
-
 /// 加载 TLS 服务器配置，支持 ALPN 协商
 pub fn load_tls_config_with_alpn(config: &TlsConfig) -> Result<Arc<ServerConfig>, TlsError> {
     let mut server_config = ServerConfig::builder()
@@ -91,20 +74,6 @@ fn load_private_key(path: &std::path::Path) -> Result<PrivateKeyDer<'static>, Tl
     Err(TlsError::NoPrivateKey)
 }
 
-/// 从 ALPN 协商结果判断协议版本
-pub fn negotiate_protocol(protocols: &[Vec<u8>]) -> &'static str {
-    for proto in protocols {
-        if proto == ALPN_H2 {
-            return "h2";
-        }
-        if proto == ALPN_HTTP_1_1 {
-            return "http/1.1";
-        }
-    }
-    // 默认 HTTP/1.1
-    "http/1.1"
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,13 +97,13 @@ mod tests {
     }
 
     #[test]
-    fn test_load_tls_config_missing_cert() {
+    fn test_load_tls_config_with_alpn_missing_cert() {
         let config = TlsConfig {
             enabled: true,
             cert: std::path::PathBuf::from("/nonexistent/cert.pem"),
             key: std::path::PathBuf::from("/nonexistent/key.pem"),
         };
-        let result = load_tls_config(&config);
+        let result = load_tls_config_with_alpn(&config);
         assert!(result.is_err());
     }
 
@@ -161,65 +130,6 @@ mod tests {
     }
 
     #[test]
-    fn test_load_tls_config_valid() {
-        let cert_path = std::path::PathBuf::from("test_data/test_cert.pem");
-        let key_path = std::path::PathBuf::from("test_data/test_key.pem");
-
-        if cert_path.exists() && key_path.exists() {
-            let config = TlsConfig {
-                enabled: true,
-                cert: cert_path,
-                key: key_path,
-            };
-            let result = load_tls_config(&config);
-            assert!(result.is_ok());
-        }
-    }
-
-    #[test]
-    fn test_tls_error_display() {
-        let err = TlsError::NoCertificate;
-        assert_eq!(err.to_string(), "No valid certificate found");
-
-        let err = TlsError::NoPrivateKey;
-        assert_eq!(err.to_string(), "No valid private key found");
-    }
-
-    #[test]
-    fn test_alpn_constants() {
-        assert_eq!(ALPN_H2, b"h2");
-        assert_eq!(ALPN_HTTP_1_1, b"http/1.1");
-    }
-
-    #[test]
-    fn test_negotiate_protocol_h2() {
-        let protocols = vec![ALPN_H2.to_vec(), ALPN_HTTP_1_1.to_vec()];
-        let result = negotiate_protocol(&protocols);
-        assert_eq!(result, "h2");
-    }
-
-    #[test]
-    fn test_negotiate_protocol_http11() {
-        let protocols = vec![ALPN_HTTP_1_1.to_vec()];
-        let result = negotiate_protocol(&protocols);
-        assert_eq!(result, "http/1.1");
-    }
-
-    #[test]
-    fn test_negotiate_protocol_empty() {
-        let protocols: Vec<Vec<u8>> = vec![];
-        let result = negotiate_protocol(&protocols);
-        assert_eq!(result, "http/1.1");
-    }
-
-    #[test]
-    fn test_negotiate_protocol_unknown() {
-        let protocols = vec![b"unknown".to_vec()];
-        let result = negotiate_protocol(&protocols);
-        assert_eq!(result, "http/1.1");
-    }
-
-    #[test]
     fn test_load_tls_config_with_alpn_valid() {
         let cert_path = std::path::PathBuf::from("test_data/test_cert.pem");
         let key_path = std::path::PathBuf::from("test_data/test_key.pem");
@@ -237,5 +147,20 @@ mod tests {
             assert!(!server_config.alpn_protocols.is_empty());
             assert_eq!(server_config.alpn_protocols.len(), 2);
         }
+    }
+
+    #[test]
+    fn test_tls_error_display() {
+        let err = TlsError::NoCertificate;
+        assert_eq!(err.to_string(), "No valid certificate found");
+
+        let err = TlsError::NoPrivateKey;
+        assert_eq!(err.to_string(), "No valid private key found");
+    }
+
+    #[test]
+    fn test_alpn_constants() {
+        assert_eq!(ALPN_H2, b"h2");
+        assert_eq!(ALPN_HTTP_1_1, b"http/1.1");
     }
 }
