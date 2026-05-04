@@ -92,6 +92,30 @@ impl Response {
             .header("Content-Range", content_range)
             .body(b"Range Not Satisfiable".to_vec())
     }
+
+    /// 获取状态码
+    pub fn status_code(&self) -> u16 {
+        self.status
+    }
+
+    /// 获取 Content-Type
+    pub fn content_type(&self) -> &str {
+        self.headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("Content-Type"))
+            .map(|(_, value)| value.as_str())
+            .unwrap_or("application/octet-stream")
+    }
+
+    /// 获取 body 长度
+    pub fn body_len(&self) -> usize {
+        self.body.as_ref().map(|b| b.len()).unwrap_or(0)
+    }
+
+    /// 消费 self 返回 body
+    pub fn into_body(self) -> Vec<u8> {
+        self.body.unwrap_or_default()
+    }
 }
 
 fn status_text(status: u16) -> &'static str {

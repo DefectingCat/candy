@@ -1,4 +1,4 @@
-use bytes::BytesMut;
+use bytes::{Buf, BytesMut};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{Duration, timeout};
 use tokio_rustls::TlsAcceptor;
@@ -6,6 +6,11 @@ use tokio_rustls::TlsAcceptor;
 use crate::compress::{parse_accept_encoding, gzip_compress, should_compress, CompressionType};
 use crate::config::Config;
 use crate::http::{Method, ParseError, Parser, Request, Response};
+use crate::http2::{
+    build_data_frame, build_goaway, build_headers_frame, build_initial_settings,
+    build_rst_stream, build_settings_ack, parse_frame_header, parse_settings, Connection,
+    FrameType, HpackDecoder, HpackEncoder, H2ErrorCode, H2Error, CONNECTION_PREFACE,
+};
 use crate::router::{ResolveResult, get_mime_type, resolve_path};
 use crate::socket::create_reuseport_listener;
 use crate::tls::load_tls_config_with_alpn;
@@ -145,9 +150,12 @@ async fn handle_https_connection(
 
         println!("TLS connection from {} with protocol: {}", addr, protocol);
 
-        // 目前只支持 HTTP/1.1 over TLS
-        // TODO: HTTP/2 支持
-        handle_connection_tls(tls_stream, addr, root, keep_alive_timeout).await
+        // 根据协议选择处理器
+        if protocol == "h2" {
+            handle_http2_connection_tls(tls_stream, addr, root, keep_alive_timeout).await
+        } else {
+            handle_connection_tls(tls_stream, addr, root, keep_alive_timeout).await
+        }
     } else {
         // 无 TLS，直接处理 HTTP
         handle_connection(stream, addr, root, keep_alive_timeout).await
@@ -253,6 +261,251 @@ where
             Err(e) => return Err(e),
         }
     }
+}
+
+/// 处理 HTTP/2 连接（TLS）
+async fn handle_http2_connection_tls<S>(
+    mut stream: S,
+    _addr: std::net::SocketAddr,
+    root: &std::path::Path,
+    keep_alive_timeout: u64,
+) -> std::io::Result<()>
+where
+    S: AsyncReadExt + AsyncWriteExt + Unpin,
+{
+    let mut buffer = BytesMut::with_capacity(65536);
+    let mut connection = Connection::new();
+    let mut hpack_decoder = HpackDecoder::new(4096);
+    let mut hpack_encoder = HpackEncoder::new(4096);
+
+    // 读取连接前奏（24 字节）
+    let preface_read = timeout(
+        Duration::from_secs(keep_alive_timeout),
+        read_exact(&mut stream, &mut buffer, 24),
+    )
+    .await;
+
+    match preface_read {
+        Ok(Ok(())) => {}
+        _ => return Ok(()),
+    }
+
+    // 验证连接前奏
+    if &buffer[..24] != CONNECTION_PREFACE {
+        eprintln!("Invalid HTTP/2 connection preface");
+        return Ok(());
+    }
+    buffer.advance(24);
+
+    // 发送初始 SETTINGS 帧
+    let settings_frame = build_initial_settings();
+    stream.write_all(&settings_frame).await?;
+
+    // 主循环：处理帧
+    loop {
+        // 读取帧头（9 字节）
+        let frame_read = timeout(
+            Duration::from_secs(keep_alive_timeout),
+            read_exact(&mut stream, &mut buffer, 9),
+        )
+        .await;
+
+        match frame_read {
+            Ok(Ok(())) => {}
+            Ok(Err(_)) | Err(_) => return Ok(()),
+        }
+
+        // 解析帧头
+        let header = match parse_frame_header(&buffer[..9]) {
+            Ok(h) => h,
+            Err(_) => {
+                let goaway = build_goaway(0, H2ErrorCode::ProtocolError as u32);
+                let _ = stream.write_all(&goaway).await;
+                return Ok(());
+            }
+        };
+        buffer.advance(9);
+
+        // 读取帧体
+        if header.length > 0 {
+            let body_read = timeout(
+                Duration::from_secs(keep_alive_timeout),
+                read_exact(&mut stream, &mut buffer, header.length as usize),
+            )
+            .await;
+
+            match body_read {
+                Ok(Ok(())) => {}
+                Ok(Err(_)) | Err(_) => return Ok(()),
+            }
+        }
+
+        // 处理帧
+        let frame_body = buffer.split_to(header.length as usize);
+        match header.frame_type {
+            FrameType::Settings => {
+                if header.flags & 0x01 != 0 {
+                    // SETTINGS ACK，忽略
+                } else {
+                    // 解析并存储客户端设置
+                    if let Ok(settings) = parse_settings(&frame_body) {
+                        connection.update_peer_settings(settings);
+                    }
+                    // 发送 SETTINGS ACK
+                    let ack = build_settings_ack();
+                    stream.write_all(&ack).await?;
+                }
+            }
+            FrameType::Headers => {
+                // 处理 HEADERS 帧
+                if let Err(e) = handle_h2_headers(
+                    &mut stream,
+                    header.stream_id,
+                    &frame_body,
+                    header.flags,
+                    &mut connection,
+                    &mut hpack_decoder,
+                    &mut hpack_encoder,
+                    root,
+                )
+                .await
+                {
+                    eprintln!("HTTP/2 headers error: {:?}", e);
+                    let rst = build_rst_stream(header.stream_id, H2ErrorCode::InternalError as u32);
+                    let _ = stream.write_all(&rst).await;
+                }
+            }
+            FrameType::Data => {
+                // DATA 帧暂时忽略（我们不处理请求体）
+            }
+            FrameType::Ping => {
+                // PING 帧：回送相同数据
+                let mut ping_response = vec![0x00, 0x00, 0x08, 0x06, 0x01, 0x00, 0x00, 0x00, 0x00];
+                ping_response.extend_from_slice(&frame_body);
+                stream.write_all(&ping_response).await?;
+            }
+            FrameType::WindowUpdate => {
+                // WINDOW_UPDATE：简化处理，忽略
+            }
+            FrameType::GoAway => {
+                // GOAWAY：关闭连接
+                return Ok(());
+            }
+            FrameType::RstStream => {
+                // RST_STREAM：关闭流
+                connection.close_stream(header.stream_id);
+            }
+            _ => {
+                // 忽略其他帧类型
+            }
+        }
+    }
+}
+
+/// 处理 HTTP/2 HEADERS 帧
+async fn handle_h2_headers<S>(
+    stream: &mut S,
+    stream_id: u32,
+    frame_body: &[u8],
+    flags: u8,
+    connection: &mut Connection,
+    hpack_decoder: &mut HpackDecoder,
+    hpack_encoder: &mut HpackEncoder,
+    root: &std::path::Path,
+) -> Result<(), H2Error>
+where
+    S: AsyncWriteExt + Unpin,
+{
+    // 接受客户端流
+    let _stream = connection
+        .accept_client_stream(stream_id)
+        .ok_or(H2Error::InvalidStreamId)?;
+
+    // 解码 HPACK 头部
+    let headers = hpack_decoder.decode_headers(frame_body)?;
+
+    // 提取伪头部
+    let method = headers
+        .get(":method")
+        .cloned()
+        .unwrap_or_else(|| "GET".to_string());
+    let path = headers
+        .get(":path")
+        .cloned()
+        .unwrap_or_else(|| "/".to_string());
+
+    // 构建 HTTP/1.1 风格的请求用于复用现有处理逻辑
+    let request = Request {
+        method: if method == "GET" {
+            Method::GET
+        } else if method == "HEAD" {
+            Method::HEAD
+        } else {
+            Method::POST
+        },
+        path: bytes::Bytes::from(path),
+        version: crate::http::HttpVersion::Http11,
+        headers: headers
+            .iter()
+            .filter(|(k, _)| !k.starts_with(':'))
+            .map(|(k, v)| (bytes::Bytes::from(k.clone()), bytes::Bytes::from(v.clone())))
+            .collect(),
+        body: None,
+    };
+
+    // 处理请求
+    let response = handle_request(&request, root);
+
+    // 构建响应头
+    let status = response.status_code();
+    let response_headers: Vec<(String, String)> = vec![
+        (":status".to_string(), status.to_string()),
+        ("content-type".to_string(), response.content_type().to_string()),
+        ("content-length".to_string(), response.body_len().to_string()),
+    ];
+
+    // 编码响应头
+    let encoded_headers = hpack_encoder.encode_headers(&response_headers);
+
+    // 发送 HEADERS 帧
+    let body = response.into_body();
+    let end_stream = body.is_empty();
+    let headers_frame = build_headers_frame(stream_id, encoded_headers, end_stream);
+    stream.write_all(&headers_frame).await.map_err(|_| H2Error::Incomplete)?;
+
+    // 发送 DATA 帧（如果有 body）
+    if !body.is_empty() {
+        let data_frame = build_data_frame(stream_id, &body, true);
+        stream.write_all(&data_frame).await.map_err(|_| H2Error::Incomplete)?;
+    }
+
+    // 关闭流
+    connection.close_stream(stream_id);
+
+    Ok(())
+}
+
+/// 精确读取指定字节数
+async fn read_exact<S>(stream: &mut S, buffer: &mut BytesMut, n: usize) -> std::io::Result<()>
+where
+    S: AsyncReadExt + Unpin,
+{
+    while buffer.len() < n {
+        let mut read_buf = [0u8; 8192];
+        let to_read = std::cmp::min(read_buf.len(), n - buffer.len());
+        let bytes_read = stream.read(&mut read_buf[..to_read]).await?;
+
+        if bytes_read == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "unexpected EOF",
+            ));
+        }
+
+        buffer.extend_from_slice(&read_buf[..bytes_read]);
+    }
+
+    Ok(())
 }
 
 /// 处理 HTTP 连接，重定向到 HTTPS

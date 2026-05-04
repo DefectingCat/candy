@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use std::collections::HashMap;
 
 /// HTTP/2 帧类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -429,6 +430,185 @@ impl Default for Connection {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// ========== HPACK 编解码 ==========
+
+/// HPACK 编码器，用于压缩响应头
+pub struct HpackEncoder {
+    encoder: hpack::Encoder<'static>,
+}
+
+impl HpackEncoder {
+    pub fn new(_max_table_size: u32) -> Self {
+        HpackEncoder {
+            encoder: hpack::Encoder::new(),
+        }
+    }
+
+    /// 编码响应头
+    pub fn encode_headers(&mut self, headers: &[(String, String)]) -> Bytes {
+        let mut buf = Vec::new();
+        for (name, value) in headers {
+            self.encoder
+                .encode_header_into((name.as_bytes(), value.as_bytes()), &mut buf);
+        }
+        Bytes::from(buf)
+    }
+}
+
+impl Default for HpackEncoder {
+    fn default() -> Self {
+        Self::new(4096)
+    }
+}
+
+/// HPACK 解码器，用于解压请求头
+pub struct HpackDecoder {
+    decoder: hpack::Decoder<'static>,
+}
+
+impl HpackDecoder {
+    pub fn new(_max_table_size: u32) -> Self {
+        HpackDecoder {
+            decoder: hpack::Decoder::new(),
+        }
+    }
+
+    /// 解码请求头
+    pub fn decode_headers(&mut self, data: &[u8]) -> Result<HashMap<String, String>, H2Error> {
+        let result = self.decoder.decode(data);
+
+        match result {
+            Ok(header_list) => {
+                let mut headers = HashMap::new();
+                for (name, value) in header_list {
+                    let name_str = String::from_utf8_lossy(&name).to_string();
+                    let value_str = String::from_utf8_lossy(&value).to_string();
+                    headers.insert(name_str, value_str);
+                }
+                Ok(headers)
+            }
+            Err(_) => Err(H2Error::InvalidSettings),
+        }
+    }
+}
+
+impl Default for HpackDecoder {
+    fn default() -> Self {
+        Self::new(4096)
+    }
+}
+
+// ========== HTTP/2 响应构建 ==========
+
+/// 构建 HTTP/2 HEADERS 帧
+pub fn build_headers_frame(stream_id: u32, headers: Bytes, end_stream: bool) -> Bytes {
+    let length = headers.len() as u32;
+    let flags = if end_stream { 0x05 } else { 0x04 }; // END_HEADERS | (END_STREAM if true)
+
+    let mut buf = Vec::with_capacity(9 + headers.len());
+
+    // 帧头：长度（3字节），类型 HEADERS(0x01)，标志，流ID
+    buf.push((length >> 16) as u8);
+    buf.push((length >> 8) as u8);
+    buf.push(length as u8);
+    buf.push(0x01); // HEADERS
+    buf.push(flags);
+    buf.push((stream_id >> 24) as u8 & 0x7F); // 最高位保留
+    buf.push((stream_id >> 16) as u8);
+    buf.push((stream_id >> 8) as u8);
+    buf.push(stream_id as u8);
+
+    // 帧体
+    buf.extend_from_slice(&headers);
+
+    Bytes::from(buf)
+}
+
+/// 构建 HTTP/2 DATA 帧
+pub fn build_data_frame(stream_id: u32, data: &[u8], end_stream: bool) -> Bytes {
+    let length = data.len() as u32;
+    let flags = if end_stream { 0x01 } else { 0x00 }; // END_STREAM
+
+    let mut buf = Vec::with_capacity(9 + data.len());
+
+    // 帧头
+    buf.push((length >> 16) as u8);
+    buf.push((length >> 8) as u8);
+    buf.push(length as u8);
+    buf.push(0x00); // DATA
+    buf.push(flags);
+    buf.push((stream_id >> 24) as u8 & 0x7F);
+    buf.push((stream_id >> 16) as u8);
+    buf.push((stream_id >> 8) as u8);
+    buf.push(stream_id as u8);
+
+    // 帧体
+    buf.extend_from_slice(data);
+
+    Bytes::from(buf)
+}
+
+/// 构建 HTTP/2 RST_STREAM 帧
+pub fn build_rst_stream(stream_id: u32, error_code: u32) -> Bytes {
+    let mut buf = Vec::with_capacity(9 + 4);
+
+    // 帧头：长度 4，类型 RST_STREAM(0x03)，标志 0
+    buf.extend_from_slice(&[0x00, 0x00, 0x04, 0x03, 0x00]);
+    buf.push((stream_id >> 24) as u8 & 0x7F);
+    buf.push((stream_id >> 16) as u8);
+    buf.push((stream_id >> 8) as u8);
+    buf.push(stream_id as u8);
+
+    // 错误码（4字节大端）
+    buf.push((error_code >> 24) as u8);
+    buf.push((error_code >> 16) as u8);
+    buf.push((error_code >> 8) as u8);
+    buf.push(error_code as u8);
+
+    Bytes::from(buf)
+}
+
+/// 构建 HTTP/2 GOAWAY 帧
+pub fn build_goaway(last_stream_id: u32, error_code: u32) -> Bytes {
+    let mut buf = Vec::with_capacity(9 + 8);
+
+    // 帧头：长度 8，类型 GOAWAY(0x07)，标志 0，流ID 0
+    buf.extend_from_slice(&[0x00, 0x00, 0x08, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00]);
+
+    // 最后处理的流ID（4字节）
+    buf.push((last_stream_id >> 24) as u8 & 0x7F);
+    buf.push((last_stream_id >> 16) as u8);
+    buf.push((last_stream_id >> 8) as u8);
+    buf.push(last_stream_id as u8);
+
+    // 错误码（4字节）
+    buf.push((error_code >> 24) as u8);
+    buf.push((error_code >> 16) as u8);
+    buf.push((error_code >> 8) as u8);
+    buf.push(error_code as u8);
+
+    Bytes::from(buf)
+}
+
+/// HTTP/2 错误码
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum H2ErrorCode {
+    NoError = 0,
+    ProtocolError = 1,
+    InternalError = 2,
+    FlowControlError = 3,
+    SettingsTimeout = 4,
+    StreamClosed = 5,
+    FrameSizeError = 6,
+    RefusedStream = 7,
+    Cancel = 8,
+    CompressionError = 9,
+    ConnectError = 10,
+    EnhanceYourCalm = 11,
+    InadequateSecurity = 12,
+    Http11Required = 13,
 }
 
 #[cfg(test)]

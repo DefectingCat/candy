@@ -11,6 +11,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "signa
 http = "1"
 bytes = "1"
 
+# HTTP/2 HPACK
+hpack = "0.3"
+
 # TLS
 rustls = "0.23"
 rustls-pemfile = "2"
