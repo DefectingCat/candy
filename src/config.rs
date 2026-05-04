@@ -13,8 +13,10 @@ pub struct Config {
 /// 服务器配置
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
-    /// 监听地址
-    pub listen: SocketAddr,
+    /// HTTP 监听地址（可选，用于重定向）
+    pub http_listen: Option<SocketAddr>,
+    /// HTTPS 监听地址
+    pub https_listen: SocketAddr,
     /// Worker 进程数
     pub workers: usize,
     /// 静态文件根目录
@@ -107,10 +109,19 @@ impl Config {
     }
 
     fn parse_server_config(raw: &RawServerConfig) -> Result<ServerConfig, ConfigError> {
-        let listen: SocketAddr = raw
+        // 解析 HTTPS 地址（主监听地址）
+        let https_listen: SocketAddr = raw
             .listen
             .parse()
             .map_err(|_| ConfigError::InvalidAddress(raw.listen.clone()))?;
+
+        // 解析 HTTP 地址（可选，用于重定向）
+        let http_listen = raw
+            .http_listen
+            .as_ref()
+            .map(|s| s.parse::<SocketAddr>())
+            .transpose()
+            .map_err(|_| ConfigError::InvalidAddress(raw.http_listen.clone().unwrap()))?;
 
         let root = PathBuf::from(&raw.root);
         if !root.exists() {
@@ -128,7 +139,8 @@ impl Config {
         }
 
         Ok(ServerConfig {
-            listen,
+            http_listen,
+            https_listen,
             workers,
             root,
         })
@@ -206,6 +218,7 @@ struct RawConfig {
 #[derive(Debug, serde::Deserialize)]
 struct RawServerConfig {
     listen: String,
+    http_listen: Option<String>,
     workers: Option<usize>,
     root: String,
 }
@@ -251,7 +264,8 @@ access = true
         );
 
         let config = Config::from_str(&toml).unwrap();
-        assert_eq!(config.server.listen.port(), 8080);
+        assert_eq!(config.server.https_listen.port(), 8080);
+        assert!(config.server.http_listen.is_none());
         assert!(config.tls.is_none());
         assert!(config.log.access);
     }

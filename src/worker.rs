@@ -1,12 +1,14 @@
 use bytes::BytesMut;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{Duration, timeout};
+use tokio_rustls::TlsAcceptor;
 
 use crate::compress::{parse_accept_encoding, gzip_compress, should_compress, CompressionType};
 use crate::config::Config;
 use crate::http::{Method, ParseError, Parser, Request, Response};
 use crate::router::{ResolveResult, get_mime_type, resolve_path};
 use crate::socket::create_reuseport_listener;
+use crate::tls::load_tls_config_with_alpn;
 
 /// 默认 keep-alive 超时（秒）
 const KEEP_ALIVE_TIMEOUT: u64 = 60;
@@ -16,7 +18,7 @@ pub fn run(config: &Config) -> std::io::Result<()> {
     println!(
         "Worker {} starting on {}",
         std::process::id(),
-        config.server.listen
+        config.server.https_listen
     );
 
     // 创建 tokio runtime
@@ -27,35 +29,281 @@ pub fn run(config: &Config) -> std::io::Result<()> {
     let root = config.server.root.clone();
     let keep_alive_timeout = config.http.keep_alive_timeout;
 
+    // 加载 TLS 配置（如果启用）
+    let tls_acceptor = if let Some(tls_config) = &config.tls {
+        if tls_config.enabled {
+            match load_tls_config_with_alpn(tls_config) {
+                Ok(server_config) => Some(TlsAcceptor::from(server_config)),
+                Err(e) => {
+                    eprintln!("Failed to load TLS config: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     runtime.block_on(async {
-        // 创建 SO_REUSEPORT listener
-        let listener = create_reuseport_listener(config.server.listen)?;
+        // 创建 HTTPS listener
+        let https_listener = create_reuseport_listener(config.server.https_listen)?;
 
         println!(
-            "Worker {} listening on {}",
+            "Worker {} listening on HTTPS {}",
             std::process::id(),
-            config.server.listen
+            config.server.https_listen
         );
+
+        // 如果配置了 HTTP 端口，创建 HTTP listener 用于重定向
+        let http_listener = if let Some(http_addr) = config.server.http_listen {
+            let listener = create_reuseport_listener(http_addr)?;
+            println!(
+                "Worker {} listening on HTTP {} (redirect to HTTPS)",
+                std::process::id(),
+                http_addr
+            );
+            Some(listener)
+        } else {
+            None
+        };
 
         // 主循环
         loop {
-            match listener.accept().await {
-                Ok((stream, addr)) => {
-                    let root = root.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) =
-                            handle_connection(stream, addr, &root, keep_alive_timeout).await
-                        {
-                            eprintln!("Connection error from {}: {}", addr, e);
-                        }
-                    });
+            // 同时接受 HTTP 和 HTTPS 连接
+            let https_accept = https_listener.accept();
+            let http_accept = async {
+                match &http_listener {
+                    Some(listener) => listener.accept().await,
+                    None => std::future::pending().await,
                 }
-                Err(e) => {
-                    eprintln!("Accept error: {}", e);
+            };
+
+            tokio::select! {
+                // HTTPS 连接
+                result = https_accept => {
+                    match result {
+                        Ok((stream, addr)) => {
+                            let root = root.clone();
+                            let tls_acceptor = tls_acceptor.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = handle_https_connection(
+                                    stream, addr, &root, keep_alive_timeout, tls_acceptor
+                                ).await {
+                                    eprintln!("HTTPS connection error from {}: {}", addr, e);
+                                }
+                            });
+                        }
+                        Err(e) => eprintln!("HTTPS accept error: {}", e),
+                    }
+                }
+                // HTTP 连接（重定向到 HTTPS）
+                result = http_accept => {
+                    match result {
+                        Ok((stream, addr)) => {
+                            let https_addr = config.server.https_listen;
+                            tokio::spawn(async move {
+                                if let Err(e) = handle_http_redirect(stream, addr, https_addr).await {
+                                    eprintln!("HTTP redirect error from {}: {}", addr, e);
+                                }
+                            });
+                        }
+                        Err(e) => eprintln!("HTTP accept error: {}", e),
+                    }
                 }
             }
         }
     })
+}
+
+/// 处理 HTTPS 连接
+async fn handle_https_connection(
+    stream: tokio::net::TcpStream,
+    addr: std::net::SocketAddr,
+    root: &std::path::Path,
+    keep_alive_timeout: u64,
+    tls_acceptor: Option<TlsAcceptor>,
+) -> std::io::Result<()> {
+    // 如果启用了 TLS，进行 TLS 握手
+    if let Some(acceptor) = tls_acceptor {
+        let tls_stream = match acceptor.accept(stream).await {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("TLS handshake error from {}: {}", addr, e);
+                return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
+            }
+        };
+
+        // 检查 ALPN 协商结果
+        let protocol = tls_stream
+            .get_ref()
+            .1
+            .alpn_protocol()
+            .map(|p| std::str::from_utf8(p).unwrap_or("unknown"))
+            .unwrap_or("http/1.1");
+
+        println!("TLS connection from {} with protocol: {}", addr, protocol);
+
+        // 目前只支持 HTTP/1.1 over TLS
+        // TODO: HTTP/2 支持
+        handle_connection_tls(tls_stream, addr, root, keep_alive_timeout).await
+    } else {
+        // 无 TLS，直接处理 HTTP
+        handle_connection(stream, addr, root, keep_alive_timeout).await
+    }
+}
+
+/// 处理 TLS 连接（使用 TlsStream）
+async fn handle_connection_tls<S>(
+    mut stream: S,
+    _addr: std::net::SocketAddr,
+    root: &std::path::Path,
+    keep_alive_timeout: u64,
+) -> std::io::Result<()>
+where
+    S: AsyncReadExt + AsyncWriteExt + Unpin,
+{
+    let mut buffer = BytesMut::with_capacity(8192);
+    let mut parser = Parser::new();
+    let mut keep_alive = true;
+
+    while keep_alive {
+        // 设置超时读取
+        let read_result = timeout(
+            Duration::from_secs(keep_alive_timeout),
+            read_request_tls(&mut stream, &mut buffer, &mut parser),
+        )
+        .await;
+
+        match read_result {
+            Ok(Ok(request)) => {
+                // 检查是否保持连接
+                keep_alive = is_keep_alive(&request);
+
+                // 处理请求
+                let mut response = handle_request(&request, root);
+
+                // 添加 Connection 头
+                if keep_alive {
+                    response = response.header("Connection", "keep-alive");
+                } else {
+                    response = response.header("Connection", "close");
+                }
+
+                // 发送响应
+                let response_bytes = response.to_bytes();
+                stream.write_all(&response_bytes).await?;
+            }
+            Ok(Err(ParseError::Incomplete)) => {
+                // 需要更多数据，继续读取
+                continue;
+            }
+            Ok(Err(_)) => {
+                // 解析错误，返回 400
+                let response = Response::new(400)
+                    .header("Connection", "close")
+                    .body(b"Bad Request".to_vec());
+                let response_bytes = response.to_bytes();
+                stream.write_all(&response_bytes).await?;
+                break;
+            }
+            Err(_) => {
+                // 超时，关闭连接
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// TLS 连接读取请求
+async fn read_request_tls<S>(
+    stream: &mut S,
+    buffer: &mut BytesMut,
+    parser: &mut Parser,
+) -> Result<Request, ParseError>
+where
+    S: AsyncReadExt + Unpin,
+{
+    loop {
+        // 尝试解析已有数据
+        match parser.parse(buffer) {
+            Ok((consumed, request)) => {
+                // 移除已消费的数据
+                let _ = buffer.split_to(consumed);
+                return Ok(request);
+            }
+            Err(ParseError::Incomplete) => {
+                // 需要更多数据
+                let mut read_buf = [0u8; 4096];
+                let n = stream
+                    .read(&mut read_buf)
+                    .await
+                    .map_err(|_| ParseError::Incomplete)?;
+
+                if n == 0 {
+                    // 连接关闭
+                    return Err(ParseError::Incomplete);
+                }
+
+                buffer.extend_from_slice(&read_buf[..n]);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+/// 处理 HTTP 连接，重定向到 HTTPS
+async fn handle_http_redirect(
+    mut stream: tokio::net::TcpStream,
+    _addr: std::net::SocketAddr,
+    https_addr: std::net::SocketAddr,
+) -> std::io::Result<()> {
+    let mut buffer = BytesMut::with_capacity(4096);
+    let mut parser = Parser::new();
+
+    // 读取请求
+    let request = loop {
+        match parser.parse(&buffer) {
+            Ok((_, req)) => break Some(req),
+            Err(ParseError::Incomplete) => {
+                let mut read_buf = [0u8; 4096];
+                let n = stream.read(&mut read_buf).await?;
+                if n == 0 {
+                    break None;
+                }
+                buffer.extend_from_slice(&read_buf[..n]);
+            }
+            Err(_) => break None,
+        }
+    };
+
+    if let Some(request) = request {
+        // 获取 Host 头
+        let host = find_header(&request.headers, b"Host")
+            .and_then(|h| String::from_utf8(h).ok())
+            .unwrap_or_else(|| https_addr.to_string());
+
+        // 构造 HTTPS URL
+        let path = String::from_utf8_lossy(&request.path);
+        let https_url = if https_addr.port() == 443 {
+            format!("https://{}{}", host, path)
+        } else {
+            format!("https://{}:{}{}", host, https_addr.port(), path)
+        };
+
+        // 发送 301 重定向
+        let response = Response::new(301)
+            .header("Location", https_url)
+            .header("Connection", "close")
+            .body(b"Moved Permanently".to_vec());
+
+        stream.write_all(&response.to_bytes()).await?;
+    }
+
+    Ok(())
 }
 
 async fn handle_connection(

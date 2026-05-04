@@ -24,9 +24,17 @@ fn main() {
     };
 
     println!("Candy server starting...");
-    println!("  Listen: {}", config.server.listen);
+    println!("  HTTPS: {}", config.server.https_listen);
+    if let Some(http_addr) = config.server.http_listen {
+        println!("  HTTP: {} (redirect to HTTPS)", http_addr);
+    }
     println!("  Workers: {}", config.server.workers);
     println!("  Root: {}", config.server.root.display());
+    if let Some(tls) = &config.tls {
+        println!("  TLS: enabled ({})", tls.cert.display());
+    } else {
+        println!("  TLS: disabled");
+    }
 
     // 创建并运行 Master
     let mut master = Master::new(config);

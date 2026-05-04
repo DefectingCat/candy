@@ -1,8 +1,10 @@
 # Candy 静态文件服务器配置
 
 [server]
-# 监听地址
-listen = "0.0.0.0:8080"
+# HTTPS 监听地址
+listen = "0.0.0.0:443"
+# HTTP 监听地址（可选，用于重定向到 HTTPS）
+# http_listen = "0.0.0.0:80"
 # Worker 进程数（默认为 CPU 核心数）
 workers = 4
 # 静态文件根目录
