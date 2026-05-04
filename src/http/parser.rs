@@ -66,9 +66,6 @@ pub enum ParseError {
 
     #[error("Invalid header")]
     InvalidHeader,
-
-    #[error("Request too large")]
-    TooLarge,
 }
 
 /// HTTP 请求解析器

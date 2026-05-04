@@ -54,9 +54,6 @@ pub enum H2Error {
     #[error("Incomplete frame")]
     Incomplete,
 
-    #[error("Invalid frame length")]
-    InvalidLength,
-
     #[error("Invalid stream ID")]
     InvalidStreamId,
 
