@@ -35,6 +35,7 @@ pub fn run(config: &Config) -> std::io::Result<()> {
     let root = config.server.root.clone();
     let keep_alive_timeout = config.http.keep_alive_timeout;
     let max_header_size = config.http.max_header_size;
+    let max_body_size = config.http.max_body_size;
 
     // 加载 TLS 配置（如果启用）
     let tls_acceptor = if let Some(tls_config) = &config.tls {
@@ -101,7 +102,7 @@ pub fn run(config: &Config) -> std::io::Result<()> {
                             tokio::spawn(async move {
                                 let start = Instant::now();
                                 let result = handle_https_connection(
-                                    stream, addr, &root, keep_alive_timeout, max_header_size, tls_acceptor.clone()
+                                    stream, addr, &root, keep_alive_timeout, max_header_size, max_body_size, tls_acceptor.clone()
                                 ).await;
                                 let duration = start.elapsed().as_millis() as u64;
 
@@ -131,7 +132,7 @@ pub fn run(config: &Config) -> std::io::Result<()> {
                             let https_addr = config.server.https_listen;
                             tokio::spawn(async move {
                                 let start = Instant::now();
-                                let result = handle_http_redirect(stream, addr, https_addr, max_header_size).await;
+                                let result = handle_http_redirect(stream, addr, https_addr, max_header_size, max_body_size).await;
                                 let duration = start.elapsed().as_millis() as u64;
 
                                 // 记录访问日志
@@ -165,6 +166,7 @@ async fn handle_https_connection(
     root: &std::path::Path,
     keep_alive_timeout: u64,
     max_header_size: usize,
+    max_body_size: usize,
     tls_acceptor: Option<TlsAcceptor>,
 ) -> std::io::Result<()> {
     // 如果启用了 TLS，进行 TLS 握手
@@ -191,11 +193,11 @@ async fn handle_https_connection(
         if protocol == "h2" {
             handle_http2_connection_tls(tls_stream, addr, root, keep_alive_timeout).await
         } else {
-            handle_connection_tls(tls_stream, addr, root, keep_alive_timeout, max_header_size).await
+            handle_connection_tls(tls_stream, addr, root, keep_alive_timeout, max_header_size, max_body_size).await
         }
     } else {
         // 无 TLS，直接处理 HTTP
-        handle_connection(stream, addr, root, keep_alive_timeout, max_header_size).await
+        handle_connection(stream, addr, root, keep_alive_timeout, max_header_size, max_body_size).await
     }
 }
 
@@ -206,6 +208,7 @@ async fn handle_connection_tls<S>(
     root: &std::path::Path,
     keep_alive_timeout: u64,
     max_header_size: usize,
+    max_body_size: usize,
 ) -> std::io::Result<()>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
@@ -218,7 +221,7 @@ where
         // 设置超时读取
         let read_result = timeout(
             Duration::from_secs(keep_alive_timeout),
-            read_request_tls(&mut stream, &mut buffer, &mut parser, max_header_size),
+            read_request_tls(&mut stream, &mut buffer, &mut parser, max_header_size, max_body_size),
         )
         .await;
 
@@ -270,13 +273,14 @@ async fn read_request_tls<S>(
     buffer: &mut BytesMut,
     parser: &mut Parser,
     max_header_size: usize,
+    max_body_size: usize,
 ) -> Result<Request, ParseError>
 where
     S: AsyncReadExt + Unpin,
 {
     loop {
         // 尝试解析已有数据
-        match parser.parse(buffer, max_header_size) {
+        match parser.parse(buffer, max_header_size, max_body_size) {
             Ok((consumed, request)) => {
                 // 移除已消费的数据
                 let _ = buffer.split_to(consumed);
@@ -553,13 +557,14 @@ async fn handle_http_redirect(
     _addr: std::net::SocketAddr,
     https_addr: std::net::SocketAddr,
     max_header_size: usize,
+    max_body_size: usize,
 ) -> std::io::Result<()> {
     let mut buffer = BytesMut::with_capacity(4096);
     let mut parser = Parser::new();
 
     // 读取请求
     let request = loop {
-        match parser.parse(&buffer, max_header_size) {
+        match parser.parse(&buffer, max_header_size, max_body_size) {
             Ok((_, req)) => break Some(req),
             Err(ParseError::Incomplete) => {
                 let mut read_buf = [0u8; 4096];
@@ -605,6 +610,7 @@ async fn handle_connection(
     root: &std::path::Path,
     keep_alive_timeout: u64,
     max_header_size: usize,
+    max_body_size: usize,
 ) -> std::io::Result<()> {
     let mut buffer = BytesMut::with_capacity(8192);
     let mut parser = Parser::new();
@@ -614,7 +620,7 @@ async fn handle_connection(
         // 设置超时读取
         let read_result = timeout(
             Duration::from_secs(keep_alive_timeout),
-            read_request(&mut stream, &mut buffer, &mut parser, max_header_size),
+            read_request(&mut stream, &mut buffer, &mut parser, max_header_size, max_body_size),
         )
         .await;
 
@@ -797,10 +803,11 @@ async fn read_request(
     buffer: &mut BytesMut,
     parser: &mut Parser,
     max_header_size: usize,
+    max_body_size: usize,
 ) -> Result<Request, ParseError> {
     loop {
         // 尝试解析已有数据
-        match parser.parse(buffer, max_header_size) {
+        match parser.parse(buffer, max_header_size, max_body_size) {
             Ok((consumed, request)) => {
                 // 移除已消费的数据
                 let _ = buffer.split_to(consumed);

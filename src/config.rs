@@ -39,6 +39,8 @@ pub struct TlsConfig {
 pub struct HttpConfig {
     /// 最大请求头大小
     pub max_header_size: usize,
+    /// 最大请求体大小
+    pub max_body_size: usize,
     /// Keep-Alive 超时（秒）
     pub keep_alive_timeout: u64,
 }
@@ -176,10 +178,12 @@ impl Config {
         match raw {
             Some(r) => HttpConfig {
                 max_header_size: r.max_header_size.unwrap_or(8192),
+                max_body_size: r.max_body_size.unwrap_or(10 * 1024 * 1024), // 默认 10MB
                 keep_alive_timeout: r.keep_alive_timeout.unwrap_or(60),
             },
             None => HttpConfig {
                 max_header_size: 8192,
+                max_body_size: 10 * 1024 * 1024, // 默认 10MB
                 keep_alive_timeout: 60,
             },
         }
@@ -233,6 +237,7 @@ struct RawTlsConfig {
 #[derive(Debug, serde::Deserialize)]
 struct RawHttpConfig {
     max_header_size: Option<usize>,
+    max_body_size: Option<usize>,
     keep_alive_timeout: Option<u64>,
 }
 
