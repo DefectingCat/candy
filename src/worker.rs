@@ -1,16 +1,18 @@
 use bytes::{Buf, BytesMut};
+use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{Duration, timeout};
 use tokio_rustls::TlsAcceptor;
 
 use crate::compress::{parse_accept_encoding, gzip_compress, should_compress, CompressionType};
-use crate::config::Config;
+use crate::config::{Config, LogFormat};
 use crate::http::{Method, ParseError, Parser, Request, Response};
 use crate::http2::{
     build_data_frame, build_goaway, build_headers_frame, build_initial_settings,
     build_rst_stream, build_settings_ack, parse_frame_header, parse_settings, Connection,
     FrameType, HpackDecoder, HpackEncoder, H2ErrorCode, H2Error, CONNECTION_PREFACE,
 };
+use crate::logging::{AccessLog, Logger};
 use crate::router::{ResolveResult, get_mime_type, resolve_path};
 use crate::socket::create_reuseport_listener;
 use crate::tls::load_tls_config_with_alpn;
@@ -74,6 +76,10 @@ pub fn run(config: &Config) -> std::io::Result<()> {
             None
         };
 
+        // 日志配置
+        let log_enabled = config.log.access;
+        let log_format = config.log.format;
+
         // 主循环
         loop {
             // 同时接受 HTTP 和 HTTPS 连接
@@ -93,9 +99,24 @@ pub fn run(config: &Config) -> std::io::Result<()> {
                             let root = root.clone();
                             let tls_acceptor = tls_acceptor.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_https_connection(
-                                    stream, addr, &root, keep_alive_timeout, tls_acceptor
-                                ).await {
+                                let start = Instant::now();
+                                let result = handle_https_connection(
+                                    stream, addr, &root, keep_alive_timeout, tls_acceptor.clone()
+                                ).await;
+                                let duration = start.elapsed().as_millis() as u64;
+
+                                // 记录访问日志
+                                if log_enabled {
+                                    log_request(
+                                        addr.to_string(),
+                                        "HTTPS",
+                                        duration,
+                                        result.is_ok(),
+                                        log_format,
+                                    );
+                                }
+
+                                if let Err(e) = result {
                                     eprintln!("HTTPS connection error from {}: {}", addr, e);
                                 }
                             });
@@ -109,7 +130,22 @@ pub fn run(config: &Config) -> std::io::Result<()> {
                         Ok((stream, addr)) => {
                             let https_addr = config.server.https_listen;
                             tokio::spawn(async move {
-                                if let Err(e) = handle_http_redirect(stream, addr, https_addr).await {
+                                let start = Instant::now();
+                                let result = handle_http_redirect(stream, addr, https_addr).await;
+                                let duration = start.elapsed().as_millis() as u64;
+
+                                // 记录访问日志
+                                if log_enabled {
+                                    log_request(
+                                        addr.to_string(),
+                                        "HTTP",
+                                        duration,
+                                        result.is_ok(),
+                                        log_format,
+                                    );
+                                }
+
+                                if let Err(e) = result {
                                     eprintln!("HTTP redirect error from {}: {}", addr, e);
                                 }
                             });
@@ -841,6 +877,31 @@ fn handle_range_request(
             // 无效的 Range 请求
             Response::range_not_satisfiable(&format!("bytes */{}", file_size))
         }
+    }
+}
+
+/// 记录访问日志
+fn log_request(
+    client_addr: String,
+    protocol: &str,
+    duration_ms: u64,
+    success: bool,
+    format: LogFormat,
+) {
+    let status = if success { 200 } else { 500 };
+    let log = AccessLog::new(
+        client_addr,
+        protocol.to_string(),
+        "/".to_string(),
+        "HTTP/1.1".to_string(),
+        status,
+        0,
+        duration_ms,
+    );
+
+    let mut logger = Logger::stdout(format);
+    if let Err(e) = logger.log_access(&log) {
+        eprintln!("Failed to write access log: {}", e);
     }
 }
 

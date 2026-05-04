@@ -1,12 +1,7 @@
 use chrono::{DateTime, Utc};
 use std::io::Write;
 
-/// 日志格式
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LogFormat {
-    Combined,
-    Json,
-}
+use crate::config::LogFormat;
 
 /// 访问日志记录
 #[derive(Debug)]
