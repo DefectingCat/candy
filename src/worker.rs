@@ -10,7 +10,7 @@ use crate::config::{Config, LogFormat};
 use crate::http::{Method, ParseError, Parser, Request, Response};
 use crate::http2::{
     build_data_frame, build_goaway, build_headers_frame, build_initial_settings,
-    build_rst_stream, build_settings_ack, build_window_update, parse_frame_header, parse_settings, parse_window_update, Connection,
+    build_rst_stream, build_settings_ack, parse_frame_header, parse_settings, parse_window_update, Connection,
     FrameType, HpackDecoder, HpackEncoder, H2ErrorCode, H2Error, CONNECTION_PREFACE,
 };
 use crate::logging::{AccessLog, Logger};
