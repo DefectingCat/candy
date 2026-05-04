@@ -33,22 +33,6 @@ impl FrameType {
             _ => FrameType::Unknown(value),
         }
     }
-
-    pub fn to_u8(&self) -> u8 {
-        match self {
-            FrameType::Data => 0x00,
-            FrameType::Headers => 0x01,
-            FrameType::Priority => 0x02,
-            FrameType::RstStream => 0x03,
-            FrameType::Settings => 0x04,
-            FrameType::PushPromise => 0x05,
-            FrameType::Ping => 0x06,
-            FrameType::GoAway => 0x07,
-            FrameType::WindowUpdate => 0x08,
-            FrameType::Continuation => 0x09,
-            FrameType::Unknown(v) => *v,
-        }
-    }
 }
 
 /// HTTP/2 帧头（9 字节）
@@ -105,18 +89,6 @@ impl SettingsParameter {
             0x05 => SettingsParameter::MaxFrameSize,
             0x06 => SettingsParameter::MaxHeaderListSize,
             _ => SettingsParameter::Unknown(value),
-        }
-    }
-
-    pub fn to_u16(&self) -> u16 {
-        match self {
-            SettingsParameter::HeaderTableSize => 0x01,
-            SettingsParameter::EnablePush => 0x02,
-            SettingsParameter::MaxConcurrentStreams => 0x03,
-            SettingsParameter::InitialWindowSize => 0x04,
-            SettingsParameter::MaxFrameSize => 0x05,
-            SettingsParameter::MaxHeaderListSize => 0x06,
-            SettingsParameter::Unknown(v) => *v,
         }
     }
 }
