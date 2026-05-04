@@ -132,18 +132,6 @@ impl Logger {
         }
     }
 
-    /// 创建文件日志器
-    pub fn file(format: LogFormat, path: &std::path::Path) -> std::io::Result<Self> {
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
-        Ok(Logger {
-            format,
-            output: Box::new(file),
-        })
-    }
-
     /// 记录访问日志
     pub fn log_access(&mut self, log: &AccessLog) -> std::io::Result<()> {
         let formatted = log.format(self.format);

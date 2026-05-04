@@ -50,17 +50,6 @@ pub async fn sendfile_async(
     sendfile(out_fd, file, offset, count)
 }
 
-/// 发送文件范围（Range 请求）
-pub async fn send_file_range(
-    stream: &tokio::net::TcpStream,
-    file: &File,
-    start: usize,
-    end: usize,
-) -> io::Result<usize> {
-    let count = end - start + 1;
-    sendfile_async(stream, file, start, count).await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
