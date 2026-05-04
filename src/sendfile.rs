@@ -50,15 +50,6 @@ pub async fn sendfile_async(
     sendfile(out_fd, file, offset, count)
 }
 
-/// 发送整个文件（非 Range 请求）
-pub async fn send_file_full(
-    stream: &tokio::net::TcpStream,
-    file: &File,
-    file_size: usize,
-) -> io::Result<usize> {
-    sendfile_async(stream, file, 0, file_size).await
-}
-
 /// 发送文件范围（Range 请求）
 pub async fn send_file_range(
     stream: &tokio::net::TcpStream,
