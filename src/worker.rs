@@ -19,9 +19,6 @@ use crate::sendfile::sendfile_async;
 use crate::socket::create_reuseport_listener;
 use crate::tls::load_tls_config_with_alpn;
 
-/// 默认 keep-alive 超时（秒）
-const KEEP_ALIVE_TIMEOUT: u64 = 60;
-
 /// Worker 进程主函数
 pub fn run(config: &Config) -> std::io::Result<()> {
     println!(
