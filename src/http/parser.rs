@@ -71,28 +71,12 @@ pub enum ParseError {
     TooLarge,
 }
 
-/// HTTP 请求解析器（状态机）
-pub struct Parser {
-    state: ParseState,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ParseState {
-    Start,
-    Method,
-    Path,
-    Version,
-    HeaderName,
-    HeaderValue,
-    HeadersEnd,
-    Complete,
-}
+/// HTTP 请求解析器
+pub struct Parser;
 
 impl Parser {
     pub fn new() -> Self {
-        Parser {
-            state: ParseState::Start,
-        }
+        Parser
     }
 
     /// 解析请求，返回 (consumed_bytes, result)
@@ -168,19 +152,6 @@ impl Default for Parser {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// 查找行结束 (\r\n)
-fn find_line_end(buffer: &[u8], pos: &mut usize) -> Result<usize, ParseError> {
-    while *pos < buffer.len() - 1 {
-        if buffer[*pos] == b'\r' && buffer[*pos + 1] == b'\n' {
-            let end = *pos;
-            *pos += 2;
-            return Ok(end);
-        }
-        *pos += 1;
-    }
-    Err(ParseError::Incomplete)
 }
 
 /// 查找第一个 \r\n
