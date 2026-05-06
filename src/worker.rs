@@ -7,7 +7,7 @@ use tokio_rustls::TlsAcceptor;
 
 use crate::compress::{parse_accept_encoding, gzip_compress, deflate_compress, should_compress, CompressionType};
 use crate::config::{Config, LogFormat};
-use crate::http::{Method, ParseError, Parser, Request, Response};
+use crate::http::{HttpVersion, Method, ParseError, Parser, Request, Response};
 use crate::http2::{
     build_data_frame, build_goaway, build_headers_frame, build_initial_settings,
     build_rst_stream, build_settings_ack, parse_frame_header, parse_settings, parse_window_update, Connection,
@@ -114,6 +114,7 @@ pub fn run(config: &Config) -> std::io::Result<()> {
                                         duration,
                                         result.is_ok(),
                                         log_format,
+                                        None,
                                     );
                                 }
 
@@ -143,6 +144,7 @@ pub fn run(config: &Config) -> std::io::Result<()> {
                                         duration,
                                         result.is_ok(),
                                         log_format,
+                                        None,
                                     );
                                 }
 
@@ -1079,17 +1081,46 @@ fn log_request(
     duration_ms: u64,
     success: bool,
     format: LogFormat,
+    request: Option<&Request>,
 ) {
     let status = if success { 200 } else { 500 };
+    let (method, path, version, referer, user_agent) = request
+        .map(|r| {
+            let method = String::from_utf8_lossy(match r.method {
+                Method::GET => b"GET",
+                Method::HEAD => b"HEAD",
+                Method::POST => b"POST",
+                Method::PUT => b"PUT",
+                Method::DELETE => b"DELETE",
+                Method::OPTIONS => b"OPTIONS",
+                Method::CONNECT => b"CONNECT",
+                Method::TRACE => b"TRACE",
+                Method::PATCH => b"PATCH",
+            }).to_string();
+            let path = String::from_utf8_lossy(&r.path).to_string();
+            let version = match r.version {
+                HttpVersion::Http10 => "HTTP/1.0",
+                HttpVersion::Http11 => "HTTP/1.1",
+            };
+            let referer = find_header(&r.headers, b"Referer")
+                .map(|v| String::from_utf8_lossy(&v).to_string());
+            let user_agent = find_header(&r.headers, b"User-Agent")
+                .map(|v| String::from_utf8_lossy(&v).to_string());
+            (method, path, version, referer, user_agent)
+        })
+        .unwrap_or_else(|| (protocol.to_string(), "/".to_string(), "HTTP/1.1", None, None));
+
     let log = AccessLog::new(
         client_addr,
-        protocol.to_string(),
-        "/".to_string(),
-        "HTTP/1.1".to_string(),
+        method,
+        path,
+        version.to_string(),
         status,
         0,
         duration_ms,
-    );
+    )
+    .with_referer(referer)
+    .with_user_agent(user_agent);
 
     let mut logger = Logger::stdout(format);
     if let Err(e) = logger.log_access(&log) {
