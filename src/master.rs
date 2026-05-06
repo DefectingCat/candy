@@ -1,4 +1,3 @@
-use std::process::Child;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -9,11 +8,11 @@ use nix::unistd::Pid;
 use crate::config::Config;
 
 /// Worker 进程信息
-#[allow(dead_code)]
+///
+/// 使用 fork() 创建子进程，父进程只持有 PID，
+/// 通过 signal::kill() 进行进程管理。
 pub struct Worker {
     pub pid: u32,
-    #[allow(dead_code)]
-    handle: Option<Child>,
 }
 
 /// Master 进程管理器
@@ -54,7 +53,6 @@ impl Master {
                 println!("Worker {} started with PID {}", id, child);
                 Ok(Worker {
                     pid: child.as_raw() as u32,
-                    handle: None, // fork 后父进程没有 Child handle
                 })
             }
             Ok(nix::unistd::ForkResult::Child) => {
