@@ -81,6 +81,9 @@ pub fn run(config: &Config) -> std::io::Result<()> {
         let log_enabled = config.log.access;
         let log_format = config.log.format;
 
+        // HTTP/2 配置
+        let http2_push = config.http.http2_push;
+
         // 主循环
         loop {
             // 同时接受 HTTP 和 HTTPS 连接
@@ -102,7 +105,7 @@ pub fn run(config: &Config) -> std::io::Result<()> {
                             tokio::spawn(async move {
                                 let start = Instant::now();
                                 let result = handle_https_connection(
-                                    stream, addr, &root, keep_alive_timeout, max_header_size, max_body_size, tls_acceptor.clone()
+                                    stream, addr, &root, keep_alive_timeout, max_header_size, max_body_size, tls_acceptor.clone(), http2_push
                                 ).await;
                                 let duration = start.elapsed().as_millis() as u64;
 
@@ -162,6 +165,7 @@ pub fn run(config: &Config) -> std::io::Result<()> {
 }
 
 /// 处理 HTTPS 连接
+#[allow(clippy::too_many_arguments)]
 async fn handle_https_connection(
     stream: tokio::net::TcpStream,
     addr: std::net::SocketAddr,
@@ -170,6 +174,7 @@ async fn handle_https_connection(
     max_header_size: usize,
     max_body_size: usize,
     tls_acceptor: Option<TlsAcceptor>,
+    http2_push: bool,
 ) -> std::io::Result<()> {
     // 如果启用了 TLS，进行 TLS 握手
     if let Some(acceptor) = tls_acceptor {
@@ -193,7 +198,7 @@ async fn handle_https_connection(
 
         // 根据协议选择处理器
         if protocol == "h2" {
-            handle_http2_connection_tls(tls_stream, addr, root, keep_alive_timeout).await
+            handle_http2_connection_tls(tls_stream, addr, root, keep_alive_timeout, http2_push).await
         } else {
             handle_connection_tls(tls_stream, addr, root, keep_alive_timeout, max_header_size, max_body_size).await
         }
@@ -314,6 +319,7 @@ async fn handle_http2_connection_tls<S>(
     _addr: std::net::SocketAddr,
     root: &std::path::Path,
     keep_alive_timeout: u64,
+    http2_push: bool,
 ) -> std::io::Result<()>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
@@ -408,6 +414,7 @@ where
                     hpack_decoder: &mut hpack_decoder,
                     hpack_encoder: &mut hpack_encoder,
                     root,
+                    http2_push,
                 };
                 if let Err(e) = handle_h2_headers(
                     &mut stream,
@@ -479,6 +486,7 @@ pub struct H2Context<'a> {
     pub hpack_decoder: &'a mut HpackDecoder,
     pub hpack_encoder: &'a mut HpackEncoder,
     pub root: &'a std::path::Path,
+    pub http2_push: bool,
 }
 
 /// 处理 HTTP/2 HEADERS 帧
@@ -554,12 +562,103 @@ where
     if !body.is_empty() {
         let data_frame = build_data_frame(stream_id, &body, true);
         stream.write_all(&data_frame).await.map_err(|_| H2Error::Incomplete)?;
+
+        // Server Push: 如果启用且是 HTML，推送关联的 CSS/JS 资源
+        if ctx.http2_push && response_headers.iter().any(|(k, v)| k == "content-type" && v.contains("text/html")) {
+            let push_resources = extract_push_resources(&body);
+            for push_path in push_resources.iter().take(5) {
+                // 创建推送流（偶数 ID）
+                let push_stream_id = ctx.connection.create_server_stream();
+
+                // 构建推送请求头
+                let push_headers: Vec<(String, String)> = vec![
+                    (":method".to_string(), "GET".to_string()),
+                    (":path".to_string(), push_path.clone()),
+                    (":scheme".to_string(), "https".to_string()),
+                    (":authority".to_string(), "localhost".to_string()),
+                ];
+                let encoded_push_headers = ctx.hpack_encoder.encode_headers(&push_headers);
+
+                // 发送 PUSH_PROMISE 帧
+                use crate::http2::build_push_promise;
+                let push_promise = build_push_promise(stream_id, push_stream_id, encoded_push_headers);
+                stream.write_all(&push_promise).await.map_err(|_| H2Error::Incomplete)?;
+
+                // 读取推送资源并发送
+                let push_file_path = ctx.root.join(push_path.trim_start_matches('/'));
+                if let Ok(push_content) = std::fs::read(&push_file_path) {
+                    let push_headers_response: Vec<(String, String)> = vec![
+                        (":status".to_string(), "200".to_string()),
+                        ("content-type".to_string(), get_mime_type(&push_file_path).to_string()),
+                        ("content-length".to_string(), push_content.len().to_string()),
+                    ];
+                    let encoded_response = ctx.hpack_encoder.encode_headers(&push_headers_response);
+                    let push_headers_frame = build_headers_frame(push_stream_id, encoded_response, push_content.is_empty());
+                    stream.write_all(&push_headers_frame).await.map_err(|_| H2Error::Incomplete)?;
+
+                    if !push_content.is_empty() {
+                        let push_data_frame = build_data_frame(push_stream_id, &push_content, true);
+                        stream.write_all(&push_data_frame).await.map_err(|_| H2Error::Incomplete)?;
+                    }
+                }
+
+                // 关闭推送流
+                ctx.connection.close_stream(push_stream_id);
+            }
+        }
     }
 
     // 关闭流
     ctx.connection.close_stream(stream_id);
 
     Ok(())
+}
+
+/// 从 HTML 内容中提取可推送的资源路径
+fn extract_push_resources(html: &[u8]) -> Vec<String> {
+    let html_str = String::from_utf8_lossy(html);
+    let mut resources = Vec::new();
+
+    // 提取 <link rel="stylesheet" href="...">
+    for line in html_str.lines() {
+        if (line.contains("rel=\"stylesheet\"") || line.contains("rel='stylesheet'"))
+            && let Some(href) = extract_attr_value(line, "href")
+            && href.starts_with('/')
+            && !href.contains("..")
+        {
+            resources.push(href);
+        }
+        // 提取 <script src="...">
+        if line.contains("<script")
+            && line.contains("src=")
+            && let Some(src) = extract_attr_value(line, "src")
+            && src.starts_with('/')
+            && !src.contains("..")
+            && src.ends_with(".js")
+        {
+            resources.push(src);
+        }
+    }
+
+    resources
+}
+
+/// 从 HTML 标签中提取属性值
+fn extract_attr_value(tag: &str, attr: &str) -> Option<String> {
+    let patterns = [
+        format!("{}=\"", attr),
+        format!("{}='", attr),
+    ];
+    for pattern in patterns {
+        if let Some(start) = tag.find(&pattern) {
+            let value_start = start + pattern.len();
+            let end_char = if pattern.ends_with("\"") { '"' } else { '\'' };
+            if let Some(end) = tag[value_start..].find(end_char) {
+                return Some(tag[value_start..value_start + end].to_string());
+            }
+        }
+    }
+    None
 }
 
 /// 精确读取指定字节数

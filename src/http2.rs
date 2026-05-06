@@ -651,7 +651,6 @@ pub fn build_window_update(stream_id: u32, increment: u32) -> Bytes {
 }
 
 /// 构建 HTTP/2 PUSH_PROMISE 帧
-#[allow(dead_code)]
 pub fn build_push_promise(stream_id: u32, promised_stream_id: u32, headers: Bytes) -> Bytes {
     let length = 4 + headers.len() as u32; // 4 字节 promised stream id + headers
     let flags = 0x04; // END_HEADERS
