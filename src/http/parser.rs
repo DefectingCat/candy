@@ -42,7 +42,6 @@ pub enum HttpVersion {
 
 /// HTTP 请求
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct Request {
     pub method: Method,
     pub path: Bytes,

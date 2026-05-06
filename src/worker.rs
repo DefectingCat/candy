@@ -1183,7 +1183,7 @@ fn log_request(
     request: Option<&Request>,
 ) {
     let status = if success { 200 } else { 500 };
-    let (method, path, version, referer, user_agent) = request
+    let (method, path, version, referer, user_agent, body_size) = request
         .map(|r| {
             let method = String::from_utf8_lossy(match r.method {
                 Method::GET => b"GET",
@@ -1205,9 +1205,15 @@ fn log_request(
                 .map(|v| String::from_utf8_lossy(&v).to_string());
             let user_agent = find_header(&r.headers, b"User-Agent")
                 .map(|v| String::from_utf8_lossy(&v).to_string());
-            (method, path, version, referer, user_agent)
+            let body_size = r.body.as_ref().map(|b| b.len()).unwrap_or(0);
+            (method, path, version, referer, user_agent, body_size)
         })
-        .unwrap_or_else(|| (protocol.to_string(), "/".to_string(), "HTTP/1.1", None, None));
+        .unwrap_or_else(|| (protocol.to_string(), "/".to_string(), "HTTP/1.1", None, None, 0));
+
+    // 如果有请求体，记录到日志
+    if body_size > 0 {
+        println!("Request body size: {} bytes", body_size);
+    }
 
     let log = AccessLog::new(
         client_addr,
