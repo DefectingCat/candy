@@ -36,6 +36,7 @@ pub struct TlsConfig {
 
 /// HTTP 配置
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct HttpConfig {
     /// 最大请求头大小
     pub max_header_size: usize,
@@ -91,11 +92,11 @@ impl Config {
     /// 从 TOML 文件加载配置
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
         let content = std::fs::read_to_string(path.as_ref())?;
-        Self::from_str(&content)
+        Self::parse(&content)
     }
 
     /// 从 TOML 字符串解析配置
-    pub fn from_str(content: &str) -> Result<Self, ConfigError> {
+    pub fn parse(content: &str) -> Result<Self, ConfigError> {
         let raw: RawConfig = toml::from_str(content)?;
 
         // 验证并转换
@@ -273,7 +274,7 @@ access = true
             root
         );
 
-        let config = Config::from_str(&toml).unwrap();
+        let config = Config::parse(&toml).unwrap();
         assert_eq!(config.server.https_listen.port(), 8080);
         assert!(config.server.http_listen.is_none());
         assert!(config.tls.is_none());
@@ -287,7 +288,7 @@ access = true
 listen = "invalid-address"
 root = "/tmp"
 "#;
-        let result = Config::from_str(toml);
+        let result = Config::parse(toml);
         assert!(result.is_err());
     }
 
@@ -314,7 +315,7 @@ key = "{}"
             key_path.display()
         );
 
-        let config = Config::from_str(&toml).unwrap();
+        let config = Config::parse(&toml).unwrap();
         assert!(config.tls.is_some());
         let tls = config.tls.unwrap();
         assert!(tls.enabled);

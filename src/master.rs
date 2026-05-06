@@ -9,8 +9,10 @@ use nix::unistd::Pid;
 use crate::config::Config;
 
 /// Worker 进程信息
+#[allow(dead_code)]
 pub struct Worker {
     pub pid: u32,
+    #[allow(dead_code)]
     handle: Option<Child>,
 }
 
@@ -181,7 +183,7 @@ workers = 1
 "#,
             temp_dir.path().display()
         );
-        let config = Config::from_str(&toml).unwrap();
+        let config = Config::parse(&toml).unwrap();
         let master = Master::new(config);
         assert_eq!(master.workers.len(), 0);
         assert!(!master.shutdown.load(Ordering::SeqCst));
@@ -198,7 +200,7 @@ root = "{}"
 "#,
             temp_dir.path().display()
         );
-        let config = Config::from_str(&toml).unwrap();
+        let config = Config::parse(&toml).unwrap();
         let master = Master::new(config);
 
         // 初始状态未关闭

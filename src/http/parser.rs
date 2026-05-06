@@ -2,6 +2,7 @@ use bytes::Bytes;
 
 /// HTTP 请求方法
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum Method {
     GET,
     HEAD,
@@ -41,6 +42,7 @@ pub enum HttpVersion {
 
 /// HTTP 请求
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct Request {
     pub method: Method,
     pub path: Bytes,
@@ -114,10 +116,10 @@ impl Parser {
         let content_length = find_content_length(&headers);
 
         // 检查请求体大小
-        if let Some(len) = content_length {
-            if len > max_body_size {
-                return Err(ParseError::BodyTooLarge);
-            }
+        if let Some(len) = content_length
+            && len > max_body_size
+        {
+            return Err(ParseError::BodyTooLarge);
         }
 
         // 计算总消耗字节数
@@ -217,7 +219,9 @@ fn parse_request_line(line: &[u8]) -> Result<(Method, &[u8], HttpVersion), Parse
 }
 
 /// 解析头部
-fn parse_headers(data: &[u8]) -> Result<Vec<(&[u8], &[u8])>, ParseError> {
+type HeadersResult<'a> = Result<Vec<(&'a [u8], &'a [u8])>, ParseError>;
+
+fn parse_headers(data: &[u8]) -> HeadersResult<'_> {
     let mut headers = Vec::new();
     let mut pos = 0;
 
@@ -262,12 +266,7 @@ fn parse_headers(data: &[u8]) -> Result<Vec<(&[u8], &[u8])>, ParseError> {
 }
 
 fn find_crlf(data: &[u8]) -> Option<usize> {
-    for i in 0..data.len().saturating_sub(1) {
-        if data[i] == b'\r' && data[i + 1] == b'\n' {
-            return Some(i);
-        }
-    }
-    None
+    (0..data.len().saturating_sub(1)).find(|&i| data[i] == b'\r' && data[i + 1] == b'\n')
 }
 
 #[cfg(test)]

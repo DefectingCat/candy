@@ -401,15 +401,18 @@ where
             }
             FrameType::Headers => {
                 // 处理 HEADERS 帧
+                let mut ctx = H2Context {
+                    connection: &mut connection,
+                    hpack_decoder: &mut hpack_decoder,
+                    hpack_encoder: &mut hpack_encoder,
+                    root,
+                };
                 if let Err(e) = handle_h2_headers(
                     &mut stream,
                     header.stream_id,
                     &frame_body,
                     header.flags,
-                    &mut connection,
-                    &mut hpack_decoder,
-                    &mut hpack_encoder,
-                    root,
+                    &mut ctx,
                 )
                 .await
                 {
@@ -468,27 +471,33 @@ where
     }
 }
 
+/// HTTP/2 请求处理上下文
+pub struct H2Context<'a> {
+    pub connection: &'a mut Connection,
+    pub hpack_decoder: &'a mut HpackDecoder,
+    pub hpack_encoder: &'a mut HpackEncoder,
+    pub root: &'a std::path::Path,
+}
+
 /// 处理 HTTP/2 HEADERS 帧
 async fn handle_h2_headers<S>(
     stream: &mut S,
     stream_id: u32,
     frame_body: &[u8],
     _flags: u8,
-    connection: &mut Connection,
-    hpack_decoder: &mut HpackDecoder,
-    hpack_encoder: &mut HpackEncoder,
-    root: &std::path::Path,
+    ctx: &mut H2Context<'_>,
 ) -> Result<(), H2Error>
 where
     S: AsyncWriteExt + Unpin,
 {
     // 接受客户端流
-    let _stream = connection
+    let _stream = ctx
+        .connection
         .accept_client_stream(stream_id)
         .ok_or(H2Error::InvalidStreamId)?;
 
     // 解码 HPACK 头部
-    let headers = hpack_decoder.decode_headers(frame_body)?;
+    let headers = ctx.hpack_decoder.decode_headers(frame_body)?;
 
     // 提取伪头部
     let method = headers
@@ -520,7 +529,7 @@ where
     };
 
     // 处理请求
-    let response = handle_request(&request, root);
+    let response = handle_request(&request, ctx.root);
 
     // 构建响应头
     let status = response.status_code();
@@ -531,7 +540,7 @@ where
     ];
 
     // 编码响应头
-    let encoded_headers = hpack_encoder.encode_headers(&response_headers);
+    let encoded_headers = ctx.hpack_encoder.encode_headers(&response_headers);
 
     // 发送 HEADERS 帧
     let body = response.into_body();
@@ -546,7 +555,7 @@ where
     }
 
     // 关闭流
-    connection.close_stream(stream_id);
+    ctx.connection.close_stream(stream_id);
 
     Ok(())
 }

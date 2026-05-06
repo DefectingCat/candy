@@ -225,6 +225,7 @@ pub fn build_initial_settings() -> Bytes {
 
 /// HTTP/2 流状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum StreamState {
     Idle,
     ReservedLocal,
@@ -237,6 +238,7 @@ pub enum StreamState {
 
 /// HTTP/2 流
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Stream {
     /// 流标识符
     pub id: u32,
@@ -248,6 +250,7 @@ pub struct Stream {
     pub recv_window: u32,
 }
 
+#[allow(dead_code)]
 impl Stream {
     pub fn new(id: u32) -> Self {
         Stream {
@@ -311,6 +314,7 @@ impl Stream {
 
 /// HTTP/2 连接管理器
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct Connection {
     /// 服务端设置
     pub local_settings: Settings,
@@ -326,6 +330,7 @@ pub struct Connection {
     pub connection_recv_window: i64,
 }
 
+#[allow(dead_code)]
 impl Connection {
     pub fn new() -> Self {
         Connection {
@@ -625,6 +630,7 @@ pub fn parse_window_update(data: &[u8]) -> Result<u32, H2Error> {
 }
 
 /// 构建 WINDOW_UPDATE 帧
+#[allow(dead_code)]
 pub fn build_window_update(stream_id: u32, increment: u32) -> Bytes {
     let mut buf = Vec::with_capacity(9 + 4);
 
@@ -645,6 +651,7 @@ pub fn build_window_update(stream_id: u32, increment: u32) -> Bytes {
 }
 
 /// 构建 HTTP/2 PUSH_PROMISE 帧
+#[allow(dead_code)]
 pub fn build_push_promise(stream_id: u32, promised_stream_id: u32, headers: Bytes) -> Bytes {
     let length = 4 + headers.len() as u32; // 4 字节 promised stream id + headers
     let flags = 0x04; // END_HEADERS
@@ -676,6 +683,7 @@ pub fn build_push_promise(stream_id: u32, promised_stream_id: u32, headers: Byte
 
 /// HTTP/2 错误码
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum H2ErrorCode {
     NoError = 0,
     ProtocolError = 1,

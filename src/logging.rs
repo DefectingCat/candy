@@ -54,12 +54,14 @@ impl AccessLog {
     }
 
     /// 设置 Referer
+    #[allow(dead_code)]
     pub fn with_referer(mut self, referer: Option<String>) -> Self {
         self.referer = referer;
         self
     }
 
     /// 设置 User-Agent
+    #[allow(dead_code)]
     pub fn with_user_agent(mut self, user_agent: Option<String>) -> Self {
         self.user_agent = user_agent;
         self

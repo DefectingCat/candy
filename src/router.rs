@@ -2,10 +2,12 @@ use std::path::{Path, PathBuf};
 
 /// 路径规范化结果
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum ResolveResult {
     /// 找到文件
     File(PathBuf),
     /// 找到目录，需要查找 index.html
+    #[allow(dead_code)]
     Directory(PathBuf),
     /// 路径不存在
     NotFound,
