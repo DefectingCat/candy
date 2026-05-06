@@ -2,8 +2,8 @@ use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
 
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::ServerConfig;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 
 use crate::config::TlsConfig;
 
@@ -65,8 +65,8 @@ fn load_private_key(path: &std::path::Path) -> Result<PrivateKeyDer<'static>, Tl
     let mut reader = BufReader::new(file);
 
     // 尝试加载 PKCS#8 私钥
-    if let Some(key) = rustls_pemfile::private_key(&mut reader)
-        .map_err(|e| TlsError::KeyParse(e.to_string()))?
+    if let Some(key) =
+        rustls_pemfile::private_key(&mut reader).map_err(|e| TlsError::KeyParse(e.to_string()))?
     {
         return Ok(key);
     }

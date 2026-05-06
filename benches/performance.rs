@@ -1,8 +1,8 @@
-use candy::http::{Parser, Response};
-use candy::compress::{gzip_compress, parse_accept_encoding, should_compress};
-use candy::router::{get_mime_type, resolve_path};
 use bytes::BytesMut;
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use candy::compress::{gzip_compress, parse_accept_encoding, should_compress};
+use candy::http::{Parser, Response};
+use candy::router::{get_mime_type, resolve_path};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 
 /// HTTP 解析器基准测试
 fn http_parser_benchmark(c: &mut Criterion) {
@@ -92,41 +92,31 @@ fn compression_benchmark(c: &mut Criterion) {
     // 小文件压缩
     let small_data = b"Hello World! This is a test string for compression.";
     group.bench_function("gzip_compress_small", |b| {
-        b.iter(|| {
-            gzip_compress(small_data)
-        });
+        b.iter(|| gzip_compress(small_data));
     });
 
     // 中等文件压缩 (1KB)
     let medium_data: Vec<u8> = (0..1024).map(|i| (i % 256) as u8).collect();
     group.throughput(Throughput::Bytes(medium_data.len() as u64));
     group.bench_function("gzip_compress_medium", |b| {
-        b.iter(|| {
-            gzip_compress(&medium_data)
-        });
+        b.iter(|| gzip_compress(&medium_data));
     });
 
     // 大文件压缩 (64KB)
     let large_data: Vec<u8> = (0..65536).map(|i| (i % 256) as u8).collect();
     group.throughput(Throughput::Bytes(large_data.len() as u64));
     group.bench_function("gzip_compress_large", |b| {
-        b.iter(|| {
-            gzip_compress(&large_data)
-        });
+        b.iter(|| gzip_compress(&large_data));
     });
 
     // Accept-Encoding 解析
     group.bench_function("parse_accept_encoding", |b| {
-        b.iter(|| {
-            parse_accept_encoding(b"gzip, deflate, br")
-        });
+        b.iter(|| parse_accept_encoding(b"gzip, deflate, br"));
     });
 
     // MIME 类型压缩判断
     group.bench_function("should_compress_check", |b| {
-        b.iter(|| {
-            should_compress("text/html")
-        });
+        b.iter(|| should_compress("text/html"));
     });
 
     group.finish();
@@ -146,49 +136,35 @@ fn path_resolution_benchmark(c: &mut Criterion) {
 
     // 解析根路径
     group.bench_function("resolve_root", |b| {
-        b.iter(|| {
-            resolve_path(root, "/")
-        });
+        b.iter(|| resolve_path(root, "/"));
     });
 
     // 解析文件路径
     group.bench_function("resolve_file", |b| {
-        b.iter(|| {
-            resolve_path(root, "/index.html")
-        });
+        b.iter(|| resolve_path(root, "/index.html"));
     });
 
     // 解析嵌套路径
     group.bench_function("resolve_nested_file", |b| {
-        b.iter(|| {
-            resolve_path(root, "/assets/style.css")
-        });
+        b.iter(|| resolve_path(root, "/assets/style.css"));
     });
 
     // 解析不存在的文件
     group.bench_function("resolve_not_found", |b| {
-        b.iter(|| {
-            resolve_path(root, "/nonexistent.html")
-        });
+        b.iter(|| resolve_path(root, "/nonexistent.html"));
     });
 
     // MIME 类型查找
     group.bench_function("get_mime_type_html", |b| {
-        b.iter(|| {
-            get_mime_type(std::path::Path::new("index.html"))
-        });
+        b.iter(|| get_mime_type(std::path::Path::new("index.html")));
     });
 
     group.bench_function("get_mime_type_css", |b| {
-        b.iter(|| {
-            get_mime_type(std::path::Path::new("style.css"))
-        });
+        b.iter(|| get_mime_type(std::path::Path::new("style.css")));
     });
 
     group.bench_function("get_mime_type_js", |b| {
-        b.iter(|| {
-            get_mime_type(std::path::Path::new("app.js"))
-        });
+        b.iter(|| get_mime_type(std::path::Path::new("app.js")));
     });
 
     group.finish();
@@ -200,21 +176,15 @@ fn range_request_benchmark(c: &mut Criterion) {
 
     // 解析 Range 头
     group.bench_function("parse_range_start_end", |b| {
-        b.iter(|| {
-            candy::worker::parse_range_header(b"bytes=0-999", 10000)
-        });
+        b.iter(|| candy::worker::parse_range_header(b"bytes=0-999", 10000));
     });
 
     group.bench_function("parse_range_start_only", |b| {
-        b.iter(|| {
-            candy::worker::parse_range_header(b"bytes=500-", 10000)
-        });
+        b.iter(|| candy::worker::parse_range_header(b"bytes=500-", 10000));
     });
 
     group.bench_function("parse_range_suffix", |b| {
-        b.iter(|| {
-            candy::worker::parse_range_header(b"bytes=-500", 10000)
-        });
+        b.iter(|| candy::worker::parse_range_header(b"bytes=-500", 10000));
     });
 
     group.finish();

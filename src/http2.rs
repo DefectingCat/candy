@@ -305,10 +305,8 @@ impl Stream {
 
     /// 检查是否可以接收数据
     pub fn can_receive(&self) -> bool {
-        matches!(
-            self.state,
-            StreamState::Open | StreamState::HalfClosedLocal
-        ) && self.recv_window > 0
+        matches!(self.state, StreamState::Open | StreamState::HalfClosedLocal)
+            && self.recv_window > 0
     }
 }
 
@@ -418,7 +416,11 @@ impl Connection {
     }
 
     /// 更新流级发送窗口
-    pub fn update_stream_send_window(&mut self, stream_id: u32, increment: u32) -> Result<(), H2Error> {
+    pub fn update_stream_send_window(
+        &mut self,
+        stream_id: u32,
+        increment: u32,
+    ) -> Result<(), H2Error> {
         if let Some(stream) = self.streams.get_mut(&stream_id) {
             let new_window = stream.send_window as i64 + increment as i64;
             if new_window > (i32::MAX as i64) {
@@ -466,7 +468,8 @@ impl HpackEncoder {
     pub fn encode_headers(&mut self, headers: &[(String, String)]) -> Bytes {
         let mut buf = Vec::new();
         for (name, value) in headers {
-            let _ = self.encoder
+            let _ = self
+                .encoder
                 .encode_header_into((name.as_bytes(), value.as_bytes()), &mut buf);
         }
         Bytes::from(buf)
@@ -794,10 +797,7 @@ mod tests {
 
     #[test]
     fn test_connection_preface() {
-        assert_eq!(
-            CONNECTION_PREFACE,
-            b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
-        );
+        assert_eq!(CONNECTION_PREFACE, b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
         assert_eq!(CONNECTION_PREFACE.len(), 24);
     }
 
@@ -811,7 +811,10 @@ mod tests {
             SettingsParameter::from_u16(0x05),
             SettingsParameter::MaxFrameSize
         );
-        assert_eq!(SettingsParameter::from_u16(0xFF), SettingsParameter::Unknown(0xFF));
+        assert_eq!(
+            SettingsParameter::from_u16(0xFF),
+            SettingsParameter::Unknown(0xFF)
+        );
     }
 
     // ========== Stream 管理测试 ==========

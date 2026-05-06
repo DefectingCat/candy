@@ -26,18 +26,15 @@ pub fn parse_accept_encoding(header: &[u8]) -> CompressionType {
         let (encoding, q) = parse_encoding_part(part);
 
         match encoding {
-            "gzip" | "x-gzip"
-                if q > gzip_q => {
-                    gzip_q = q;
-                }
-            "deflate"
-                if q > deflate_q => {
-                    deflate_q = q;
-                }
-            "*"
-                if q > wildcard_q => {
-                    wildcard_q = q;
-                }
+            "gzip" | "x-gzip" if q > gzip_q => {
+                gzip_q = q;
+            }
+            "deflate" if q > deflate_q => {
+                deflate_q = q;
+            }
+            "*" if q > wildcard_q => {
+                wildcard_q = q;
+            }
             _ => {}
         }
     }
@@ -67,9 +64,10 @@ fn parse_encoding_part(part: &str) -> (&str, f32) {
     for p in &parts[1..] {
         let p = p.trim();
         if p.starts_with("q=")
-            && let Ok(val) = p[2..].parse::<f32>() {
-                q = val;
-            }
+            && let Ok(val) = p[2..].parse::<f32>()
+        {
+            q = val;
+        }
     }
 
     (encoding, q)

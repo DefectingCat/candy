@@ -5,13 +5,15 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{Duration, timeout};
 use tokio_rustls::TlsAcceptor;
 
-use crate::compress::{parse_accept_encoding, gzip_compress, deflate_compress, should_compress, CompressionType};
+use crate::compress::{
+    CompressionType, deflate_compress, gzip_compress, parse_accept_encoding, should_compress,
+};
 use crate::config::{Config, LogFormat};
 use crate::http::{HttpVersion, Method, ParseError, Parser, Request, Response};
 use crate::http2::{
-    build_data_frame, build_goaway, build_headers_frame, build_initial_settings,
-    build_rst_stream, build_settings_ack, parse_frame_header, parse_settings, parse_window_update, Connection,
-    FrameType, HpackDecoder, HpackEncoder, H2ErrorCode, H2Error, CONNECTION_PREFACE,
+    CONNECTION_PREFACE, Connection, FrameType, H2Error, H2ErrorCode, HpackDecoder, HpackEncoder,
+    build_data_frame, build_goaway, build_headers_frame, build_initial_settings, build_rst_stream,
+    build_settings_ack, parse_frame_header, parse_settings, parse_window_update,
 };
 use crate::logging::{AccessLog, Logger};
 use crate::router::{ResolveResult, get_mime_type, resolve_path};
@@ -198,13 +200,30 @@ async fn handle_https_connection(
 
         // 根据协议选择处理器
         if protocol == "h2" {
-            handle_http2_connection_tls(tls_stream, addr, root, keep_alive_timeout, http2_push).await
+            handle_http2_connection_tls(tls_stream, addr, root, keep_alive_timeout, http2_push)
+                .await
         } else {
-            handle_connection_tls(tls_stream, addr, root, keep_alive_timeout, max_header_size, max_body_size).await
+            handle_connection_tls(
+                tls_stream,
+                addr,
+                root,
+                keep_alive_timeout,
+                max_header_size,
+                max_body_size,
+            )
+            .await
         }
     } else {
         // 无 TLS，直接处理 HTTP
-        handle_connection(stream, addr, root, keep_alive_timeout, max_header_size, max_body_size).await
+        handle_connection(
+            stream,
+            addr,
+            root,
+            keep_alive_timeout,
+            max_header_size,
+            max_body_size,
+        )
+        .await
     }
 }
 
@@ -228,7 +247,13 @@ where
         // 设置超时读取
         let read_result = timeout(
             Duration::from_secs(keep_alive_timeout),
-            read_request_tls(&mut stream, &mut buffer, &mut parser, max_header_size, max_body_size),
+            read_request_tls(
+                &mut stream,
+                &mut buffer,
+                &mut parser,
+                max_header_size,
+                max_body_size,
+            ),
         )
         .await;
 
@@ -449,13 +474,24 @@ where
                                 eprintln!("HTTP/2 connection window update error: {:?}", e);
                                 let goaway = build_goaway(0, H2ErrorCode::FlowControlError as u32);
                                 let _ = stream.write_all(&goaway).await;
-                                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "flow control error"));
+                                return Err(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    "flow control error",
+                                ));
                             }
                         } else {
                             // 流级窗口更新
-                            if let Err(e) = connection.update_stream_send_window(header.stream_id, increment) {
-                                eprintln!("HTTP/2 stream {} window update error: {:?}", header.stream_id, e);
-                                let rst = build_rst_stream(header.stream_id, H2ErrorCode::FlowControlError as u32);
+                            if let Err(e) =
+                                connection.update_stream_send_window(header.stream_id, increment)
+                            {
+                                eprintln!(
+                                    "HTTP/2 stream {} window update error: {:?}",
+                                    header.stream_id, e
+                                );
+                                let rst = build_rst_stream(
+                                    header.stream_id,
+                                    H2ErrorCode::FlowControlError as u32,
+                                );
                                 let _ = stream.write_all(&rst).await;
                             }
                         }
@@ -545,8 +581,14 @@ where
     let status = response.status_code();
     let response_headers: Vec<(String, String)> = vec![
         (":status".to_string(), status.to_string()),
-        ("content-type".to_string(), response.content_type().to_string()),
-        ("content-length".to_string(), response.body_len().to_string()),
+        (
+            "content-type".to_string(),
+            response.content_type().to_string(),
+        ),
+        (
+            "content-length".to_string(),
+            response.body_len().to_string(),
+        ),
     ];
 
     // 编码响应头
@@ -556,15 +598,25 @@ where
     let body = response.into_body();
     let end_stream = body.is_empty();
     let headers_frame = build_headers_frame(stream_id, encoded_headers, end_stream);
-    stream.write_all(&headers_frame).await.map_err(|_| H2Error::Incomplete)?;
+    stream
+        .write_all(&headers_frame)
+        .await
+        .map_err(|_| H2Error::Incomplete)?;
 
     // 发送 DATA 帧（如果有 body）
     if !body.is_empty() {
         let data_frame = build_data_frame(stream_id, &body, true);
-        stream.write_all(&data_frame).await.map_err(|_| H2Error::Incomplete)?;
+        stream
+            .write_all(&data_frame)
+            .await
+            .map_err(|_| H2Error::Incomplete)?;
 
         // Server Push: 如果启用且是 HTML，推送关联的 CSS/JS 资源
-        if ctx.http2_push && response_headers.iter().any(|(k, v)| k == "content-type" && v.contains("text/html")) {
+        if ctx.http2_push
+            && response_headers
+                .iter()
+                .any(|(k, v)| k == "content-type" && v.contains("text/html"))
+        {
             let push_resources = extract_push_resources(&body);
             for push_path in push_resources.iter().take(5) {
                 // 创建推送流（偶数 ID）
@@ -581,24 +633,41 @@ where
 
                 // 发送 PUSH_PROMISE 帧
                 use crate::http2::build_push_promise;
-                let push_promise = build_push_promise(stream_id, push_stream_id, encoded_push_headers);
-                stream.write_all(&push_promise).await.map_err(|_| H2Error::Incomplete)?;
+                let push_promise =
+                    build_push_promise(stream_id, push_stream_id, encoded_push_headers);
+                stream
+                    .write_all(&push_promise)
+                    .await
+                    .map_err(|_| H2Error::Incomplete)?;
 
                 // 读取推送资源并发送
                 let push_file_path = ctx.root.join(push_path.trim_start_matches('/'));
                 if let Ok(push_content) = std::fs::read(&push_file_path) {
                     let push_headers_response: Vec<(String, String)> = vec![
                         (":status".to_string(), "200".to_string()),
-                        ("content-type".to_string(), get_mime_type(&push_file_path).to_string()),
+                        (
+                            "content-type".to_string(),
+                            get_mime_type(&push_file_path).to_string(),
+                        ),
                         ("content-length".to_string(), push_content.len().to_string()),
                     ];
                     let encoded_response = ctx.hpack_encoder.encode_headers(&push_headers_response);
-                    let push_headers_frame = build_headers_frame(push_stream_id, encoded_response, push_content.is_empty());
-                    stream.write_all(&push_headers_frame).await.map_err(|_| H2Error::Incomplete)?;
+                    let push_headers_frame = build_headers_frame(
+                        push_stream_id,
+                        encoded_response,
+                        push_content.is_empty(),
+                    );
+                    stream
+                        .write_all(&push_headers_frame)
+                        .await
+                        .map_err(|_| H2Error::Incomplete)?;
 
                     if !push_content.is_empty() {
                         let push_data_frame = build_data_frame(push_stream_id, &push_content, true);
-                        stream.write_all(&push_data_frame).await.map_err(|_| H2Error::Incomplete)?;
+                        stream
+                            .write_all(&push_data_frame)
+                            .await
+                            .map_err(|_| H2Error::Incomplete)?;
                     }
                 }
 
@@ -645,10 +714,7 @@ fn extract_push_resources(html: &[u8]) -> Vec<String> {
 
 /// 从 HTML 标签中提取属性值
 fn extract_attr_value(tag: &str, attr: &str) -> Option<String> {
-    let patterns = [
-        format!("{}=\"", attr),
-        format!("{}='", attr),
-    ];
+    let patterns = [format!("{}=\"", attr), format!("{}='", attr)];
     for pattern in patterns {
         if let Some(start) = tag.find(&pattern) {
             let value_start = start + pattern.len();
@@ -753,7 +819,13 @@ async fn handle_connection(
         // 设置超时读取
         let read_result = timeout(
             Duration::from_secs(keep_alive_timeout),
-            read_request(&mut stream, &mut buffer, &mut parser, max_header_size, max_body_size),
+            read_request(
+                &mut stream,
+                &mut buffer,
+                &mut parser,
+                max_header_size,
+                max_body_size,
+            ),
         )
         .await;
 
@@ -799,7 +871,10 @@ async fn handle_request_with_sendfile(
     if request.method != Method::GET && request.method != Method::HEAD {
         let response = Response::new(405)
             .header("Content-Type", "text/plain")
-            .header("Connection", if keep_alive { "keep-alive" } else { "close" })
+            .header(
+                "Connection",
+                if keep_alive { "keep-alive" } else { "close" },
+            )
             .body(b"Method Not Allowed".to_vec());
         stream.write_all(&response.to_bytes()).await?;
         return Ok(());
@@ -868,33 +943,33 @@ async fn handle_request_with_sendfile(
                 }
 
                 // 检查压缩协商
-                let (final_content, content_encoding) =
-                    if should_compress(mime_type) {
-                        if let Some(accept_encoding) = find_header(&request.headers, b"Accept-Encoding") {
-                            let compression = parse_accept_encoding(&accept_encoding);
-                            match compression {
-                                CompressionType::Gzip => {
-                                    if let Ok(compressed) = gzip_compress(&content) {
-                                        (compressed, Some("gzip"))
-                                    } else {
-                                        (content, None)
-                                    }
+                let (final_content, content_encoding) = if should_compress(mime_type) {
+                    if let Some(accept_encoding) = find_header(&request.headers, b"Accept-Encoding")
+                    {
+                        let compression = parse_accept_encoding(&accept_encoding);
+                        match compression {
+                            CompressionType::Gzip => {
+                                if let Ok(compressed) = gzip_compress(&content) {
+                                    (compressed, Some("gzip"))
+                                } else {
+                                    (content, None)
                                 }
-                                CompressionType::Deflate => {
-                                    if let Ok(compressed) = deflate_compress(&content) {
-                                        (compressed, Some("deflate"))
-                                    } else {
-                                        (content, None)
-                                    }
-                                }
-                                CompressionType::None => (content, None),
                             }
-                        } else {
-                            (content, None)
+                            CompressionType::Deflate => {
+                                if let Ok(compressed) = deflate_compress(&content) {
+                                    (compressed, Some("deflate"))
+                                } else {
+                                    (content, None)
+                                }
+                            }
+                            CompressionType::None => (content, None),
                         }
                     } else {
                         (content, None)
-                    };
+                    }
+                } else {
+                    (content, None)
+                };
 
                 // 构建响应
                 let mut response = Response::ok()
@@ -1025,33 +1100,34 @@ fn handle_request(request: &Request, root: &std::path::Path) -> Response {
                     }
 
                     // 检查压缩协商
-                    let (final_content, content_encoding) =
-                        if should_compress(mime_type) {
-                            if let Some(accept_encoding) = find_header(&request.headers, b"Accept-Encoding") {
-                                let compression = parse_accept_encoding(&accept_encoding);
-                                match compression {
-                                    CompressionType::Gzip => {
-                                        if let Ok(compressed) = gzip_compress(&content) {
-                                            (compressed, Some("gzip"))
-                                        } else {
-                                            (content, None)
-                                        }
+                    let (final_content, content_encoding) = if should_compress(mime_type) {
+                        if let Some(accept_encoding) =
+                            find_header(&request.headers, b"Accept-Encoding")
+                        {
+                            let compression = parse_accept_encoding(&accept_encoding);
+                            match compression {
+                                CompressionType::Gzip => {
+                                    if let Ok(compressed) = gzip_compress(&content) {
+                                        (compressed, Some("gzip"))
+                                    } else {
+                                        (content, None)
                                     }
-                                    CompressionType::Deflate => {
-                                        if let Ok(compressed) = deflate_compress(&content) {
-                                            (compressed, Some("deflate"))
-                                        } else {
-                                            (content, None)
-                                        }
-                                    }
-                                    CompressionType::None => (content, None),
                                 }
-                            } else {
-                                (content, None)
+                                CompressionType::Deflate => {
+                                    if let Ok(compressed) = deflate_compress(&content) {
+                                        (compressed, Some("deflate"))
+                                    } else {
+                                        (content, None)
+                                    }
+                                }
+                                CompressionType::None => (content, None),
                             }
                         } else {
                             (content, None)
-                        };
+                        }
+                    } else {
+                        (content, None)
+                    };
 
                     // 构建响应
                     let mut response = Response::ok()
@@ -1066,7 +1142,8 @@ fn handle_request(request: &Request, root: &std::path::Path) -> Response {
 
                     // HEAD 请求不返回 body
                     if request.method == Method::HEAD {
-                        response = response.header("Content-Length", final_content.len().to_string());
+                        response =
+                            response.header("Content-Length", final_content.len().to_string());
                     } else {
                         response = response.body(final_content);
                     }
@@ -1195,7 +1272,8 @@ fn log_request(
                 Method::CONNECT => b"CONNECT",
                 Method::TRACE => b"TRACE",
                 Method::PATCH => b"PATCH",
-            }).to_string();
+            })
+            .to_string();
             let path = String::from_utf8_lossy(&r.path).to_string();
             let version = match r.version {
                 HttpVersion::Http10 => "HTTP/1.0",
@@ -1208,7 +1286,16 @@ fn log_request(
             let body_size = r.body.as_ref().map(|b| b.len()).unwrap_or(0);
             (method, path, version, referer, user_agent, body_size)
         })
-        .unwrap_or_else(|| (protocol.to_string(), "/".to_string(), "HTTP/1.1", None, None, 0));
+        .unwrap_or_else(|| {
+            (
+                protocol.to_string(),
+                "/".to_string(),
+                "HTTP/1.1",
+                None,
+                None,
+                0,
+            )
+        });
 
     // 如果有请求体，记录到日志
     if body_size > 0 {

@@ -30,7 +30,14 @@ pub fn sendfile(out_fd: i32, file: &File, offset: usize, count: usize) -> io::Re
         // SAFETY: macOS sendfile 从内核空间直接传输到 socket
         // 参数: in_fd, out_fd, offset, &len, sf_hdtr, flags
         unsafe {
-            let result = libc::sendfile(in_fd, out_fd, offset as libc::off_t, &mut len, std::ptr::null_mut(), 0);
+            let result = libc::sendfile(
+                in_fd,
+                out_fd,
+                offset as libc::off_t,
+                &mut len,
+                std::ptr::null_mut(),
+                0,
+            );
             if result < 0 {
                 Err(io::Error::last_os_error())
             } else {
@@ -46,7 +53,15 @@ pub fn sendfile(out_fd: i32, file: &File, offset: usize, count: usize) -> io::Re
         // SAFETY: FreeBSD sendfile 从内核空间直接传输到 socket
         // 参数: in_fd, out_fd, offset, len, sf_hdtr, &len, flags
         unsafe {
-            let result = libc::sendfile(in_fd, out_fd, offset as libc::off_t, len, std::ptr::null_mut(), &mut len, 0);
+            let result = libc::sendfile(
+                in_fd,
+                out_fd,
+                offset as libc::off_t,
+                len,
+                std::ptr::null_mut(),
+                &mut len,
+                0,
+            );
             if result < 0 {
                 Err(io::Error::last_os_error())
             } else {

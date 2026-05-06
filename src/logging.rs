@@ -173,7 +173,8 @@ mod tests {
             200,
             100,
             10,
-        ).with_referer(Some("http://example.com".to_string()));
+        )
+        .with_referer(Some("http://example.com".to_string()));
         assert_eq!(log.referer, Some("http://example.com".to_string()));
     }
 
@@ -187,7 +188,8 @@ mod tests {
             200,
             100,
             10,
-        ).with_user_agent(Some("Mozilla/5.0".to_string()));
+        )
+        .with_user_agent(Some("Mozilla/5.0".to_string()));
         assert_eq!(log.user_agent, Some("Mozilla/5.0".to_string()));
     }
 

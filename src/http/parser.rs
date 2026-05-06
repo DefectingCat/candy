@@ -86,7 +86,12 @@ impl Parser {
     /// 解析请求，返回 (consumed_bytes, result)
     /// max_header_size: 最大请求头大小（字节），超过返回 ParseError::TooLarge
     /// max_body_size: 最大请求体大小（字节），超过返回 ParseError::BodyTooLarge
-    pub fn parse(&mut self, buffer: &[u8], max_header_size: usize, max_body_size: usize) -> Result<(usize, Request), ParseError> {
+    pub fn parse(
+        &mut self,
+        buffer: &[u8],
+        max_header_size: usize,
+        max_body_size: usize,
+    ) -> Result<(usize, Request), ParseError> {
         // 直接查找 \r\n\r\n 作为头部结束
         let headers_end = find_headers_end(buffer, 0)?;
 
@@ -279,7 +284,9 @@ mod tests {
     fn test_parse_get_request() {
         let raw = b"GET /index.html HTTP/1.1\r\nHost: localhost\r\n\r\n";
         let mut parser = Parser::new();
-        let (consumed, req) = parser.parse(raw, DEFAULT_MAX_HEADER_SIZE, DEFAULT_MAX_BODY_SIZE).unwrap();
+        let (consumed, req) = parser
+            .parse(raw, DEFAULT_MAX_HEADER_SIZE, DEFAULT_MAX_BODY_SIZE)
+            .unwrap();
 
         assert_eq!(consumed, raw.len());
         assert_eq!(req.method, Method::GET);
@@ -294,7 +301,9 @@ mod tests {
     fn test_parse_head_request() {
         let raw = b"HEAD /test HTTP/1.0\r\n\r\n";
         let mut parser = Parser::new();
-        let (_, req) = parser.parse(raw, DEFAULT_MAX_HEADER_SIZE, DEFAULT_MAX_BODY_SIZE).unwrap();
+        let (_, req) = parser
+            .parse(raw, DEFAULT_MAX_HEADER_SIZE, DEFAULT_MAX_BODY_SIZE)
+            .unwrap();
 
         assert_eq!(req.method, Method::HEAD);
         assert_eq!(req.version, HttpVersion::Http10);
@@ -304,21 +313,30 @@ mod tests {
     fn test_parse_invalid_method() {
         let raw = b"INVALID / HTTP/1.1\r\n\r\n";
         let mut parser = Parser::new();
-        assert!(parser.parse(raw, DEFAULT_MAX_HEADER_SIZE, DEFAULT_MAX_BODY_SIZE).is_err());
+        assert!(
+            parser
+                .parse(raw, DEFAULT_MAX_HEADER_SIZE, DEFAULT_MAX_BODY_SIZE)
+                .is_err()
+        );
     }
 
     #[test]
     fn test_parse_incomplete() {
         let raw = b"GET / HTTP/1.1\r\n";
         let mut parser = Parser::new();
-        assert!(matches!(parser.parse(raw, DEFAULT_MAX_HEADER_SIZE, DEFAULT_MAX_BODY_SIZE), Err(ParseError::Incomplete)));
+        assert!(matches!(
+            parser.parse(raw, DEFAULT_MAX_HEADER_SIZE, DEFAULT_MAX_BODY_SIZE),
+            Err(ParseError::Incomplete)
+        ));
     }
 
     #[test]
     fn test_parse_post_with_body() {
         let raw = b"POST /submit HTTP/1.1\r\nContent-Length: 11\r\n\r\nHello World";
         let mut parser = Parser::new();
-        let (consumed, req) = parser.parse(raw, DEFAULT_MAX_HEADER_SIZE, DEFAULT_MAX_BODY_SIZE).unwrap();
+        let (consumed, req) = parser
+            .parse(raw, DEFAULT_MAX_HEADER_SIZE, DEFAULT_MAX_BODY_SIZE)
+            .unwrap();
 
         assert_eq!(consumed, raw.len());
         assert_eq!(req.method, Method::POST);
@@ -342,7 +360,9 @@ mod tests {
 
         let mut parser = Parser::new();
         for (raw, expected_method) in methods {
-            let (_, req) = parser.parse(raw, DEFAULT_MAX_HEADER_SIZE, DEFAULT_MAX_BODY_SIZE).unwrap();
+            let (_, req) = parser
+                .parse(raw, DEFAULT_MAX_HEADER_SIZE, DEFAULT_MAX_BODY_SIZE)
+                .unwrap();
             assert_eq!(req.method, *expected_method);
         }
     }
@@ -357,7 +377,9 @@ mod tests {
         raw.extend_from_slice(b"\r\n");
 
         let mut parser = Parser::new();
-        let (_, req) = parser.parse(&raw, DEFAULT_MAX_HEADER_SIZE, DEFAULT_MAX_BODY_SIZE).unwrap();
+        let (_, req) = parser
+            .parse(&raw, DEFAULT_MAX_HEADER_SIZE, DEFAULT_MAX_BODY_SIZE)
+            .unwrap();
         assert_eq!(req.headers.len(), 200);
     }
 
@@ -391,7 +413,11 @@ mod tests {
     fn test_parse_body_within_limit() {
         // 构造一个请求体在限制内的请求
         let body = "x".repeat(1000);
-        let raw = format!("POST /upload HTTP/1.1\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+        let raw = format!(
+            "POST /upload HTTP/1.1\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
         let mut parser = Parser::new();
         let result = parser.parse(raw.as_bytes(), DEFAULT_MAX_HEADER_SIZE, 2000);
         assert!(result.is_ok());
@@ -401,7 +427,11 @@ mod tests {
     fn test_parse_body_exceed_limit() {
         // 构造一个请求体超过限制的请求
         let body = "x".repeat(1000);
-        let raw = format!("POST /upload HTTP/1.1\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+        let raw = format!(
+            "POST /upload HTTP/1.1\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
         let mut parser = Parser::new();
         let result = parser.parse(raw.as_bytes(), DEFAULT_MAX_HEADER_SIZE, 500);
         assert!(matches!(result, Err(ParseError::BodyTooLarge)));

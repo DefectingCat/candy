@@ -141,9 +141,10 @@ impl Master {
         let mut waited_ms = 0;
 
         while waited_ms < max_wait_ms {
-            let all_dead = self.workers.iter().all(|worker| {
-                signal::kill(Pid::from_raw(worker.pid as i32), None).is_err()
-            });
+            let all_dead = self
+                .workers
+                .iter()
+                .all(|worker| signal::kill(Pid::from_raw(worker.pid as i32), None).is_err());
 
             if all_dead {
                 println!("All workers gracefully shut down after {}ms", waited_ms);
